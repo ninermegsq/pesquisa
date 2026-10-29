@@ -55,6 +55,17 @@ existente sem necessidade. O scanner usa esse segredo para autorizar consultas
 após a validação do Turnstile. `TURNSTILE_SITE_KEY` não é necessária, pois a chave
 pública está no HTML. `EMAILREP_KEY` continua opcional.
 
+### Verificação de segredos no build
+
+Se `TURNSTILE_SITE_KEY` estiver cadastrada como segredo na Netlify, o scanner
+pode bloquear sua chave pública no HTML ou na documentação. O netlify.toml
+exclui **somente `TURNSTILE_SITE_KEY`** dessa verificação com
+`SECRETS_SCAN_OMIT_KEYS`. Essa chave é pública por definição do Turnstile.
+O scanner permanece ativo para os segredos reais, incluindo
+`TURNSTILE_SECRET` e `HMAC_SECRET`. Não exclua essas duas variáveis.
+Como o frontend já contém a site key, a variável `TURNSTILE_SITE_KEY` é opcional
+e também pode ser removida do painel, sem remover `TURNSTILE_SECRET`.
+
 Se também usar www, autorize `www.ostnt.online` no widget e configure:
 
 ```text

@@ -5,6 +5,9 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  # Turnstile site keys are public and must appear in the frontend.
+  # Keep TURNSTILE_SECRET and HMAC_SECRET covered by secrets scanning.
+  SECRETS_SCAN_OMIT_KEYS = "TURNSTILE_SITE_KEY"
 
 [functions]
   node_bundler = "esbuild"

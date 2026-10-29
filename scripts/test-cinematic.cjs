@@ -8,8 +8,9 @@ const baseURL=process.env.BASE_URL||'http://127.0.0.1:8888';
  const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
  const page=await browser.newPage({viewport:{width:1440,height:1100},deviceScaleFactor:1});
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.route('https://challenges.cloudflare.com/**',route=>route.fulfill({contentType:'application/javascript',body:`window.turnstile={render(box,o){window.testWidget=o;setTimeout(()=>o.callback('test-widget-token'),250);return 'test-id';},remove(){},reset(){}};`}));
- await page.route('**/.netlify/functions/token',route=>route.fulfill({json:{success:true,token:'signed-test-token'}}));
+ await page.route('https://challenges.cloudflare.com/**',route=>route.fulfill({contentType:'application/javascript',body:`window.testWidgetTokens=0;window.turnstile={ready(fn){fn();},render(box,o){window.testWidget=o;return 'test-id';},execute(){const o=window.testWidget;setTimeout(()=>window.widgetError?o['error-callback'](window.widgetError):o.callback('test-widget-token-'+(++window.testWidgetTokens)),250);},remove(){},reset(){window.widgetResets=(window.widgetResets||0)+1;}};`}));
+ const submittedTokens=[];
+ await page.route('**/.netlify/functions/token',route=>{submittedTokens.push(route.request().postDataJSON()['cf-turnstile-response']);return route.fulfill({json:{success:true,token:'signed-test-token'}});});
  let scanMode='success',scanCalls=0;
  await page.route('**/.netlify/functions/scan',async route=>{
   scanCalls++;
@@ -36,10 +37,12 @@ const baseURL=process.env.BASE_URL||'http://127.0.0.1:8888';
  await page.locator('.mo-reset').click();
  await page.waitForFunction(()=>document.querySelector('#scan-form').dataset.phase==='idle');
  assert.equal(await page.locator('#email').inputValue(),'');assert.equal(await page.locator('#stage .scorecard').count(),0);
+ assert.ok(await page.evaluate(()=>window.widgetResets>=1));
  scanMode='error';await page.locator('#email').fill('demo@example.com');await page.locator('#scan-btn').click();
  await page.waitForFunction(()=>document.querySelector('#scan-form').dataset.result==='error');
  assert.match(await page.locator('#form-error').textContent(),/indisponível/);
  assert.equal(await page.locator('#scan-btn').isDisabled(),false);
+ assert.equal(submittedTokens.length,2);assert.notEqual(submittedTokens[0],submittedTokens[1]);
  await page.locator('#scan-btn').click();await page.keyboard.press('Escape');
  await page.waitForFunction(()=>!document.querySelector('#scan-btn').disabled);
  assert.equal(await page.locator('#stage .scorecard').count(),0);
@@ -53,6 +56,21 @@ const baseURL=process.env.BASE_URL||'http://127.0.0.1:8888';
  assert.equal(scanCalls,beforeDenied);assert.match(await page.locator('#form-error').textContent(),/recusada/);
  await page.unroute('**/.netlify/functions/token');
  await page.route('**/.netlify/functions/token',route=>route.fulfill({json:{success:true,token:'signed-test-token'}}));
+ // Client-side widget failures display Cloudflare's diagnostic without calling a backend.
+ let tokenCalls=0;
+ await page.unroute('**/.netlify/functions/token');
+ await page.route('**/.netlify/functions/token',route=>{tokenCalls++;return route.fulfill({json:{success:true,token:'signed-test-token'}});});
+ for(const code of ['110200','200500']){
+  await page.reload();await page.waitForFunction(()=>window.CinematicOrb);
+  await page.evaluate(value=>window.widgetError=value,code);
+  const scansBefore=scanCalls;
+  await page.locator('#email').fill('demo@example.com');await page.locator('#scan-btn').click();
+  await page.waitForFunction(()=>document.querySelector('#scan-form').dataset.result==='error');
+  const message=await page.locator('#form-error').textContent();
+  assert.ok(message.includes(code));
+  if(code==='110200')assert.ok(message.includes('127.0.0.1')&&message.includes('Hostname Management'));
+  assert.equal(scanCalls,scansBefore);assert.equal(tokenCalls,0);
+ }
  // Responsive geometry and keyboard focus in the same real DOM.
  for(const width of [375,768,1024,1440]){
   await page.setViewportSize({width,height:900});await page.reload();await page.waitForFunction(()=>window.CinematicOrb);

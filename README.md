@@ -69,8 +69,8 @@ e também pode ser removida do painel, sem remover `TURNSTILE_SECRET`.
 Se também usar www, autorize `www.ostnt.online` no widget e configure:
 
 ```text
-ALLOWED_ORIGINS=https://ostnt.online,https://www.ostnt.online
-TURNSTILE_HOSTNAMES=ostnt.online,www.ostnt.online
+ALLOWED_ORIGINS=https://ostnt.online,https://ostnt.netlify.app,https://www.ostnt.online
+TURNSTILE_HOSTNAMES=ostnt.online,ostnt.netlify.app,www.ostnt.online
 ```
 
 ## Deploy
@@ -93,7 +93,7 @@ publica as Functions e não é suficiente para esta integração.
    com `?render=explicit` e renderiza o widget dentro do formulário, lendo
    `data-sitekey="0x4AAAAAAFrCL8A3Pa1kzDsB"`, com a ação `scan`.
 3. O callback captura o token. Um fetch POST para `/.netlify/functions/token`
-   envia JSON `{ "cfToken": "..." }`.
+   envia JSON `{ "cf-turnstile-response": "..." }`.
 4. A Function envia POST para
    `https://challenges.cloudflare.com/turnstile/v0/siteverify` com URLSearchParams:
    `secret`, `response` e, quando disponível, `remoteip`.
@@ -101,11 +101,13 @@ publica as Functions e não é suficiente para esta integração.
    `{ "success": true, "token": "..." }`, incluindo uma autorização HMAC de
    60 segundos vinculada ao IP, enviada pelo frontend à Function scan.
 6. Falha de verificação retorna 401; indisponibilidade/configuração ausente 503;
-   origem negada 403; JSON/token inválido 400; método incompatível 405.
+   origem, hostname ou ação não autorizados 403; JSON/token inválido 400;
+   método incompatível 405.
 
 O segredo nunca é retornado. O GET de token retorna somente a chave pública.
-Tokens Turnstile são de uso único e expiram em cinco minutos. Cada tentativa
-cria um novo widget/token; erros, expiração e tempo limite permitem nova tentativa.
+Tokens Turnstile são de uso único e expiram em cinco minutos. O widget é mantido e renovado com `turnstile.reset(widgetId)` depois de cada
+tentativa; `turnstile.ready` é aguardado antes da execução explícita. Cada envio
+obtém um token novo; erros, expiração e tempo limite permitem nova tentativa.
 A CSP em public/_headers permite scripts, frames e conexões da Cloudflare.
 
 ## Desenvolvimento e verificação
@@ -172,3 +174,12 @@ Para publicar tudo no projeto existente:
 Alternativa com CLI: extraia o pacote, entre na pasta que contém netlify.toml,
 execute npm ci, netlify login, netlify link (selecione o projeto ostnt existente)
 e netlify deploy --build --prod. O deploy por CLI/Git inclui as Functions.
+
+
+## Widget existente e falhas do Turnstile
+
+A integração mantém a site key e o widget já criados; não cria ou substitui
+widgets e não recupera segredos da conta Cloudflare. O destino do segredo
+continua sendo TURNSTILE_SECRET nas Functions do mesmo projeto Netlify.
+Veja [TURNSTILE.md](TURNSTILE.md) para os códigos de erro, a configuração de
+Hostname Management e a verificação real após o deploy.

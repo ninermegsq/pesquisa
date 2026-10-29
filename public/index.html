@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
+<link rel="preconnect" href="https://challenges.cloudflare.com">
 <meta name="description" content="OSINT // infoc.hacker — verifique sinais públicos de exposição associados ao seu e-mail.">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>OSINT // DIGITAL FOOTPRINT · infoc.hacker</title>
@@ -412,23 +413,51 @@ function renderResults(data,email){
  out+=`<section class="foot-support"><div><h3>SEM PAYWALL · SEM ADS INVASIVOS</h3><p>Servidor, domínio e as cotas das APIs saem do meu bolso. Se a ferramenta te salvou, manda um café.</p><small>código e curadoria — <a href="https://instagram.com/infoc.hacker" target="_blank" rel="noopener me">@infoc.hacker</a></small></div><a class="bt amber" href="https://pay.cakto.com.br/o9xx8id_1257625" target="_blank" rel="noopener sponsored" aria-label="Apoiar o projeto via Cakto">MANTER NO AR</a></section>`;
  return {html:out,score};
 }
-let current=null,scanning=false,widgetId=null,turnstileLoading=null,scanAbort=null;
+let current=null,scanning=false,widgetId=null,turnstileLoading=null,scanAbort=null,turnstilePending=null;
 const form=$('scan-form');
 function pushLog(index,message,type='neutral'){
  const log=$('scan-log');if(!log)return;const el=document.createElement('div');el.className=type;el.textContent=`[${index}/9] ${message}`;log.append(el);log.scrollTop=log.scrollHeight;
 }
 async function getJson(url,options){const res=await fetch(url,{cache:'no-store',...options});let data;try{data=await res.json();}catch{throw Error(`Resposta inválida do servidor (${res.status}).`);}if(!res.ok)throw Error(data.error||`HTTP ${res.status}`);return data;}
+function turnstileError(code){
+ const id=String(code||'').replace(/[^0-9]/g,'').slice(0,12);
+ const suffix=id?` (Cloudflare ${id}).`:'.';
+ const host=window.location.hostname;
+ if(id==='110200')return Error(`O domínio ${host} não está autorizado neste widget. Adicione ${host} em Hostname Management do widget existente na Cloudflare${suffix}`);
+ if(['110100','110110','400020'].includes(id))return Error(`Chave pública do Turnstile inválida ou não encontrada. Confira o widget existente na Cloudflare${suffix}`);
+ if(id==='400070')return Error(`O widget Turnstile está desativado. Ative o widget existente na Cloudflare${suffix}`);
+ if(id==='400021')return Error(`A região da chave Turnstile não corresponde ao script utilizado. Confira a configuração do widget na Cloudflare${suffix}`);
+ if(id==='200500')return Error(`O navegador não carregou o Turnstile. Verifique se challenges.cloudflare.com está bloqueado pela rede ou por uma extensão${suffix}`);
+ if(id==='200100')return Error(`O Turnstile detectou um problema de relógio ou cache. Confira a data e a hora do dispositivo e recarregue a página${suffix}`);
+ if(['110600','110620'].includes(id))return Error(`A verificação expirou. Envie novamente para iniciar uma nova verificação${suffix}`);
+ return Error(`O Turnstile não concluiu a verificação. Tente novamente em um navegador atualizado${suffix}`);
+}
 function loadTurnstile(){
- if(window.turnstile)return Promise.resolve(window.turnstile);
+ const ready=api=>new Promise((resolve,reject)=>{
+  if(typeof api?.ready!=='function'){reject(Error('A API do Turnstile não ficou pronta. Recarregue a página.'));return;}
+  const timer=setTimeout(()=>reject(Error('A API do Turnstile não ficou pronta. Recarregue a página.')),20000);
+  try{api.ready(()=>{clearTimeout(timer);resolve(api);});}catch(error){clearTimeout(timer);reject(error);}
+ });
+ if(window.turnstile)return ready(window.turnstile);
  if(turnstileLoading)return turnstileLoading;
  turnstileLoading=new Promise((resolve,reject)=>{
   const script=document.createElement('script');
-  const timer=setTimeout(()=>fail(),15000);
-  function fail(){clearTimeout(timer);script.remove();turnstileLoading=null;reject(Error('Cloudflare Turnstile indisponível. Tente novamente.'));}
-  script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';script.async=true;
-  script.onload=()=>{clearTimeout(timer);resolve(window.turnstile);};script.onerror=fail;document.head.append(script);
+  const timer=setTimeout(()=>fail(),20000);
+  function fail(){clearTimeout(timer);script.remove();turnstileLoading=null;reject(Error('Não foi possível carregar o Turnstile de challenges.cloudflare.com. Verifique a conexão e os bloqueadores.'));}
+  script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';script.async=true;script.defer=true;
+  script.onload=()=>ready(window.turnstile).then(api=>{clearTimeout(timer);resolve(api);},fail);
+  script.onerror=fail;document.head.append(script);
  });
  return turnstileLoading;
+}
+function resetTurnstile(){
+ if(widgetId!==null){
+  try{window.turnstile.reset(widgetId);}catch{
+   try{window.turnstile?.remove(widgetId);}catch{}
+   widgetId=null;
+  }
+ }
+ $('security-slot').classList.remove('active');
 }
 async function challenge(signal){
  const slot=$('security-slot'),box=$('turnstile-widget');slot.classList.add('active');
@@ -438,16 +467,32 @@ async function challenge(signal){
   if(signal?.aborted){abort();return;}
   signal?.addEventListener('abort',abort,{once:true});
   loadTurnstile().then(api=>{cleanup();resolve(api);},error=>{cleanup();reject(error);});
- });if(!turnstile?.render)throw Error('Turnstile não carregou.');
+ });
  return new Promise((resolve,reject)=>{
-   let completed=false;
-   const timer=setTimeout(()=>finish(Error('Verificação demorou demais. Tente novamente.')),120000);
-   const abort=()=>finish(Error('Consulta cancelada.'));
-   signal?.addEventListener('abort',abort,{once:true});
-   if(signal?.aborted){abort();return;}
-   function finish(error,token){if(completed)return;completed=true;clearTimeout(timer);signal?.removeEventListener('abort',abort);if(error)reject(error);else resolve(token);}
-   try{widgetId=turnstile.render(box,{sitekey:box.dataset.sitekey,action:box.dataset.action,theme:'dark',appearance:'always',callback:t=>finish(null,t),'error-callback':()=>{finish(Error('Falha de verificação do Turnstile. Tente novamente.'));return true;},'expired-callback':()=>finish(Error('Verificação expirada. Tente novamente.')),'timeout-callback':()=>finish(Error('Verificação expirada. Tente novamente.'))});}
-   catch(e){finish(e);}
+  let completed=false;
+  const timer=setTimeout(()=>finish(Error('Verificação demorou demais. Tente novamente.')),120000);
+  const abort=()=>finish(Error('Consulta cancelada.'));
+  function finish(error,token){
+   if(completed)return;completed=true;clearTimeout(timer);
+   signal?.removeEventListener('abort',abort);turnstilePending=null;
+   if(error)reject(error);else resolve(token);
+  }
+  signal?.addEventListener('abort',abort,{once:true});
+  if(signal?.aborted){abort();return;}
+  turnstilePending=finish;
+  try{
+   if(widgetId===null){
+    widgetId=turnstile.render(box,{
+     sitekey:box.dataset.sitekey,action:box.dataset.action,theme:'dark',size:'flexible',
+     execution:'execute',appearance:'always',retry:'never',
+     callback:token=>turnstilePending?.(null,token),
+     'error-callback':code=>{turnstilePending?.(turnstileError(code));return true;},
+     'expired-callback':()=>turnstilePending?.(Error('Verificação expirada. Envie novamente.')),
+     'timeout-callback':()=>turnstilePending?.(Error('Verificação expirada. Envie novamente.'))
+    });
+   }
+   if(!completed)turnstile.execute(widgetId);
+  }catch(error){finish(error);}
  });
 }
 async function scan(event){
@@ -461,7 +506,7 @@ async function scan(event){
   await delay(190);const host=email.split('@')[1];try{pushLog(2,PROVIDERS.has(host)?'Host classificado: provedor pessoal.':'Host classificado: domínio próprio.','info');}catch{pushLog(2,'Falha na classificação do host.','warning');}
   await delay(210);pushLog(3,'Aguardando verificação de segurança e checagens externas…','info');
   const cfToken=await challenge(scanAbort.signal);
-  const signed=await getJson('/.netlify/functions/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cfToken}),signal:scanAbort.signal});
+  const signed=await getJson('/.netlify/functions/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({'cf-turnstile-response':cfToken}),signal:scanAbort.signal});
   const response=await getJson('/.netlify/functions/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:signed.token,email}),signal:scanAbort.signal});
   const av=response.availability||{};
   await delay(175);pushLog(3,`Gravatar: ${response.gravatar===true?'imagem pública identificada':response.gravatar===false?'sem imagem pública':'consulta indisponível'}`,response.gravatar===true?'success':response.gravatar===null?'warning':'neutral');
@@ -479,7 +524,7 @@ async function scan(event){
   requestAnimationFrame(()=>$('risk-fill')&&($('risk-fill').style.width=rendered.score+'%'));
   current={email,data:response};setOrbPhase('done');
  }catch(err){if(scanAbort.signal.aborted){window.CinematicOrb.cancel();err=Error('Consulta cancelada.');}else setOrbPhase('error');pushLog(9,'Scan interrompido: '+(err?.message||'erro não identificado'),'bad');$('form-error').textContent=err?.message||'Não foi possível concluir o scan.';}
- finally{scanning=false;$('scan-btn').disabled=false;try{if(widgetId!==null)window.turnstile?.remove(widgetId);}catch{}widgetId=null;$('turnstile-widget').replaceChildren();$('security-slot').classList.remove('active');}
+ finally{resetTurnstile();scanning=false;$('scan-btn').disabled=false;}
 }
 form.addEventListener('submit',scan);
 window.addEventListener('keydown',event=>{if(event.key==='Escape'&&scanning){event.preventDefault();scanAbort?.abort();window.CinematicOrb.cancel();}});

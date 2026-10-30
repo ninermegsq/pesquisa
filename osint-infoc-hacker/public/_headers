@@ -1,0 +1,6 @@
+/*
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=()
+  X-Content-Type-Options: nosniff
+  Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; img-src 'self' data: https://www.gravatar.com; connect-src 'self' https://challenges.cloudflare.com https://api.pwnedpasswords.com https://dns.google https://internetdb.shodan.io https://api.github.com https://keybase.io https://api.xposedornot.com; style-src 'self' 'unsafe-inline'; frame-src https://challenges.cloudflare.com; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com

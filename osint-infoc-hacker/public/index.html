@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="Analise sinais públicos de exposição associados a um e-mail com o scanner OSINT da infoc.hacker.">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<title>OSINT // Análise de E-mail · infoc.hacker</title>
+<style>
+:root{--bg:#060a07;--panel:#08110a;--line:#16291c;--line2:#12261a;--txt:#a9e6bd;--txt-dim:#3f6350;--txt-mid:#6f9c80;--green:#22c55e;--green-hi:#4ade80;--amber:#f59e0b;--amber-hi:#fbbf24;--cyan:#22d3ee;--red:#f87171;color-scheme:dark}
+*{box-sizing:border-box}html{font-size:12px}body{margin:0;min-width:0;background:var(--bg);color:var(--txt);font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;line-height:1.65}button,input{font:inherit}button,a{touch-action:manipulation}a{color:var(--txt);text-decoration:none}a:hover{color:var(--green-hi)}:focus-visible{outline:2px solid var(--green-hi)!important;outline-offset:3px}button{cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}.shell{width:min(100% - 24px,760px);margin:35px auto 65px;border:1px solid var(--line);border-radius:12px;overflow:hidden;position:relative;background:var(--panel);box-shadow:0 16px 65px #0008}.shell:before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;opacity:.5;background:repeating-linear-gradient(180deg,transparent 0 2px,rgba(0,0,0,.18) 2px 4px)}.shell>*{position:relative;z-index:1}.terminal{background:#071009;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:7px;padding:13px 17px;min-height:44px;font-size:10px;color:var(--txt-mid)}.dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}.dot.red{background:#f87171}.dot.amber{background:var(--amber)}.dot.green{background:var(--green)}.prompt{margin-left:8px}.online{margin-left:auto;color:var(--green-hi);font-size:9px;letter-spacing:.12em}.body{padding:31px clamp(14px,4vw,36px) 35px}.ascii{text-align:center;font-size:10px;line-height:1.18;white-space:pre;margin:0;color:var(--green);text-shadow:0 0 14px rgba(34,197,94,.45);overflow:hidden}.sub{text-align:center;margin:14px 0 25px;color:var(--txt-dim);font-size:10.5px;letter-spacing:.2em}.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line2);border:1px solid var(--line2);border-radius:9px;overflow:hidden;margin:0 0 26px}.stat{background:#07100a;min-width:0;padding:14px 5px;text-align:center}.stat strong{display:block;font-size:17px;line-height:1.2;font-weight:700;color:var(--green-hi)}.stat:nth-child(2) strong{color:var(--amber-hi)}.stat span{display:block;font-size:8px;letter-spacing:.08em;color:var(--txt-mid);margin-top:7px}.search{display:flex;align-items:stretch;min-height:52px;border:1px solid #295337;border-radius:8px;background:#060e08;transition:border-color .2s,box-shadow .2s;min-width:0}.search:focus-within{border-color:var(--green);box-shadow:0 0 0 3px rgba(34,197,94,.12)}.prefix{white-space:nowrap;display:flex;align-items:center;padding:0 0 0 14px;color:var(--txt-dim);font-size:11px}.search input{min-width:0;flex:1;border:0;background:transparent;outline:none;color:#d3ffe0;padding:10px 12px;font-size:12px}.search input::placeholder{color:#4b7358}.search input:focus-visible{outline:none!important}.bt{display:inline-flex;align-items:center;justify-content:center;gap:9px;padding:9px 14px;border-radius:6px;border:1px solid #1b8b49;background:#0c2413;color:var(--green-hi);font-size:10px;font-weight:700;letter-spacing:.06em;text-decoration:none;white-space:nowrap}.bt:hover{filter:brightness(1.2);color:inherit}.bt.solid{background:var(--green);border-color:var(--green);color:#03130a;padding:0 23px;border-radius:0 7px 7px 0;font-size:11px}.bt.amber{background:#2a1e0b;color:var(--amber-hi);border-color:#765219}.bt.amber.big{padding:11px 19px;border-color:#855a18;background:#342309;font-size:10.5px}.bt.cyan{color:#04212a;background:var(--cyan);border-color:var(--cyan)}.bt.neutral{border-color:var(--line);background:#0b180e;color:var(--txt-mid)}.blink{width:5px;height:5px;display:inline-block;border-radius:50%;background:var(--amber-hi);animation:pulse 2s ease-in-out infinite}@keyframes pulse{0%,100%{opacity:.35;box-shadow:0 0 0 0 #f59e0b55}50%{opacity:1;box-shadow:0 0 8px 3px #f59e0b55}}.guarantees{text-align:center;font-size:9.5px;color:var(--txt-mid);margin:13px 0 22px;letter-spacing:.01em}.support-cta{text-align:center}.credit{text-align:center;font-size:9.5px;color:var(--txt-dim);margin:20px 0 20px}.credit a{color:var(--txt-mid)}.credit a:hover{color:var(--amber)}.ad{position:relative;border:1px solid #155e75;border-left:2px solid var(--cyan);border-radius:8px;background:linear-gradient(135deg,rgba(34,211,238,.06),rgba(6,10,7,.3));padding:12px 13px;margin:20px 0}.ad .tag{position:absolute;right:0;top:0;color:#0a2229;background:var(--cyan);border-bottom-left-radius:5px;font-size:7px;padding:1px 8px;font-weight:700}.ad-head{display:flex;gap:9px;align-items:center;margin:0 72px 6px 0;color:#b9f5ff;font-size:11px;letter-spacing:.08em;font-weight:700}.ad-symbol{border:1px solid #155e75;display:grid;place-items:center;width:20px;height:20px;flex:none;color:var(--cyan);font-size:14px}.ad p{font-size:10.5px;color:#95bfcb;margin:5px 0 11px}.ad em{font-style:normal;color:var(--cyan)}.ad-footer{display:flex;align-items:center;gap:13px;flex-wrap:wrap}.ad small{font-size:8.5px;color:#57858e}.errorline{min-height:17px;margin:6px 0 0;color:var(--red);font-size:10px}.security-slot{display:none;margin:10px 0 0}.security-slot.active{display:block}.sectionline{border-top:1px solid var(--line);margin:17px 0}.actions{display:flex;flex-wrap:wrap;justify-content:center;gap:7px;margin-top:22px}.actions[hidden],#pass-panel[hidden]{display:none!important}.actions .bt{font-size:9.5px;padding:9px 12px}.log{max-height:120px;overflow:auto;border:1px solid var(--line);border-radius:8px;background:#040b06;padding:10px;margin:20px 0;color:var(--txt-dim);font-size:10px}.log>div{padding:2px 0;overflow-wrap:anywhere}.log .success{color:var(--green-hi)}.log .warning{color:var(--amber-hi)}.log .bad{color:var(--red)}.log .info{color:var(--cyan)}.scorecard{border:1px solid var(--line);border-radius:10px;background:#071009;padding:18px;margin:19px 0}.eyebrow{font-size:10px;letter-spacing:.14em;color:var(--txt-mid)}.score-num{font-size:26px;font-weight:700;line-height:1.4}.score-suffix{font-size:12px;color:var(--txt-mid)}.risk-low{color:var(--green-hi)}.risk-medium{color:var(--amber-hi)}.risk-high{color:var(--red)}.risk-bar{height:6px;background:#14251a;border-radius:8px;margin:10px 0 14px;overflow:hidden}.risk-fill{width:0;height:100%;background:linear-gradient(90deg,var(--green),var(--amber),var(--red));border-radius:8px;transition:width .85s ease-out}.chips{display:flex;flex-wrap:wrap;gap:7px}.chip{padding:3px 7px;border:1px solid #24533b;border-radius:5px;color:var(--green-hi);font-size:9px;background:#0b1a10}.chip.cyan{border-color:#155e75;color:var(--cyan);background:#091d20}.chip.red{border-color:#643030;color:var(--red);background:#1a0d0d}.chip.amber{border-color:#765219;color:var(--amber-hi)}.acc{border:1px solid var(--line);border-radius:9px;margin:9px 0;overflow:hidden;background:#071009}.acc summary{cursor:pointer;display:flex;align-items:center;gap:10px;padding:14px 12px;min-height:44px;list-style:none;font-size:11px;letter-spacing:.09em;font-weight:700;overflow-wrap:anywhere}.acc summary::-webkit-details-marker{display:none}.acc summary:focus-visible{outline:2px solid var(--green-hi);outline-offset:-3px}.arr{color:var(--green);font-size:10px;transition:transform .15s}.acc[open] .arr{transform:rotate(90deg)}.acc .count{margin-left:auto;font-size:10px;border:1px solid var(--line);padding:1px 6px;border-radius:5px;color:var(--txt-mid);white-space:nowrap}.acc .count.bad{color:var(--red);border-color:#582d32}.accbody{border-top:1px solid var(--line);padding:13px;font-size:10.5px;color:var(--txt-mid);overflow-wrap:anywhere}.accbody p{margin:0 0 10px}.accbody p:last-child{margin-bottom:0}.accbody strong{color:var(--txt)}.accbody a{color:var(--cyan);overflow-wrap:anywhere}.accbody a:hover{color:#b1f6ff}.breach{border-left:2px solid var(--red);padding:9px 11px;margin:9px 0;background:#110d0e;border-radius:0 7px 7px 0}.breach b{color:#fcbaba}.breach .meta{font-size:9px;color:var(--txt-dim)}.kv{padding:5px 0;border-bottom:1px solid #132519}.kv:last-child{border:0}.kv label{color:var(--txt-mid)}.warn{color:var(--red)!important}.ok{color:var(--green-hi)!important}.muted{color:var(--txt-dim)}.dork{padding:9px 0;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap}.dork code{color:#b6efc9;overflow-wrap:anywhere;flex:1;min-width:190px;font-size:10px}.dork-actions{display:flex;gap:5px;flex-wrap:wrap}.mini{font-size:8px!important;padding:5px 7px!important}.toolcat{margin:14px 0 7px;color:var(--green-hi);font-size:10px;letter-spacing:.07em}.tool{display:flex;gap:9px;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}.tool b{display:block;font-size:10px;color:var(--txt)}.tool span{font-size:9.3px;color:var(--txt-mid)}.tool .bt{flex:none}.foot-support{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:15px;border:1px dashed #4a3410;border-radius:9px;background:linear-gradient(180deg,rgba(245,158,11,.05),rgba(245,158,11,.01));padding:17px;margin:20px 0}.foot-support h3{margin:0 0 7px;color:var(--amber-hi);font-size:11px;letter-spacing:.12em}.foot-support p{margin:0 0 7px;color:#8a7440;font-size:10.5px;max-width:470px}.foot-support small{font-size:9.5px;color:#8a7440}.foot-support small a{color:var(--amber-hi)}#pass-panel{border:1px solid #765219;border-radius:9px;margin-top:14px;padding:15px;background:#17120a}#pass-panel label{display:block;color:var(--amber-hi);font-size:10px;margin-bottom:9px}#pass-panel input{width:min(100%,390px);border-radius:8px;border:1px solid #765219;background:#080b07;color:var(--txt);padding:10px}#pass-panel p{font-size:10px;color:#a58b56}.nowrap{white-space:nowrap}.status-msg{font-size:10px;color:var(--amber-hi)}.public-note{font-size:9px;color:var(--txt-dim);margin:8px 0 0}
+@media(max-width:520px){.shell{width:calc(100% - 14px);margin:9px auto 35px}.body{padding:22px 12px 28px}.ascii{font-size:8px}.terminal{padding:10px}.prompt{font-size:9px}.stats .stat{padding:12px 2px}.stats .stat strong{font-size:16px}.stats .stat span{font-size:7px;letter-spacing:0}.prefix{padding-left:8px;font-size:9px}.search input{font-size:10px;padding:8px 5px}.bt.solid{padding:0 13px;font-size:10px}.ad-head{font-size:10px}.acc summary{font-size:10px;letter-spacing:.04em}.dork code{min-width:100%}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.001ms!important;transition-duration:.001ms!important}}
+
+/* Desktop V2 — adaptação nativa do visual de esfera enviado como referência.
+   Zero React, Tailwind, imagens remotas, dependências ou scripts externos novos. */
+html{font-size:13px}
+body{background:radial-gradient(ellipse 72% 42% at 50% 0%,rgba(25,73,37,.19),transparent 68%),radial-gradient(circle at 2% 55%,rgba(11,47,23,.14),transparent 42%),#060a07;min-height:100vh}
+.shell{width:min(calc(100% - 44px),1140px);margin:35px auto 72px;background:linear-gradient(180deg,#08130b 0,#08110a 44%,#060e08 100%);border-color:#20412a;box-shadow:0 28px 110px #000a,0 0 0 1px #0b1b10;isolation:isolate}
+.shell:before{z-index:0}
+.terminal{min-height:58px;padding:14px 28px;background:linear-gradient(90deg,#07140b,#07100a 50%,#081b0d);border-bottom-color:#1f3b27;font-size:11px}
+.terminal .dot{box-shadow:0 0 0 2px #0c1a10}
+.online{font-size:10px;letter-spacing:.15em;text-shadow:0 0 12px #22c55e77}
+.body{padding:24px clamp(22px,4.4vw,58px) 42px}
+.hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,42%);gap:clamp(16px,3.2vw,44px);align-items:center;min-height:340px;margin:0 0 14px}
+.brand-block{min-width:0;padding:18px 0 24px}
+.hero-kicker{display:flex;align-items:center;gap:10px;font-size:9px;letter-spacing:.24em;color:#6f9c80;margin:0 0 24px}
+.hero-kicker-line{width:26px;height:1px;background:#22c55e;box-shadow:0 0 7px #22c55e55}
+.ascii{font-size:clamp(10px,1.3vw,13px);line-height:1.16;text-align:left;white-space:pre;color:var(--green-hi);text-shadow:0 0 22px #22c55e44;width:fit-content;max-width:100%}
+.sub{text-align:left;margin:16px 0 13px;color:#638c70;letter-spacing:.26em;font-size:10.5px}
+.hero-headline{font-size:clamp(24px,3.1vw,40px);line-height:1.18;letter-spacing:-.055em;font-weight:700;margin:16px 0 12px;color:#d0f5da}
+.hero-headline span{color:var(--green-hi);text-shadow:0 0 35px #22c55e22}
+.hero-description{margin:0;max-width:450px;font-size:11.5px;line-height:1.85;color:#82a88c}
+.hero-indicators{display:flex;gap:19px;flex-wrap:wrap;margin-top:22px;color:#679573;font-size:8px;letter-spacing:.14em}
+.hero-indicators span{display:flex;gap:7px;align-items:center}
+.hero-indicators i{display:inline-block;width:5px;height:5px;border-radius:100%;background:var(--green);box-shadow:0 0 10px #22c55e77}
+.orb-panel{position:relative;height:324px;min-width:0;overflow:hidden;border:1px solid #21472b;border-radius:14px;background:radial-gradient(ellipse 63% 59% at 50% 45%,rgba(31,95,48,.19),transparent 80%),repeating-linear-gradient(90deg,transparent 0 35px,rgba(47,118,61,.055) 35px 36px),repeating-linear-gradient(0deg,transparent 0 35px,rgba(47,118,61,.055) 35px 36px),#07100a;box-shadow:inset 0 1px #345b3825,inset 0 0 60px #0005}
+.orb-panel:after{content:"";position:absolute;inset:9px;border:1px solid #18311f;border-radius:10px;pointer-events:none}
+.orb-mark{position:absolute;top:21px;font-size:8px;letter-spacing:.16em;color:#50785d;z-index:1}
+.orb-mark-tl{left:25px}.orb-mark-tr{right:25px}
+.orb-halo{position:absolute;width:222px;height:222px;top:43px;left:50%;transform:translateX(-50%);border-radius:50%;background:radial-gradient(circle,rgba(41,168,83,.12),rgba(35,113,50,.045) 45%,transparent 70%);filter:blur(6px)}
+.orb-horizon{position:absolute;left:25px;right:25px;top:49%;height:1px;background:linear-gradient(90deg,transparent,#2b704088,transparent)}
+.orb-ring{position:absolute;top:calc(49% - 103px);left:calc(50% - 103px);width:206px;height:206px;border:1px dashed #346c3e55;border-radius:50%;transform:rotateX(62deg) rotate(-20deg);pointer-events:none}
+.orb-ring-inner{width:164px;height:164px;top:calc(49% - 82px);left:calc(50% - 82px);border-style:solid;border-color:#346c3e33;transform:rotateY(68deg) rotate(-25deg)}
+#signal-orb{position:absolute;z-index:1;width:286px;height:286px;left:50%;top:48%;transform:translate(-50%,-50%);pointer-events:none}
+.orb-satellite{position:absolute;width:5px;height:5px;border:1px solid var(--green-hi);background:#1c793d;box-shadow:0 0 10px var(--green);border-radius:50%;z-index:2}
+.orb-satellite-a{top:24%;left:20%}.orb-satellite-b{top:64%;right:18%}
+.orb-status{position:absolute;z-index:3;bottom:33px;left:0;width:100%;text-align:center;font-size:9px;letter-spacing:.16em;color:var(--green-hi);text-shadow:0 0 12px #22c55e44}
+.orb-status:before{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--green);margin-right:9px;vertical-align:2px;box-shadow:0 0 9px #22c55e}
+.orb-caption{position:absolute;z-index:1;bottom:13px;left:0;width:100%;text-align:center;font-size:7px;letter-spacing:.16em;color:#40654c}
+.stats{margin:0 0 27px;border-radius:10px;border-color:#23432b;box-shadow:inset 0 0 15px #0004}
+.stat{padding:20px 6px;background:#08130b}
+.stat strong{font-size:23px;text-shadow:0 0 22px #22c55e2d}
+.stat span{font-size:9px;margin-top:9px}
+.search{min-height:64px;background:#050d07;border-color:#34704a;box-shadow:0 4px 27px #0005, inset 0 0 12px #061a0b}
+.prefix{padding-left:20px;font-size:12px;color:#6e9d7d}
+.search input{font-size:14px;padding:11px 15px}
+.bt.solid{font-size:12px;padding:0 35px;letter-spacing:.16em}
+.guarantees{font-size:10px;letter-spacing:.03em;margin:17px 0 24px}
+.support-cta{margin-top:2px}
+.credit{margin:15px 0 27px}
+.ad{padding:19px 21px;margin:26px 0 8px;box-shadow:0 3px 20px #0004}
+.ad-head{font-size:12px;letter-spacing:.1em}
+.ad p{font-size:11px;line-height:1.8}
+.ad .bt{padding:11px 18px}
+#stage{min-width:0}
+#stage .scorecard{padding:23px 27px;margin:23px 0 18px;background:linear-gradient(110deg,#0b1a0e,#07100a);border-color:#274630}
+#stage .score-num{font-size:34px}
+#stage .log{margin:22px 0 10px;padding:13px 17px;line-height:1.9}
+#stage:has(.scorecard){display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:16px;row-gap:12px;align-items:start}
+#stage:has(.scorecard)> .log,#stage:has(.scorecard)> .scorecard,#stage:has(.scorecard)> .ad,#stage:has(.scorecard)> .foot-support{grid-column:1/-1}
+#stage:has(.scorecard)> .acc{margin:0;min-width:0}
+#stage:has(.scorecard)> .acc[open]{grid-column:1/-1}
+#stage:has(.scorecard)> .acc:nth-of-type(6),#stage:has(.scorecard)> .acc:nth-of-type(7){grid-column:1/-1}
+#stage .acc summary{min-height:58px;font-size:10.5px;padding:15px 17px;letter-spacing:.08em}
+#stage .accbody{padding:18px}
+#stage .tool{padding:10px 0}
+#stage .foot-support{margin:14px 0}
+.actions{padding-top:14px;border-top:1px solid var(--line);justify-content:flex-start}
+@keyframes orb-calm{50%{opacity:.73;transform:scale(.97)}}
+@keyframes orb-busy{50%{opacity:1;transform:scale(1.08)}}
+.orb-halo{animation:orb-calm 5s ease-in-out infinite;transform-origin:center}
+.shell[data-scan-state="scanning"] .orb-halo{animation:orb-busy 1.15s ease-in-out infinite}
+.shell[data-scan-state="scanning"] .orb-status:before{animation:pulse 1s linear infinite}
+.shell[data-scan-state="done"] .orb-status{color:#bbf3c7}
+.shell[data-scan-state="error"] .orb-status{color:var(--red)}
+.shell[data-scan-state="error"] .orb-status:before{background:var(--red);box-shadow:0 0 8px var(--red)}
+@media(max-width:880px){
+ .shell{width:calc(100% - 28px);margin:20px auto 48px}
+ .body{padding:23px 24px 30px}
+ .hero{grid-template-columns:minmax(0,1fr) 240px;min-height:285px;gap:12px}
+ .orb-panel{height:255px}
+ #signal-orb{width:225px;height:225px}
+ .orb-ring{width:178px;height:178px;left:calc(50% - 89px);top:calc(49% - 89px)}
+ .orb-ring-inner{width:135px;height:135px;left:calc(50% - 67.5px);top:calc(49% - 67.5px)}
+ .orb-halo{width:185px;height:185px;top:32px}
+ .brand-block{padding:18px 0}
+ .hero-headline{font-size:28px}
+ .hero-kicker{margin-bottom:19px}
+ .hero-description{font-size:10px}
+ .hero-indicators{gap:10px;font-size:7px}
+}
+@media(max-width:650px){
+ .shell{width:calc(100% - 14px);margin:9px auto 34px;border-radius:12px}
+ .terminal{min-height:44px;padding:10px 12px}
+ .body{display:block;padding:22px 13px 26px}
+ .hero{display:block;min-height:0;margin:0 0 8px}
+ .brand-block{text-align:center;padding:0}
+ .hero-kicker,.hero-headline,.hero-description,.hero-indicators,.orb-panel{display:none}
+ .ascii{font-size:clamp(7.5px,2.3vw,10px);text-align:center;margin:0 auto}
+ .sub{text-align:center;margin:14px 0 21px}
+ .stats{margin-bottom:23px}
+ .stat{padding:13px 3px}
+ .stat strong{font-size:17px}
+ .stat span{font-size:8px;letter-spacing:0}
+ .search{min-height:52px}
+ .search .prefix{padding-left:9px;font-size:9px}
+ .search input{font-size:11px;padding:9px 6px}
+ .bt.solid{padding:0 13px;font-size:10px;letter-spacing:.05em}
+ .guarantees{font-size:9px;line-height:1.9}
+ .ad{padding:12px 13px}
+ .ad-head{font-size:10px}
+ #stage:has(.scorecard){display:block}
+ #stage .acc{margin:9px 0}
+ #stage .scorecard{padding:17px;margin:20px 0}
+ #stage .acc summary{min-height:44px;padding:12px 10px;font-size:10px}
+ #stage .accbody{padding:12px}
+ .actions{justify-content:center}
+}
+@media(prefers-reduced-motion:reduce){.orb-halo,.shell[data-scan-state="scanning"] .orb-status:before{animation:none!important}}
+
+:root{--background:#050505;--foreground:#e7e6d9;--primary:#e7e6d9;--card:#0c0c0b;--border:rgba(231,230,217,.15);--ember:#e6a274;--ease-prisma:cubic-bezier(.16,1,.3,1);--font-sans:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;--font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+html{scroll-behavior:smooth}body{margin:0;min-width:320px;background:#050505;color:#e7e6d9;font-family:var(--font-sans);line-height:1.55}.osint-page{min-height:100vh;overflow:hidden;background:radial-gradient(ellipse 70% 45% at 50% 34%,rgba(33,29,24,.44),transparent 75%),#050505}.site-head{height:68px;padding:0 clamp(20px,5vw,72px);display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(231,230,217,.08);font:11px var(--font-mono);letter-spacing:.12em}.brand{display:flex;align-items:center;gap:10px;color:#e7e6d9;text-decoration:none}.brand b{color:#e6a274;font-weight:500}.brand-mark{display:grid;place-items:center;width:27px;height:27px;border:1px solid rgba(231,230,217,.35);border-radius:50%;font-family:Georgia,serif;font-size:16px}.head-status{color:rgba(231,230,217,.54);font-size:9px}.head-status i{display:inline-block;width:6px;height:6px;margin-right:8px;border-radius:50%;background:#e6a274;box-shadow:0 0 12px #e6a274;vertical-align:1px}
+.mo-root{--oCenter:0;--cardH:150px;position:relative;height:min(780px,calc(100svh - 68px));min-height:650px;overflow:hidden;color:var(--primary);font-family:var(--font-sans)}.mo-bg{position:absolute;inset:0;background:radial-gradient(120% 80% at 50% 46%,rgba(18,17,15,.82),rgba(5,5,5,.96) 72%)}.mo-halo{position:absolute;left:50%;top:46%;width:560px;height:560px;translate:-50% -50%;border-radius:50%;background:radial-gradient(closest-side,rgba(231,230,217,.09),transparent);opacity:var(--oCenter);pointer-events:none}.mo-intro{position:absolute;left:50%;top:34%;width:min(640px,calc(100vw - 32px));translate:-50% -50%;display:flex;flex-direction:column;align-items:center;gap:15px;text-align:center;transition:opacity .35s var(--ease-prisma),transform .35s var(--ease-prisma)}.mo-root:not([data-phase="idle"]) .mo-intro{opacity:0;transform:translateY(-10px);pointer-events:none}.eyebrow{display:flex;align-items:center;gap:9px;color:rgba(231,230,217,.55);font:9px var(--font-mono);letter-spacing:.2em}.eyebrow-line{width:22px;height:1px;background:#e6a274}.mo-intro h1{margin:0;color:#f2f1e8;font:500 clamp(36px,6vw,68px)/1.02 Georgia,"Times New Roman",serif;letter-spacing:-.035em}.mo-intro h1 em{color:#e6a274;font-weight:400}.mo-intro p{max-width:480px;margin:0;color:rgba(231,230,217,.58);font-size:14px}.intro-points{display:flex;align-items:center;gap:12px;margin-top:7px;color:rgba(231,230,217,.42);font:8px var(--font-mono);letter-spacing:.12em}.intro-points i{width:3px;height:3px;border-radius:50%;background:#e6a274}
+.mo-mover{position:absolute;left:50%;top:46%;width:0;height:0;will-change:transform;transform:translate3d(0,var(--home-y,300px),0);transition:transform 1.05s cubic-bezier(.5,0,.1,1)}.mo-trail{position:absolute;left:0;top:0;width:100px;height:100px;border-radius:50%;opacity:0;pointer-events:none;background:radial-gradient(circle at 38% 32%,rgba(244,243,230,.9),rgba(231,230,217,.18) 58%,transparent 70%)}.mo-actor{--w:min(560px,calc(100vw - 32px));--h:60px;--r:999px;position:absolute;left:0;top:0;width:var(--w);height:var(--h);border-radius:var(--r);transform:translate(-50%,-50%);transition:width .68s cubic-bezier(.65,0,.2,1),height .68s cubic-bezier(.65,0,.2,1),border-radius .68s var(--ease-prisma)}.mo-actor>*{border-radius:inherit}.mo-underglow{position:absolute;left:12%;right:12%;bottom:-22px;height:36px;background:rgba(231,230,217,.18);filter:blur(22px);opacity:var(--oGlow,1);pointer-events:none}.mo-halo-green{position:absolute;inset:-55%;border-radius:50%;background:radial-gradient(closest-side,rgba(230,162,116,.4),transparent);opacity:var(--oHalo,0);pointer-events:none}.mo-surface{position:absolute;inset:0;overflow:hidden;background:#10100f;border:1px solid rgba(231,230,217,.16);box-shadow:0 24px 60px -24px #000;opacity:var(--oPill,1);transition:border-color .2s}.mo-actor[data-shake] .mo-surface{border-color:var(--ember)}.mo-aurora{position:absolute;inset:-60% -15%;opacity:calc(var(--oAur,1)*.55);filter:blur(20px);animation:mo-drift 7s ease-in-out infinite alternate}.mo-aurora i{position:absolute;width:40%;height:100%;border-radius:50%}.mo-aurora i:nth-child(1){left:0;background:radial-gradient(closest-side,rgba(231,230,217,.18),transparent)}.mo-aurora i:nth-child(2){left:22%;background:radial-gradient(closest-side,rgba(230,162,116,.18),transparent)}.mo-aurora i:nth-child(3){left:46%;background:radial-gradient(closest-side,rgba(231,230,217,.12),transparent)}.mo-aurora i:nth-child(4){left:66%;background:radial-gradient(closest-side,rgba(230,162,116,.14),transparent)}.mo-ball{position:absolute;inset:0;background:radial-gradient(circle at 36% 30%,#f6f5e9,#e1e0cc 42%,#6f6e64);box-shadow:0 0 44px rgba(231,230,217,.32);opacity:var(--oBall,0);transition:opacity .3s}.mo-green{position:absolute;inset:0;background:radial-gradient(circle at 36% 30%,#ffdbbf,var(--ember) 55%,#b9663a);box-shadow:0 0 40px rgba(230,162,116,.55);transform:scale(var(--gs,.55));opacity:var(--oGreen,0);transition:opacity .22s}.mo-card{position:absolute;inset:0;background:#10100f;border:1px solid rgba(231,230,217,.16);box-shadow:0 30px 80px -30px #000;transform:scale(var(--cs,1));opacity:var(--oCard,0);transition:opacity .3s}.mo-card:after{content:"";position:absolute;inset:-1px;border-radius:inherit;box-shadow:0 0 60px rgba(230,162,116,.22);opacity:calc((var(--bloom,1) - .625)/.375)}.mo-ring{position:absolute;inset:-1px;padding:1px;background:conic-gradient(from var(--angle,0deg),transparent 0 58%,rgba(231,230,217,.55) 74%,rgba(230,162,116,.8) 86%,transparent 96%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:var(--oRing,1);animation:mo-spin 4.5s linear infinite;pointer-events:none}.mo-actor[data-typing] .mo-ring{animation-duration:1.4s}.mo-input{position:absolute;inset:0;display:flex;align-items:center;gap:10px;padding:0 8px 0 20px;opacity:var(--oInput,1);transform:scale(var(--inScale,1));transition:opacity .22s}.mo-spark{width:18px;height:18px;flex:none;color:rgba(231,230,217,.55)}.mo-field{min-width:0;flex:1;border:0;background:transparent;color:#f2f1e8;font-size:15px;outline:none}.mo-field::placeholder{color:rgba(231,230,217,.38)}.mo-send{display:grid;place-items:center;width:44px;height:44px;flex:none;border:0;border-radius:50%;background:rgba(231,230,217,.08);color:rgba(231,230,217,.6);cursor:pointer;transition:background .25s,color .25s,transform .25s}.mo-send svg{width:18px;height:18px}.mo-send[data-ready]{background:#e6a274;color:#120d09}.mo-send[data-ready]:hover{transform:scale(1.06)}.mo-send:disabled{opacity:.5}.mo-error{position:absolute;left:14px;top:calc(100% + 12px);width:calc(100% - 28px);margin:0;text-align:center;color:#e6a274;font:11px var(--font-mono)}.mo-orb{position:absolute;left:50%;top:50%;width:220px;height:220px;margin:-110px 0 0 -110px;opacity:0;pointer-events:none;transition:opacity .4s}.mo-pulse{position:absolute;left:50%;top:50%;width:132px;height:132px;margin:-66px 0 0 -66px;border-radius:50%;border:1px solid var(--ember);opacity:0;pointer-events:none}.mo-answer{position:absolute;inset:0;display:flex;flex-direction:column;gap:10px;padding:20px 23px;overflow-y:auto;text-align:left;opacity:var(--oCard,0);pointer-events:none;outline:none;scrollbar-width:thin}.mo-root[data-phase="answered"] .mo-answer,.mo-root[data-phase="error"] .mo-answer{pointer-events:auto}.mo-a-head{display:flex;align-items:center;gap:8px;flex:none;color:rgba(231,230,217,.5);font:9px var(--font-mono);letter-spacing:.18em}.mo-a-dot{width:6px;height:6px;border-radius:50%;background:var(--ember);transform:scale(var(--dotS,0))}.mo-a-body{margin:0;color:rgba(231,230,217,.92);font-size:15px;line-height:1.45}.mo-status{position:absolute;left:50%;top:calc(46% + 100px);width:300px;height:24px;transform:translate(-50%,calc(var(--sTy,6)*1px));opacity:var(--sOp,0);font:12px var(--font-mono);color:rgba(231,230,217,.72);text-align:center;pointer-events:none;transition:opacity .25s}.mo-root[data-phase="launch"] .mo-mover,.mo-root[data-phase="think"] .mo-mover,.mo-root[data-phase="resolve"] .mo-mover,.mo-root[data-phase="condense"] .mo-mover,.mo-root[data-phase="answered"] .mo-mover,.mo-root[data-phase="error"] .mo-mover{transform:translate3d(0,0,0)}.mo-root[data-phase="launch"] .mo-actor,.mo-root[data-phase="think"] .mo-actor{--w:60px;--h:60px;--r:50%}.mo-root[data-phase="think"] .mo-actor{--w:132px;--h:132px}.mo-root[data-phase="launch"] .mo-input,.mo-root[data-phase="think"] .mo-input,.mo-root[data-phase="resolve"] .mo-input,.mo-root[data-phase="condense"] .mo-input,.mo-root[data-phase="answered"] .mo-input,.mo-root[data-phase="error"] .mo-input{opacity:0;pointer-events:none}.mo-root[data-phase="launch"] .mo-ball,.mo-root[data-phase="think"] .mo-orb{opacity:1}.mo-root[data-phase="launch"] .mo-status,.mo-root[data-phase="think"] .mo-status,.mo-root[data-phase="resolve"] .mo-status,.mo-root[data-phase="condense"] .mo-status,.mo-root[data-phase="answered"] .mo-status,.mo-root[data-phase="error"] .mo-status{opacity:1}.mo-root[data-phase="think"] .mo-halo-green{opacity:1}.mo-root[data-phase="resolve"] .mo-orb,.mo-root[data-phase="condense"] .mo-orb{opacity:0}.mo-root[data-phase="condense"] .mo-green,.mo-root[data-phase="answered"] .mo-green,.mo-root[data-phase="error"] .mo-green{opacity:1}.mo-root[data-phase="answered"] .mo-actor,.mo-root[data-phase="error"] .mo-actor{--w:min(440px,calc(100vw - 32px));--h:150px;--r:20px}.mo-root[data-phase="answered"] .mo-card,.mo-root[data-phase="error"] .mo-card{opacity:1}.mo-root[data-phase="answered"] .mo-answer,.mo-root[data-phase="error"] .mo-answer{opacity:1}.mo-root[data-phase="answered"] .mo-status,.mo-root[data-phase="error"] .mo-status{top:calc(46% + 112px)}.mo-reset{position:absolute;left:50%;top:calc(46% + 145px);translate:-50% 0;border:1px solid var(--border);border-radius:999px;padding:7px 16px;font:11px var(--font-mono);color:rgba(231,230,217,.78);background:#0a0a09;cursor:pointer;opacity:0;pointer-events:none;transition:opacity .3s,background .25s,color .25s}.mo-root[data-phase="answered"] .mo-reset,.mo-root[data-phase="error"] .mo-reset{opacity:1;pointer-events:auto}.mo-reset:hover{background:#e6a274;color:#100b08}.mo-live{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}.mo-root[data-phase="idle"] .mo-mover{transition:none}.security-slot{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);z-index:10;display:none}.security-slot.active{display:block}.trust-row{display:flex;justify-content:center;gap:clamp(18px,5vw,70px);padding:22px 18px 34px;border-bottom:1px solid rgba(231,230,217,.08);color:rgba(231,230,217,.48);font:9px var(--font-mono);letter-spacing:.08em;text-align:center}.trust-row b{color:#e6a274;font-size:15px;margin-right:5px}.results-wrap{width:min(100% - 32px,920px);margin:42px auto 70px}.results-wrap .log{border-color:rgba(231,230,217,.15);background:#0c0c0b;color:rgba(231,230,217,.65)}.results-wrap .scorecard,.results-wrap .acc{background:#0c0c0b;border-color:rgba(231,230,217,.15)}.results-wrap .eyebrow,.results-wrap .accbody,.results-wrap .acc .count{color:rgba(231,230,217,.56)}.results-wrap .acc summary,.results-wrap .score-num{color:#e7e6d9}.results-wrap .chip{background:#171511;border-color:rgba(231,230,217,.2);color:#e6a274}.results-wrap .risk-low,.results-wrap .ok{color:#9fd3ad!important}.results-wrap .risk-medium,.results-wrap .warn{color:#e6a274!important}.results-wrap .toolcat{color:#e6a274}.results-wrap .tool b,.results-wrap .breach b{color:#eee}.results-wrap .actions{justify-content:center}.results-wrap .bt{font-family:var(--font-mono)}.results-wrap #pass-panel{background:#13100d;border-color:#806046}.results-wrap #stage:empty{display:none}.site-foot{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;padding:22px clamp(20px,5vw,72px);border-top:1px solid rgba(231,230,217,.08);color:rgba(231,230,217,.4);font:9px var(--font-mono);letter-spacing:.08em}.site-foot a{color:#e6a274;text-decoration:none}
+@property --angle{syntax:"<angle>";inherits:false;initial-value:0deg}@keyframes mo-spin{to{--angle:360deg}}@keyframes mo-drift{from{transform:translateX(-14%)}to{transform:translateX(14%)}}@keyframes mo-dot{0%,80%,100%{opacity:.25}40%{opacity:1}}@keyframes mo-shake{0%,100%{transform:translate(-50%,-50%)}25%{transform:translate(calc(-50% - 4px),-50%)}75%{transform:translate(calc(-50% + 4px),-50%)}}@media(max-width:650px){.site-head{height:58px;padding:0 16px}.mo-root{height:690px;min-height:620px}.mo-intro{top:31%;gap:13px}.mo-intro h1{font-size:clamp(38px,11vw,54px)}.mo-intro p{font-size:13px;max-width:330px}.intro-points{flex-wrap:wrap;justify-content:center;gap:8px;font-size:7px}.mo-mover{top:45%}.mo-status{top:calc(45% + 94px);font-size:11px}.mo-root[data-phase="answered"] .mo-status,.mo-root[data-phase="error"] .mo-status{top:calc(45% + 112px)}.mo-reset{top:calc(45% + 145px)}.mo-field{font-size:13px}.mo-input{padding-left:14px;gap:7px}.mo-spark{width:16px;height:16px}.mo-send{width:40px;height:40px}.trust-row{gap:12px;padding:18px 10px 26px;font-size:7px}.trust-row b{font-size:12px}.results-wrap{width:calc(100% - 20px);margin-top:25px}.site-foot{padding:20px 16px}.results-wrap .acc summary{font-size:10px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.001ms!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
+
+</style>
+</head>
+<body>
+<main class="osint-page">
+  <header class="site-head">
+    <a class="brand" href="/" aria-label="OSINT InfoC Hacker início"><span class="brand-mark">O</span><span>OSINT <b>//</b> INFOC.HACKER</span></a>
+    <span class="head-status"><i></i> SCANNER PÚBLICO</span>
+  </header>
+  <section class="mo-root" id="morphRoot" data-phase="idle" aria-label="Scanner OSINT">
+    <div class="mo-bg" aria-hidden="true"></div>
+    <div class="mo-halo" aria-hidden="true"></div>
+    <div class="mo-intro">
+      <div class="eyebrow"><span class="eyebrow-line"></span> RECONHECIMENTO DIGITAL / 01</div>
+      <h1>Descubra sua<br><em>pegada digital.</em></h1>
+      <p>Consulte sinais públicos de exposição associados a um endereço de e-mail.</p>
+      <div class="intro-points"><span>FONTES AUTOMÁTICAS</span><i></i><span>RESULTADO PRIVADO</span><i></i><span>SEM CHAVE DO VISITANTE</span></div>
+    </div>
+    <div class="mo-mover" id="morphMover">
+      <span class="mo-trail" aria-hidden="true"></span><span class="mo-trail" aria-hidden="true"></span><span class="mo-trail" aria-hidden="true"></span><span class="mo-trail" aria-hidden="true"></span><span class="mo-trail" aria-hidden="true"></span><span class="mo-trail" aria-hidden="true"></span>
+      <div class="mo-actor" id="morphActor">
+        <div class="mo-underglow" aria-hidden="true"></div><div class="mo-halo-green" aria-hidden="true"></div>
+        <div class="mo-surface" aria-hidden="true"><div class="mo-aurora"><i></i><i></i><i></i><i></i></div></div>
+        <div class="mo-ball" aria-hidden="true"></div><div class="mo-green" aria-hidden="true"></div><div class="mo-card" aria-hidden="true"></div><div class="mo-ring" aria-hidden="true"></div>
+        <form id="scan-form" class="mo-input" novalidate autocomplete="off">
+          <svg class="mo-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3.5l1.7 4.8 4.8 1.7-4.8 1.7L10 16.5l-1.7-4.8L3.5 10l4.8-1.7L10 3.5z"/><path d="M18 14.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7.7-1.8z"/></svg>
+          <input id="email" name="email" class="mo-field" type="email" inputmode="email" maxlength="254" autocomplete="email" spellcheck="false" placeholder="Digite o e-mail para analisar…" aria-label="E-mail a analisar" required>
+          <button id="scan-btn" class="mo-send" type="submit" aria-label="Iniciar análise"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M5.5 11.5L12 5l6.5 6.5"/></svg></button>
+          <p id="form-error" class="mo-error" role="alert" aria-live="polite"></p>
+        </form>
+        <canvas class="mo-orb" id="signal-orb" aria-hidden="true"></canvas><div class="mo-pulse" aria-hidden="true"></div>
+        <div class="mo-answer" tabindex="-1" role="group" aria-label="Resumo da análise"><div class="mo-a-head"><i class="mo-a-dot"></i><span>RESULTADO DA CONSULTA</span></div><p class="mo-a-body" id="answer-content">A análise aparecerá aqui.</p></div>
+      </div>
+    </div>
+    <div class="mo-status" id="orb-status" aria-live="polite">Pronto para analisar</div>
+    <div id="security-slot" class="security-slot" aria-live="polite"></div>
+    <button type="button" class="mo-reset" id="clear-btn">Nova análise</button>
+    <div class="mo-live" role="status" aria-live="polite" id="morph-live"></div>
+  </section>
+  <div class="trust-row"><span><b>78</b> ferramentas na base</span><span><b>9</b> consultas automáticas</span><span><b>0</b> chaves exigidas do visitante</span></div>
+  <section class="results-wrap" aria-label="Resultados da análise">
+    <div id="stage" aria-live="polite"></div>
+    <nav id="actions" class="actions" hidden aria-label="Ações após o scan">
+      <button class="bt amber" id="password-toggle" type="button" aria-expanded="false">+ TESTAR SENHA</button>
+      <button class="bt" id="export-btn" type="button">EXPORTAR</button>
+      <a class="bt amber" href="https://pay.cakto.com.br/o9xx8id_1257625" target="_blank" rel="noopener sponsored" aria-label="Apoiar o projeto via Cakto">APOIAR</a>
+    </nav>
+    <section id="pass-panel" hidden><label for="password">TESTE ANÔNIMO DE SENHA · SHA-1 / K-ANONYMITY</label><input id="password" type="password" autocomplete="new-password" placeholder="Digite uma senha para conferir"><button id="password-run" type="button" class="bt amber">VERIFICAR</button><p>A senha nunca sai do browser. Apenas os 5 primeiros caracteres do hash SHA-1 são enviados para a API.</p><p id="password-result" class="status-msg" role="status"></p></section>
+  </section>
+  <footer class="site-foot"><span>OSINT // INFOC.HACKER</span><span>Consultas públicas · Resultados podem ser parciais</span><a href="https://instagram.com/infoc.hacker" target="_blank" rel="noopener me">@infoc.hacker</a></footer>
+</main>
+<script>
+'use strict';
+// Four categories, with one-line descriptions and the exact original website URLs.
+// The additional EmailRep entry belongs to the explicitly requested deep-link mapping;
+// it completes the supplied 77-item enumeration to 78 without inventing a provider.
+const CATEGORIES = [
+  {name:'VAZAMENTOS & SENHAS', items:`XposedOrNot|breaches + pastes + risco · API sem chave|https://xposedornot.com/
+Have I Been Pwned|padrão-ouro de breaches · web grátis|https://haveibeenpwned.com/
+Pwned Passwords|senha por SHA-1, CORS livre|https://haveibeenpwned.com/Passwords
+LeakCheck|10 bi de registros · free diário|https://leakcheck.io/
+DeHashed|email/user/IP/tel · mostra plaintext|https://dehashed.com/
+Intelligence X|pastes, leaks, darknet|https://intelx.io/
+Leak-Lookup|agregador multi-base|https://leak-lookup.com/
+BreachDirectory|API free 100/mês|https://breachdirectory.org/
+Hudson Rock|infostealer logs|https://cavalier.hudsonrock.com/
+Have I Been Sold|dados à venda em marketplace|https://haveibeensold.app/
+psbdmp.ws|dump search do Pastebin|https://psbdmp.ws/
+Doxbin|dossiês e dumps de nick|https://doxbin.com/
+Paste.ee|pastes recentes|https://paste.ee/
+Rentry|pastes markdown|https://rentry.co/
+Firefox Monitor|alerta de breach|https://monitor.firefox.com/`},
+  {name:'CADASTROS & PEGADA SOCIAL', items:`Epieos|reverse email → 140+ redes, silent|https://epieos.com/
+Holehe|120+ sites via reset, sem avisar|https://github.com/megadose/holehe
+user-scanner|enumeração em massa|https://github.com/kaifcodec/user-scanner
+Blackbird|caça perfis por email/user|https://blackbird-osint.com/
+WhatsMyName|username em 640+ sites|https://whatsmyname.app/
+Maigret|relatório HTML de pegada|https://github.com/soxoj/maigret
+GHunt|conta Google a partir do email|https://github.com/mxrch/GHunt
+Gravatar|MD5 revela avatar público|https://gravatar.com/
+GitHub Search|email em commits e perfis|https://github.com/search
+Keybase|PGP + provas sociais|https://keybase.io/
+ThatsThem|email → nome, endereço, tel|https://thatsthem.com/
+TruePeopleSearch|busca reversa por email|https://www.truepeoplesearch.com/
+FastPeopleSearch|registros públicos EUA|https://www.fastpeoplesearch.com/
+Radaris|agregador de pessoas|https://radaris.com/
+PeekYou|username → perfis|https://www.peekyou.com/
+IDCrawl|busca por nome/user/email|https://www.idcrawl.com/
+Social Searcher|menções em redes|https://www.social-searcher.com/
+Sync.me|email/tel → perfis|https://sync.me/
+Numlookup|operadora de telefone|https://www.numlookup.com/`},
+  {name:'DOMÍNIOS, WHOIS & INFRA', items:`crt.sh|subdomínios via CT logs|https://crt.sh/
+Cert Spotter|certificados emitidos|https://sslmate.com/certspotter/
+ViewDNS Reverse Whois|domínios ligados ao email|https://viewdns.info/reversewhois/
+Whoxy|reverse whois do registrante|https://www.whoxy.com/
+WhoisXML API|500 créditos free|https://whoisxmlapi.com/
+SecurityTrails|histórico DNS|https://securitytrails.com/
+Phonebook.cz|emails e subdomínios do host|https://phonebook.cz/
+DNSDumpster|recon de DNS|https://dnsdumpster.com/
+Shodan|serviços expostos|https://www.shodan.io/
+Censys|hosts e certificados|https://search.censys.io/
+Netlas|scan de internet|https://app.netlas.io/
+FOFA|fingerprint de ativos|https://fofa.info/
+ZoomEye|mapeamento de dispositivos|https://www.zoomeye.org/
+GrayhatWarfare|buckets S3 abertos|https://grayhatwarfare.com/
+urlscan.io|recursos e scans|https://urlscan.io/
+BGP.he.net|rotas e ASN|https://bgp.he.net/
+RIPE Stat|registro de roteamento|https://stat.ripe.net/
+ipinfo|dono e geolocalização de IP|https://ipinfo.io/
+MXToolbox|MX, SPF, DMARC, blacklist|https://mxtoolbox.com/
+Mozilla Observatory|nota de segurança do site|https://developer.mozilla.org/en-US/observatory`},
+  {name:'CÓDIGO, DOCUMENTOS & BUSCA', items:`GitHub Search|código e commits com o email|https://github.com/search
+GitLab Search|projetos e snippets|https://gitlab.com/search
+grep.app|busca em repositórios públicos|https://grep.app/
+Sourcegraph|busca de código em escala|https://sourcegraph.com/search
+PublicWWW|HTML e scripts de sites|https://publicwww.com/
+Searchcode|código indexado|https://searchcode.com/
+Scribd|documentos enviados|https://www.scribd.com/
+SlideShare|apresentações públicas|https://www.slideshare.net/
+DocDroid|PDFs hospedados|https://www.docdroid.net/
+Yandex|índice diferente do Google|https://yandex.com/
+Marginalia|web não-comercial|https://search.marginalia.nu/
+Mojeek|índice próprio|https://www.mojeek.com/
+PimEyes|busca facial reversa|https://pimeyes.com/
+Yandex Images|busca por imagem|https://yandex.com/images/
+TinEye|imagem já publicada onde|https://tineye.com/
+Jimpl|EXIF e metadados de foto|https://jimpl.com/
+theHarvester|emails, hosts, subdomínios|https://github.com/laramies/theHarvester
+Amass|enumeração de subdomínio|https://github.com/owasp-amass/amass
+Subfinder|descoberta passiva de subdomínio|https://github.com/projectdiscovery/subfinder
+Sublist3r|subdomínios por fontes|https://github.com/aboul3la/Sublist3r
+h8mail|orquestra 9 APIs de breach|https://github.com/khast3x/h8mail
+SpiderFoot|200+ módulos de correlação|https://github.com/smicallef/spiderfoot
+OSINT Framework|mapa de fontes por categoria|https://osintframework.com/
+EmailRep|reputação pública de e-mail · API opcional|https://emailrep.io/`}
+];
+const AUTOMATIC = new Set(['XposedOrNot','Hudson Rock','Gravatar','GitHub Search','Keybase','Shodan','MXToolbox','SecurityTrails','EmailRep']);
+const TOOLS = CATEGORIES.flatMap((cat,ci)=>cat.items.trim().split('\n').map(row=>{const [name,desc,url]=row.split('|');return {name,desc,url,category:ci,auto:AUTOMATIC.has(name)&&!(ci===3&&name==='GitHub Search'),apiKeyRequired:false};}));
+document.getElementById('stat-total').textContent=TOOLS.length;
+document.getElementById('stat-auto').textContent=TOOLS.filter(x=>x.auto).length;
+document.getElementById('stat-cats').textContent=CATEGORIES.length;
+document.getElementById('stat-keys').textContent=TOOLS.filter(x=>x.apiKeyRequired).length;
+const $=id=>document.getElementById(id);
+const EMAIL_RE=/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
+const PROVIDERS=new Set('gmail.com hotmail.com outlook.com yahoo.com proton.me protonmail.com icloud.com bol.com.br uol.com.br live.com gmx.com yandex.com'.split(' '));
+const SERVICES=[[/google-site-verification/i,'Google'],[/MS=ms/i,'Microsoft 365'],[/atlassian-domain-verification/i,'Atlassian'],[/sendgrid/i,'SendGrid'],[/mailgun|mg\./i,'Mailgun'],[/shopify/i,'Shopify'],[/facebook-domain-verification/i,'Meta'],[/zoom/i,'Zoom'],[/docusign/i,'DocuSign'],[/adobe/i,'Adobe'],[/stripe/i,'Stripe'],[/hubspot/i,'HubSpot'],[/zendesk/i,'Zendesk'],[/salesforce/i,'Salesforce'],[/slack/i,'Slack'],[/dropbox/i,'Dropbox'],[/amazonses/i,'Amazon SES'],[/cloudflare/i,'Cloudflare'],[/_spf\./i,'SPF terceirizado'],[/apple-domain/i,'Apple'],[/cisco|webex/i,'Cisco/Webex'],[/notion/i,'Notion'],[/vercel/i,'Vercel'],[/netlify/i,'Netlify']];
+const escapeHTML=s=>String(s??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const fmt=n=>Number(n||0).toLocaleString('pt-BR');
+const delay=ms=>new Promise(r=>setTimeout(r,ms));
+const safeUrl=s=>{try{let url=new URL(s);return url.protocol==='https:'?url.href:'#';}catch{return '#';}};
+const link=(url,title)=>`<a href="${escapeHTML(safeUrl(url))}" target="_blank" rel="noopener">${escapeHTML(title)}</a>`;
+const chip=(value,color='')=>`<span class="chip ${color}">${escapeHTML(value)}</span>`;
+// Complete RFC 1321 MD5 rounds, for Gravatar only. Do not use MD5 for password security.
+function md5(str){
+ const src=new TextEncoder().encode(str),len=src.length,pad=((len+8>>>6)+1)*64,b=new Uint8Array(pad);b.set(src);b[len]=128;
+ const bits=BigInt(len)*8n;for(let i=0;i<8;i++)b[pad-8+i]=Number((bits>>BigInt(i*8))&255n);
+ const shifts=[7,12,17,22,5,9,14,20,4,11,16,23,6,10,15,21],K=Array.from({length:64},(_,i)=>Math.floor(Math.abs(Math.sin(i+1))*2**32)>>>0);
+ let A=0x67452301,B=0xefcdab89,C=0x98badcfe,D=0x10325476;
+ for(let off=0;off<pad;off+=64){const M=Array.from({length:16},(_,i)=>(b[off+i*4]|b[off+i*4+1]<<8|b[off+i*4+2]<<16|b[off+i*4+3]<<24)>>>0);let a=A,bb=B,c=C,d=D;
+  for(let i=0;i<64;i++){let f,g,s;if(i<16){f=(bb&c)|(~bb&d);g=i;s=shifts[i%4];}else if(i<32){f=(d&bb)|(~d&c);g=(5*i+1)%16;s=shifts[4+i%4];}else if(i<48){f=bb^c^d;g=(3*i+5)%16;s=shifts[8+i%4];}else{f=c^(bb|~d);g=(7*i)%16;s=shifts[12+i%4];}let sum=(a+f+K[i]+M[g])>>>0;const rot=((sum<<s)|(sum>>>(32-s)))>>>0;[a,bb,c,d]=[d,(bb+rot)>>>0,bb,c];}
+  A=(A+a)>>>0;B=(B+bb)>>>0;C=(C+c)>>>0;D=(D+d)>>>0;
+ }
+ return [A,B,C,D].map(v=>[0,1,2,3].map(i=>((v>>>i*8)&255).toString(16).padStart(2,'0')).join('')).join('');
+}
+function getDorks(email){const [local,host]=email.split('@');return [
+ `"${email}"`,
+ `"${email}" (site:pastebin.com OR site:rentry.co OR site:ghostbin.co OR site:doxbin.com)`,
+ `"${email}" filetype:pdf OR filetype:xlsx OR filetype:csv`,
+ `"${email}" (site:github.com OR site:gitlab.com)`,
+ `"${local}" "@${host}"`,
+ `"${email}" (senha OR password)`,
+ `"${email}" -site:${host}`,
+ `"${email}" site:linkedin.com`
+];}
+function toolDeep(t,email){
+ const [local,host]=email.split('@'),e=encodeURIComponent(email),d=encodeURIComponent(host),user=encodeURIComponent(local),hash=md5(email),name=t.name;
+ const map={
+ 'crt.sh':`https://crt.sh/?q=%25.${d}`,
+ 'Phonebook.cz':`https://phonebook.cz/?q=${d}`,
+ 'urlscan.io':`https://urlscan.io/domain/${d}`,
+ 'ViewDNS Reverse Whois':`https://viewdns.info/reversewhois/?q=${e}`,
+ 'Shodan':`https://www.shodan.io/search?query=${d}`,
+ 'MXToolbox':`https://mxtoolbox.com/SuperTool.aspx?action=mx%3a${d}`,
+ 'BGP.he.net':`https://bgp.he.net/dns/${d}`,
+ 'RIPE Stat':`https://stat.ripe.net/${d}`,
+ 'SecurityTrails':`https://securitytrails.com/domain/${d}/dns`,
+ 'GitHub Search':`https://github.com/search?q=${e}&type=users`,
+ 'GitLab Search':`https://gitlab.com/search?search=${e}`,
+ 'grep.app':`https://grep.app/search?q=${e}`,
+ 'Sourcegraph':`https://sourcegraph.com/search?q=${e}`,
+ 'PublicWWW':`https://publicwww.com/websites/%22${e}%22/`,
+ 'Searchcode':`https://searchcode.com/?q=${e}`,
+ 'DeHashed':`https://dehashed.com/search?query=${e}`,
+ 'Intelligence X':`https://intelx.io/?s=${e}`,
+ 'ThatsThem':`https://thatsthem.com/email/${e}`,
+ 'EmailRep':`https://emailrep.io/${e}`,
+ 'Gravatar':`https://gravatar.com/${hash}`,
+ 'TruePeopleSearch':`https://www.truepeoplesearch.com/results?email=${e}`,
+ 'FastPeopleSearch':`https://www.fastpeoplesearch.com/email/${e}`,
+ 'PeekYou':`https://www.peekyou.com/${user}`,
+ 'IDCrawl':`https://www.idcrawl.com/${user}`,
+ 'Social Searcher':`https://www.social-searcher.com/social-buzz/?q5=${e}`,
+ 'Yandex':`https://yandex.com/search/?text=%22${e}%22`,
+ 'Marginalia':`https://search.marginalia.nu/search?query=${e}`,
+ 'Mojeek':`https://www.mojeek.com/search?q=%22${e}%22`,
+ 'TinEye':`https://tineye.com/search?url=${encodeURIComponent(`https://www.gravatar.com/avatar/${hash}?d=404`)}`
+ };
+ return map[name]||t.url;
+}
+function makeAccordion(title,count,body){return `<details class="acc"><summary><span class="arr">▶</span><span>${escapeHTML(title)}</span><span class="count ${count>0?'bad':''}">${fmt(count)}</span></summary><div class="accbody">${body}</div></details>`;}
+function servicesFrom(records){return [...new Set((records||[]).flatMap(t=>SERVICES.filter(([re])=>re.test(String(t))).map(([,name])=>name)))];}
+function renderResults(data,email){
+ const host=email.split('@')[1],local=email.split('@')[0];
+ const dns=data.dns||{},ports=data.internetdb?.ports||[],vulns=data.internetdb?.vulns||[],breaches=data.breaches||[],services=servicesFrom(dns.txt);
+ const own=!PROVIDERS.has(host);
+ const avail=data.availability||{};
+ const numBreaches=breaches.length;
+ const score=Math.min(100,Math.min(numBreaches*9,50)+(data.gravatar===true?7:0)+(own?4:0)+Math.min(Math.max(0,Number(data.metrics?.risk_score)||0),15)+(dns.available&&!dns.hasSPF?6:0)+(dns.available&&!dns.dmarc?6:0)+Math.min(vulns.length*3,10)+(data.github?.count>0?4:0));
+ const level=score>60?'CRÍTICO':score>25?'MÉDIO':'BAIXO';
+ const shade=score>60?'risk-high':score>25?'risk-medium':'risk-low';
+ const incomplete=Object.values(avail).some(x=>x===false);
+ let out=`<section class="scorecard"><div class="eyebrow">RISCO DE EXPOSIÇÃO</div><div><span class="score-num ${shade}">${score}</span><span class="score-suffix"> /100 · ${level}${incomplete?' · PARCIAL':''}</span></div><div class="risk-bar"><div id="risk-fill" class="risk-fill"></div></div><div class="chips">${chip(`${numBreaches} breaches`,numBreaches?'red':'')}${chip(`${services.length} serviços`,'cyan')}${chip(`${ports.length} portas`)}${chip(data.gravatar===true?'gravatar: sim':data.gravatar===false?'gravatar: não':'gravatar: indisponível')}</div><p class="public-note">Índice heurístico de exposição, não é probabilidade de invasão. ${data.cached?'Resultado em cache (até 24h). ':''}${incomplete?'Algumas consultas ficaram indisponíveis; pontuação pode estar subestimada.':'Dados públicos consultados.'}</p></section>`;
+ const strength=data.metrics||{};
+ const breachCards=breaches.map(b=>`<div class="breach"><b>${escapeHTML(b.name)}</b> ${chip(b.year,'red')}<div>${escapeHTML(b.data)}</div><div class="meta">registros: ${fmt(b.records)} · senha: ${escapeHTML(b.passwordRisk)} · domínio: ${escapeHTML(b.domain||'não informado')}</div></div>`).join('');
+ out+=makeAccordion('BREACHES & SENHAS EXPOSTAS',numBreaches,`
+ <p>${chip(`texto puro: ${fmt(strength.plaintext)}`,'red')} ${chip(`hashes fracos: ${fmt(strength.weak)}`,'amber')} ${chip(`hashes fortes: ${fmt(strength.strong)}`)}</p>
+ ${avail.xon===false?'<p class="warn">Consulta de breaches indisponível, resultado não conclusivo.</p>':numBreaches?breachCards:'<p>Nenhum breach identificado nas fontes consultadas. Isso não garante segurança.</p>'}
+ <p>Fontes para investigação adicional de senhas em texto puro: ${link('https://dehashed.com/','DeHashed')}, ${link('https://leakcheck.io/','LeakCheck')} e ${link('https://intelx.io/','IntelX')}. O site não exibe nem recupera senhas vazadas.</p>`);
+ out+=makeAccordion('DNS, TXT & SERVIÇOS DETECTADOS',vulns.length,`
+ <div class="kv"><label>IP:</label> ${escapeHTML((dns.ips||[]).join(', ')||'não encontrado')}</div>
+ <div class="kv"><label>MX:</label> ${escapeHTML((dns.mx||[]).join(', ')||'não encontrado')}</div>
+ <div class="kv"><label>SPF:</label> <span class="${dns.available?(dns.hasSPF?'ok':'warn'):'muted'}">${!dns.available?'não verificado':dns.hasSPF?'presente':'ausente'}</span></div>
+ <div class="kv"><label>DMARC:</label> <span class="${dns.available?(dns.dmarc?'ok':'warn'):'muted'}">${!dns.available?'não verificado':dns.dmarc?'presente':'ausente'}</span></div>
+ <div class="kv"><label>Portas abertas:</label> ${escapeHTML(ports.join(', ')||'não informadas')}</div>
+ <div class="kv"><label>CVEs / identificadores:</label> ${escapeHTML(vulns.join(', ')||'não informados')}</div>
+ <p class="chips" style="margin-top:10px">${services.length?services.map(s=>chip(s,'cyan')).join(''):'<span class="muted">Nenhum serviço identificado por TXT.</span>'}</p>
+ <p class="status-msg">SPF/DMARC ausentes podem facilitar falsificação do remetente e phishing. O risco depende da política e da infraestrutura do domínio.</p>
+ <div class="kv"><label>TXT (até 110 caracteres por registro):</label>${(dns.txt||[]).length?dns.txt.map(t=>`<div class="muted">${escapeHTML(t.slice(0,110))}${t.length>110?'…':''}</div>`).join(''):'<div class="muted">Não disponível</div>'}</div>`);
+ const avatar=data.gravatar===true?`<img loading="lazy" width="60" height="60" alt="Avatar público do Gravatar" src="https://www.gravatar.com/avatar/${md5(email)}?d=404" style="border-radius:8px;border:1px solid #24533b;vertical-align:middle">`:'não identificado';
+ const ghUsers=(data.github?.users||[]).map(u=>link(`https://github.com/${encodeURIComponent(u)}`,u)).join(' · ');
+ out+=makeAccordion('CONTAS & PERFIS',Number(data.gravatar===true)+Number(data.github?.count>0)+Number(Boolean(data.keybase)),`
+ <div class="kv"><strong>Gravatar:</strong> ${avatar}</div>
+ <div class="kv"><strong>GitHub:</strong> ${data.github?`${fmt(data.github.count)} correspondências · ${ghUsers||'sem logins retornados'}`:'consulta indisponível'}</div>
+ <div class="kv"><strong>Keybase:</strong> ${data.keybase?link(`https://keybase.io/${encodeURIComponent(data.keybase)}`,data.keybase):avail.keybase?'não identificado':'consulta indisponível'}</div>
+ <p>Correspondência em busca pública não confirma identidade nem titularidade de uma conta.</p>`);
+ out+=makeAccordion('SUPERFÍCIE DE ATAQUE',Number(own)+Number(numBreaches>0),`
+ <div class="kv"><label>Usuário:</label> ${escapeHTML(local)}</div><div class="kv"><label>Classificação:</label> ${own?'domínio próprio':'provedor pessoal'}</div>
+ <div class="kv"><label>Variações:</label> ${escapeHTML([...new Set([local,local.replace(/[._-]/g,''),local.replace(/[._-]/g,' '),local.split(/[._-]/)[0]])].join(' · '))}</div>
+ <div class="kv"><label>Padrão corporativo:</label> ${own?escapeHTML(`nome.sobrenome@${host} · inicial.sobrenome@${host}`):'não aplicável'}</div>
+ <div class="kv"><label>Vetor principal:</label> ${numBreaches?'phishing direcionado e credenciais reutilizadas (hipótese)':dns.available&&!dns.dmarc?'spoofing do domínio (hipótese)':'nenhum vetor confirmado'}</div>
+ <div class="kv"><label>Risco de reuso:</label> ${numBreaches?'recomenda-se verificar senhas reutilizadas':'não determinado'}</div>
+ <p>Hipóteses para prevenção; não representam confirmação de exploração.</p>`);
+ const infrastructure=[['crt.sh',`https://crt.sh/?q=%25.${encodeURIComponent(host)}`],['ViewDNS reversewhois',`https://viewdns.info/reversewhois/?q=${encodeURIComponent(email)}`],['SecurityTrails',`https://securitytrails.com/domain/${encodeURIComponent(host)}/dns`],['Shodan',`https://www.shodan.io/search?query=${encodeURIComponent(host)}`],['GrayhatWarfare','https://grayhatwarfare.com/'],['who.is',`https://who.is/whois/${encodeURIComponent(host)}`]];
+ out+=makeAccordion('DOMÍNIOS & INFRA',infrastructure.length,`<p>${infrastructure.map(([name,url])=>chip(name,'cyan')+' '+link(url,'OPEN ↗')).join('<br>')}</p>`);
+ out+=makeAccordion('DORKS PRONTOS',8,getDorks(email).map(q=>{const eq=encodeURIComponent(q);return `<div class="dork"><code>${escapeHTML(q)}</code><div class="dork-actions"><button type="button" class="bt mini copy-dork" data-dork="${escapeHTML(q)}">COPY</button>${link(`https://www.google.com/search?q=${eq}`,'GOOGLE')}${link(`https://www.bing.com/search?q=${eq}`,'BING')}${link(`https://yandex.com/search/?text=${eq}`,'YANDEX')}</div></div>`;}).join(''));
+ let arsenal='';for(let ci=0;ci<CATEGORIES.length;ci++){const cat=CATEGORIES[ci];arsenal+=`<h3 class="toolcat">${escapeHTML(cat.name)}</h3>`;for(const t of TOOLS.filter(x=>x.category===ci))arsenal+=`<div class="tool"><div><b>${escapeHTML(t.name)}</b><span>${escapeHTML(t.desc)}</span></div><a class="bt mini" href="${escapeHTML(safeUrl(toolDeep(t,email)))}" target="_blank" rel="noopener">OPEN</a></div>`;}
+ out+=makeAccordion('ARSENAL COMPLETO',TOOLS.length,arsenal);
+ out+=`<aside class="ad" aria-label="Anúncio parceiro"><span class="tag">PARCEIRO</span><div class="ad-head"><span class="ad-symbol">◈</span> ACABOU DE VER O TAMANHO DO PROBLEMA</div><p>Agora converse com uma IA que não te poda e não guarda nada. Chat privado, 100% sem censura, modelos de ponta.</p><div class="ad-footer"><a class="bt cyan" href="https://venice.ai/chat?ref=0rEY8a" target="_blank" rel="noopener sponsored" aria-label="Abrir Venice.ai em nova aba">ABRIR VENICE ↗</a></div></aside>`;
+ out+=`<section class="foot-support"><div><h3>SEM PAYWALL · SEM ADS INVASIVOS</h3><p>Servidor, domínio e as cotas das APIs saem do meu bolso. Se a ferramenta te salvou, manda um café.</p><small>código e curadoria — <a href="https://instagram.com/infoc.hacker" target="_blank" rel="noopener me">@infoc.hacker</a></small></div><a class="bt amber" href="https://pay.cakto.com.br/o9xx8id_1257625" target="_blank" rel="noopener sponsored" aria-label="Apoiar o projeto via Cakto">MANTER NO AR</a></section>`;
+ return {html:out,score};
+}
+let current=null,scanning=false,widgetId=null,siteKey=null;
+const form=$('scan-form');
+function pushLog(index,message,type='neutral'){
+ const log=$('scan-log');if(!log)return;const el=document.createElement('div');el.className=type;el.textContent=`[${index}/9] ${message}`;log.append(el);log.scrollTop=log.scrollHeight;
+}
+async function getJson(url,options){const res=await fetch(url,{cache:'no-store',...options});let data;try{data=await res.json();}catch{throw Error(`Resposta inválida do servidor (${res.status}).`);}if(!res.ok)throw Error(data.error||`HTTP ${res.status}`);return data;}
+function loadTurnstile(){return new Promise((resolve,reject)=>{if(window.turnstile){resolve(window.turnstile);return;}const script=document.createElement('script');script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';script.async=true;script.onload=()=>resolve(window.turnstile);script.onerror=()=>reject(Error('Cloudflare Turnstile indisponível.'));document.head.append(script);});}
+async function challenge(){
+ const slot=$('security-slot');slot.classList.add('active');slot.textContent='';
+ if(!siteKey){siteKey=(await getJson('/.netlify/functions/token')).siteKey;}
+ const turnstile=await loadTurnstile();if(!turnstile?.render)throw Error('Turnstile não carregou.');
+ return new Promise((resolve,reject)=>{
+   let completed=false;const box=document.createElement('div');slot.append(box);
+   try{widgetId=turnstile.render(box,{sitekey:siteKey,theme:'dark',appearance:'interaction-only',callback:t=>{if(!completed){completed=true;resolve(t);}},'error-callback':()=>{if(!completed){completed=true;reject(Error('Falha de verificação do Turnstile.'));}},'expired-callback':()=>{if(!completed){completed=true;reject(Error('Verificação expirada.'));}}});}
+   catch(e){reject(e);}
+ });
+}
+async function scan(event){
+ event.preventDefault();if(scanning)return;
+ const email=$('email').value.trim().toLowerCase();$('form-error').textContent='';
+ if(!EMAIL_RE.test(email)||email.length>254){$('form-error').textContent='E-mail inválido. Use alvo@dominio.com.';orbActor.setAttribute('data-shake','');setTimeout(()=>orbActor.removeAttribute('data-shake'),300);$('email').focus();return;}
+ scanning=true;setOrbPhase('scanning');$('scan-btn').disabled=true;$('actions').hidden=false;$('stage').replaceChildren();$('pass-panel').hidden=true;$('password-toggle').setAttribute('aria-expanded','false');current=null;
+ const log=document.createElement('div');log.id='scan-log';log.className='log';log.setAttribute('role','status');log.setAttribute('aria-live','polite');$('stage').append(log);
+ try{
+  let hash;try{hash=md5(email);pushLog(1,`E-mail normalizado. Hash MD5 local: ${hash.slice(0,8)}…`,'success');}catch{pushLog(1,'Falha ao calcular o hash local.','warning');}
+  await delay(190);const host=email.split('@')[1];try{pushLog(2,PROVIDERS.has(host)?'Host classificado: provedor pessoal.':'Host classificado: domínio próprio.','info');}catch{pushLog(2,'Falha na classificação do host.','warning');}
+  await delay(210);pushLog(3,'Aguardando verificação de segurança e checagens externas…','info');
+  const cfToken=await challenge();
+  const signed=await getJson('/.netlify/functions/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cfToken})});
+  const response=await getJson('/.netlify/functions/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:signed.token,email})});
+  const av=response.availability||{};
+  await delay(175);pushLog(3,`Gravatar: ${response.gravatar===true?'imagem pública identificada':response.gravatar===false?'sem imagem pública':'consulta indisponível'}`,response.gravatar===true?'success':response.gravatar===null?'warning':'neutral');
+  await delay(170);pushLog(4,av.dns?`DNS consultado. SPF: ${response.dns.hasSPF?'sim':'não'} · DMARC: ${response.dns.dmarc?'sim':'não'}`:'DNS indisponível; checagem parcial.',av.dns?'success':'warning');
+  await delay(190);pushLog(5,av.internetdb?`InternetDB: ${response.internetdb?.ports?.length||0} portas; ${response.internetdb?.vulns?.length||0} CVEs.`:'InternetDB: sem IP consultável ou sem resposta.',av.internetdb?'info':'warning');
+  await delay(170);pushLog(6,av.github?`GitHub: ${response.github?.count||0} correspondências.`:'GitHub: consulta indisponível.',av.github?'success':'warning');
+  await delay(190);pushLog(7,av.keybase?`Keybase: ${response.keybase||'nenhum perfil encontrado'}.`:'Keybase: consulta indisponível.',av.keybase?'info':'warning');
+  await delay(200);pushLog(8,av.xon?`XposedOrNot: ${response.breaches?.length||0} breaches.`:'XposedOrNot: fonte indisponível.',!av.xon?'warning':response.breaches?.length?'bad':'success');
+  await delay(180);pushLog(9,'Verificação finalizada. Resultados públicos e parciais quando houver indisponibilidade.','success');
+  const rendered=renderResults(response,email),wrapper=document.createElement('div');wrapper.innerHTML=rendered.html;$('stage').append(...wrapper.childNodes);
+  requestAnimationFrame(()=>$('risk-fill')&&($('risk-fill').style.width=rendered.score+'%'));
+  current={email,data:response};setOrbPhase('done',response);
+ }catch(err){const message=err?.message||'erro não identificado';setOrbPhase('error',message);pushLog(9,'Scan interrompido: '+message,'bad');$('form-error').textContent=message;}
+ finally{scanning=false;$('scan-btn').disabled=false;$('security-slot').classList.remove('active');$('security-slot').replaceChildren();try{if(widgetId!==null)window.turnstile?.remove(widgetId);}catch{}widgetId=null;}
+}
+form.addEventListener('submit',scan);
+$('stage').addEventListener('click',event=>{const btn=event.target.closest('.copy-dork');if(!btn)return;const value=btn.dataset.dork||'';const old=btn.textContent;navigator.clipboard.writeText(value).then(()=>{btn.textContent='COPIADO';setTimeout(()=>btn.textContent=old,1300);}).catch(()=>{btn.textContent='ERRO';});});
+$('clear-btn').addEventListener('click',()=>{if(scanning)return;setOrbPhase('idle');current=null;$('stage').replaceChildren();$('actions').hidden=true;$('email').value='';$('form-error').textContent='';$('pass-panel').hidden=true;$('password').value='';$('password-result').textContent='';$('password-toggle').setAttribute('aria-expanded','false');$('scan-btn').removeAttribute('data-ready');positionIdlePill();$('email').focus();});
+$('export-btn').addEventListener('click',()=>{if(!current)return;const content=['OSINT REPORT','E-mail: '+current.email,'Data ISO: '+new Date().toISOString(),'Breaches: '+(current.data.breaches||[]).length,'','DORKS:',...getDorks(current.email),'','por @infoc.hacker'].join('\n');const url=URL.createObjectURL(new Blob([content],{type:'text/plain;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='osint-report-'+current.email.replace(/[^a-z0-9.-]/gi,'_')+'.txt';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+$('password-toggle').addEventListener('click',()=>{const show=$('pass-panel').hidden;$('pass-panel').hidden=!show;$('password-toggle').setAttribute('aria-expanded',String(show));if(show)$('password').focus();});
+$('password-run').addEventListener('click',async()=>{const p=$('password').value;if(!p){$('password-result').textContent='Digite uma senha.';return;}const btn=$('password-run');btn.disabled=true;try{const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-1',new TextEncoder().encode(p)))).map(v=>v.toString(16).padStart(2,'0')).join('').toUpperCase();const prefix=hash.slice(0,5),suffix=hash.slice(5);const response=await fetch(`https://api.pwnedpasswords.com/range/${prefix}`,{cache:'no-store',headers:{'Add-Padding':'true'}});if(!response.ok)throw Error(`HTTP ${response.status}`);const body=await response.text();const match=body.split(/\r?\n/).find(line=>line.split(':')[0]===suffix);const hits=match?Number(match.split(':')[1]||0):0;$('password-result').textContent=hits?`Senha encontrada ${fmt(hits)} vezes em coleções de vazamentos. Não a reutilize.`:'não encontrada — isso não garante que a senha seja segura.';}catch(err){$('password-result').textContent='Não foi possível consultar a base de senhas: '+err.message;}finally{btn.disabled=false;}});
+
+/* Esfera de partículas 3D adaptada ao visual de referência para Canvas 2D nativo.
+   Somente decoração: não lê o e-mail, não envia dados, não controla o scan. */
+const orbShell=$('morphRoot');
+const orbLabel=$('orb-status');
+const orbActor=$('morphActor');
+let orbPhase='idle',phaseTimer=null,statusTimer=null,statusIndex=0;
+const scanLabels=['Conectando às fontes públicas','Consultando registros disponíveis','Correlacionando os sinais','Preparando o relatório'];
+function clearPhaseTimers(){clearTimeout(phaseTimer);clearInterval(statusTimer);phaseTimer=statusTimer=null;}
+function setAnswerSummary(message){$('answer-content').textContent=message;}
+function setOrbPhase(next,detail=null){
+  clearPhaseTimers();
+  orbPhase=next;
+  const phase={idle:'idle',scanning:'launch',done:'resolve',error:'error'}[next]||next;
+  orbShell.dataset.phase=phase;
+  if(next==='idle'){orbLabel.textContent='Pronto para analisar';setAnswerSummary('A análise aparecerá aqui.');return;}
+  if(next==='scanning'){
+    statusIndex=0;orbLabel.textContent=scanLabels[0];
+    phaseTimer=setTimeout(()=>{if(scanning&&orbShell.dataset.phase==='launch')orbShell.dataset.phase='think';},360);
+    statusTimer=setInterval(()=>{statusIndex=(statusIndex+1)%scanLabels.length;orbLabel.textContent=scanLabels[statusIndex];},1450);
+    return;
+  }
+  if(next==='done'){
+    const found=detail?.breaches?.length||0;
+    const unavailable=Object.values(detail?.availability||{}).filter(v=>!v).length;
+    setAnswerSummary(found?`Análise concluída. Foram encontrados ${found} registros de exposição associados ao e-mail. Confira os detalhes e as fontes abaixo.`:`Análise concluída. Nenhum vazamento foi confirmado nas fontes consultadas. Confira abaixo quais fontes responderam e os demais sinais encontrados.`);
+    orbLabel.textContent='Análise concluída';
+    phaseTimer=setTimeout(()=>{orbShell.dataset.phase='condense';phaseTimer=setTimeout(()=>orbShell.dataset.phase='answered',420);},280);
+    return;
+  }
+  if(next==='error'){
+    setAnswerSummary(typeof detail==='string'&&detail?`A verificação foi interrompida: ${detail}`:'A verificação foi interrompida. Confira a mensagem e tente novamente.');
+    orbLabel.textContent='Verificação interrompida';
+  }
+}
+function positionIdlePill(){if(orbShell.dataset.phase==='idle')orbShell.style.setProperty('--home-y',`${Math.max(210,orbShell.clientHeight*.54-96)}px`);}
+positionIdlePill();window.addEventListener('resize',positionIdlePill);
+$('email').addEventListener('input',()=>{$('scan-btn').toggleAttribute('data-ready',Boolean($('email').value.trim()));$('morphActor').setAttribute('data-typing','');clearTimeout(window.__morphTyping);window.__morphTyping=setTimeout(()=>$('morphActor').removeAttribute('data-typing'),300);});
+(function setupSignalOrb(){
+ const canvas=document.getElementById('signal-orb');
+ if(!canvas||!canvas.getContext)return;
+ const context=canvas.getContext('2d',{alpha:true});
+ if(!context)return;
+ const reduce=window.matchMedia('(prefers-reduced-motion: reduce)');
+ const size=300,scale=2, dots=[];
+ for(let ring=0;ring<18;ring++){
+  const py=1-2*(ring+.5)/18, radius=Math.sqrt(1-py*py),count=Math.max(8,Math.round(radius*37));
+  for(let j=0;j<count;j++){
+    const a=j/count*Math.PI*2+ring*.23;
+    dots.push([Math.cos(a)*radius,py,Math.sin(a)*radius,Math.random()*Math.PI*2]);
+  }
+ }
+ canvas.width=size*scale;canvas.height=size*scale;
+ const paint=(ms)=>{
+  context.setTransform(scale,0,0,scale,0,0);
+  context.clearRect(0,0,size,size);
+  const t=reduce.matches?0:ms*.001,rate=orbPhase==='scanning'?1.75:.36,yaw=t*rate+.15,cos=Math.cos(yaw),sin=Math.sin(yaw);
+  context.save();context.translate(150,146);
+  context.strokeStyle='rgba(231,230,217,.15)';context.lineWidth=.8;
+  context.save();context.rotate(-.29);context.scale(1,.37);context.beginPath();context.arc(0,0,97,0,Math.PI*2);context.stroke();context.restore();
+  // z-order by back-to-front for smooth, readable particle depth.
+  const projected=dots.map(d=>{
+   const x=d[0]*cos+d[2]*sin,z=-d[0]*sin+d[2]*cos;
+   const y=d[1]*.957-z*.29,depth=d[1]*.29+z*.957,perspective=2.6/(2.6-depth);
+   return [x*85*perspective,-y*85*perspective,depth,d[3]];
+  }).sort((a,b)=>a[2]-b[2]);
+  for(const p of projected){
+   const depth=(p[2]+1)/2,scan=Math.pow(Math.max(0,1-Math.abs(((t*.34+p[3]/6)%1)-depth)*3.2),2),alpha=Math.min(.96,(.20+.47*depth+scan*(orbPhase==='scanning'?.49:.2)));
+   context.fillStyle=`rgba(${Math.round(220+28*depth)},${Math.round(143+91*depth)},${Math.round(104+129*depth)},${alpha.toFixed(3)})`;
+   context.beginPath();context.arc(p[0],p[1],.75+depth*.9+scan*.5,0,Math.PI*2);context.fill();
+  }
+  context.restore();
+ };
+ if(reduce.matches){paint(0);}
+ let visible=true;
+ const loop=now=>{if(visible&&!reduce.matches&&canvas.getBoundingClientRect().width>0)paint(now);requestAnimationFrame(loop);};
+ if(!reduce.matches)requestAnimationFrame(loop);
+ document.addEventListener('visibilitychange',()=>{visible=!document.hidden;});
+ reduce.addEventListener?.('change',()=>{if(reduce.matches)paint(0);});
+})();
+</script>
+</body>
+</html>

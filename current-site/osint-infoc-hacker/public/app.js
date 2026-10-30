@@ -85,7 +85,7 @@ EmailRep|reputação pública de e-mail · API opcional|https://emailrep.io/`}
 const AUTOMATIC = new Set(['XposedOrNot','Hudson Rock','Gravatar','GitHub Search','Keybase','Shodan','MXToolbox','SecurityTrails','EmailRep']);
 const TOOLS = CATEGORIES.flatMap((cat,ci)=>cat.items.trim().split('\n').map(row=>{const [name,desc,url]=row.split('|');return {name,desc,url,category:ci,auto:AUTOMATIC.has(name)&&!(ci===3&&name==='GitHub Search'),apiKeyRequired:false};}));
 document.getElementById('stat-total').textContent=24;
-document.getElementById('stat-auto').textContent=13;
+document.getElementById('stat-auto').textContent=12;
 document.getElementById('stat-cats').textContent=6;
 document.getElementById('stat-keys').textContent=0;
 const $=id=>document.getElementById(id);

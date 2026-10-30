@@ -47,11 +47,17 @@ export const REGISTRY=[
     const j=await J(r);
     return {dados:{total:lista(j?.actors).length,atores:lista(j?.actors).map(x=>({handle:x.handle,nome:x.displayName||null}))}};
   }},
- {id:'telegram',tipos:['email','telefone'],custo:1,ttl:3600,provenance:'telegram-tme',
+ {id:'telegram',tipos:['telefone'],custo:1,ttl:3600,provenance:'telegram-tme',
   async run(a,c){
-    const u=a.tipo==='email'?a.valor.split('@')[0]:'+'+so(a.valor);
-    const r=await c.get(`https://t.me/${u}`,{accept:'text/html',timeout:5000});
-    return {dados:{provavel:r.status===200,usuario:u}};
+    const numero=so(a.valor);
+    const r=await c.get(`https://t.me/+${numero}?embed=1`,{accept:'text/html',timeout:5000});
+    const campos={titulo:'',descricao:''};
+    const parser=new HTMLRewriter()
+      .on('.tgme_page_title',{text(t){campos.titulo+=t.text;}})
+      .on('.tgme_page_description',{text(t){campos.descricao+=t.text;}});
+    await parser.transform(r).text();
+    const titulo=campos.titulo.trim(),descricao=campos.descricao.trim();
+    return {dados:{existe:Boolean(titulo),usuario:'+'+numero,titulo:titulo||null,descricao:descricao||null}};
   }},
  {id:'xon',tipos:['email'],custo:2,ttl:43200,provenance:'xposedornot',
   async run(a,c){

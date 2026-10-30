@@ -21,7 +21,7 @@ async function limite(env,ip){
 export async function rodar(s,a,c){
   const t0=Date.now();
   try{
-    const {valor,cache}=await comCache(c.env,s.id,a.valor,valor=>valor.status==='ok'?s.ttl:120,async()=>{
+    const {valor,cache}=await comCache(c.env,c.origem,s.id,a.valor,valor=>valor.status==='ok'?s.ttl:120,async()=>{
       const http=[];
       const contexto={...c,get:async(...args)=>{
         const r=await c.get(...args);http.push({host:new URL(args[0]).hostname,status:r.status});return r;
@@ -49,7 +49,8 @@ export async function handleScan(request,env,ip){
   if(alvo.tipo==='cpf')return json({erro:'Consulta de CPF fora do escopo.'},400);
   let rl;try{rl=await limite(env,ip);}catch{return json({erro:'Cache obrigatório indisponível.'},503);}
   if(!rl.ok) return json({erro:'Limite atingido.'},429,{'retry-after':String(rl.retry)});
-  const c=ctx(env);let gasto=0;
+  const origem=new URL(request.url).origin;
+  const c=ctx(env,origem);let gasto=0;
   const fila=REGISTRY.filter(s=>s.tipos.includes(alvo.tipo)).sort((x,y)=>x.custo-y.custo)
     .filter(s=>{if(gasto+s.custo>Math.min(BUDGET,Number(env.BUDGET_SUBREQ)||BUDGET))return false;gasto+=s.custo;return true;});
   const res=await Promise.all(fila.map(s=>rodar(s,alvo,c)));

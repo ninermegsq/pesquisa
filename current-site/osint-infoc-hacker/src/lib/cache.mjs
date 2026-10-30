@@ -1,7 +1,7 @@
 // Internal cache keys are never exposed by an HTTP route.
-export const chaveCache=(id,alvo)=>new Request(`https://ostnt.online/__cache/${encodeURIComponent(id)}/${encodeURIComponent(alvo)}`);
-export async function comCache(env,id,alvo,ttl,fn){
- const k=chaveCache(id,alvo);
+export const chaveCache=(origem,id,alvo)=>new Request(`${origem}/__cache/${id}/${encodeURIComponent(alvo)}`);
+export async function comCache(env,origem,id,alvo,ttl,fn){
+ const k=chaveCache(origem,id,alvo);
  try{
    const hit=await caches.default.match(k);
    if(hit){const valor=JSON.parse(await hit.text());if(valor&&typeof valor==='object')return {valor,cache:'hit'};}

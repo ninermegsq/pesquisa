@@ -11,4 +11,6 @@ for (const [name, file] of [['HTML', 'public/index.html'], ['APP_JS', 'public/ap
   if (!pattern.test(worker)) throw new Error('Worker constant missing: ' + name);
   worker = worker.replace(pattern, 'const ' + name + ' = ' + JSON.stringify(await read(file)) + ';');
 }
+const og = (await readFile(path.join(root,'public/og.png'))).toString('base64');
+worker = worker.replace(/^const OG_PNG_BASE64 = .*;$/m, 'const OG_PNG_BASE64 = ' + JSON.stringify(og) + ';');
 await writeFile(workerPath, worker);

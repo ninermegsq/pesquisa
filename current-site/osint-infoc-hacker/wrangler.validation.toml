@@ -1,0 +1,24 @@
+name = "ostnt-validation"
+main = "cloudflare-worker.mjs"
+compatibility_date = "2026-10-30"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+preview_urls = true
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = "d83ef821c9b44516a7d0f163088cc484"
+
+[[durable_objects.bindings]]
+name = "TOKEN_GUARD"
+class_name = "TokenGuard"
+
+[[migrations]]
+tag = "token-guard-v1"
+new_sqlite_classes = ["TokenGuard"]
+
+[vars]
+TURNSTILE_SITEKEY = "1x00000000000000000000AA"
+ALLOWED_ORIGINS = "https://ostnt-validation.ostnt.workers.dev"
+UA = "ostnt.online scanner (+https://ostnt.online)"
+BUDGET_SUBREQ = "38"

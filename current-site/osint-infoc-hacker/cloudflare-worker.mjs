@@ -53,7 +53,7 @@ function createStore(kv) {
 }
 async function token(req, env, ip) {
   if (req.method === 'GET') {
-    const siteKey = env.TURNSTILE_SITE_KEY;
+    const siteKey = env.TURNSTILE_SITEKEY || env.TURNSTILE_SITE_KEY;
     if (!siteKey) return reply({ error: 'Turnstile não configurado.' }, 503);
     return reply({ siteKey }, 200, { 'cache-control': 'public, max-age=86400' });
   }
@@ -70,12 +70,13 @@ async function token(req, env, ip) {
   try {
     const form = new URLSearchParams({ secret: env.TURNSTILE_SECRET, response: body.cfToken, remoteip: ip || '' });
     const verified = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', { method: 'POST', body: form, signal: AbortSignal.timeout(7000) }).then(r => r.json()).catch(() => null);
-    if (!verified?.success || verified.hostname !== 'ostnt.online') return reply({ error: 'Verificação de segurança recusada.' }, 401);
+    if (!verified?.success || verified.hostname !== new URL(req.url).hostname) return reply({ error: 'Verificação de segurança recusada.' }, 401);
     const nonce = randomUUID();
     const now = Math.floor(Date.now() / 1000);
     const payload = btoa(unescape(encodeURIComponent(JSON.stringify({ exp: now + 60, ip: ip || '', emailHash: sha256(email), nonce })))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
     const macBytes = await crypto.subtle.sign('HMAC', await crypto.subtle.importKey('raw', new TextEncoder().encode(env.HMAC_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']), new TextEncoder().encode(payload));
     const mac = btoa(String.fromCharCode(...new Uint8Array(macBytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    if (siteKey.startsWith('1x0000')) console.warn('TURNSTILE_SITEKEY de teste em uso');
     return reply({ token: payload + '.' + mac });
   } catch { return reply({ error: 'Serviço de verificação indisponível.' }, 503); }
 }

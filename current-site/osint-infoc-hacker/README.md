@@ -146,3 +146,7 @@ Sem essas chaves, as fontes correspondentes informam erro e o relatório permane
 ## Estado da verificação em 2026-10-30
 
 Consulte `verification/status.md`. Testes locais não comprovam disponibilidade das fontes nem cache de edge. A versão candidata ainda não substituiu o Worker de produção.
+
+### Worker de validação isolado
+
+`wrangler.validation.toml` define um worker separado e usa a sitekey de teste, que aceita qualquer visitante. Instale o secret de teste **somente** nesse worker por ambiente; nunca copie a `TURNSTILE_SITEKEY` de teste nem o secret correspondente para `ostnt-migration`. A chave pública real segue no binding `TURNSTILE_SITE_KEY` do Worker de produção. O endpoint `/token` usa `TURNSTILE_SITEKEY` quando definido, registra `TURNSTILE_SITEKEY de teste em uso` para chaves iniciadas em `1x0000` e exige que o hostname retornado pelo siteverify corresponda ao hostname da requisição.

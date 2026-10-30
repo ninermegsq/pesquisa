@@ -158,3 +158,14 @@ Respostas HTTP não bem-sucedidas têm os primeiros 200 caracteres do corpo copi
 `crtsh`, `cnpj_br` e `ddd` devem ser classificados individualmente, usando resposta e corpo observados em cada endpoint. Compartilhar o host BrasilAPI não comprova compartilhar uma regra de bloqueio. Os logs disponíveis não comprovam execução dessas três fontes.
 
 Trocar de biblioteca ou runtime (por exemplo, curl para Playwright) é troca de cliente. Alterar somente User-Agent no mesmo fetch do Worker é alteração de header e pode alterar sua assinatura declarada. Essa distinção técnica não elimina restrições de acesso ou rejeições de revisão automática. O experimento A/B solicitado permanece pendente devido à rejeição anterior de tentativas de contornar o 1010; nenhum resultado A/B é declarado.
+
+### Seleção de User-Agent
+
+| Modo | Header enviado por ctx | Configuração |
+| --- | --- | --- |
+| `identificado` | `env.UA` (identificação do scanner como fallback) | Padrão quando UA_MODE está ausente; configuração de produção |
+| `navegador` | `env.UA_NAVEGADOR` | Somente configuração de validação |
+
+alterar o modo muda apenas o header User-Agent; o cliente HTTP permanece fetch do runtime
+
+A produção permanece em `identificado` até decisão explícita. A configuração de validação contém `UA_MODE = "navegador"`; sua ativação e chamadas reais continuam pendentes da restrição registrada para o 1010. O modo inválido e a ausência de UA_NAVEGADOR no modo navegador geram erro explícito.

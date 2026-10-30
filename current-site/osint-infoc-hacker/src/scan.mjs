@@ -18,12 +18,28 @@ async function limite(env,ip){
   await env.OSINT_KV.put(`rl:d:${ip}:${d}`,String(+nd+1),{expirationTtl:90000});
   return {ok:true};
 }
-async function rodar(s,a,c){
+export async function rodar(s,a,c){
   const t0=Date.now();
   try{
-    const {valor,cache}=await comCache(c.env,s.id,a.valor,valor=>valor.status==='ok'?s.ttl:120,async()=>{try{return {status:'ok',timestamp:new Date().toISOString(),...await s.run(a,c)};}catch(e){return {status:ehAbort(e)?'timeout':'erro',timestamp:new Date().toISOString(),erro:String(e?.message||e).slice(0,120)};}});
+    const {valor,cache}=await comCache(c.env,s.id,a.valor,valor=>valor.status==='ok'?s.ttl:120,async()=>{
+      const http=[];
+      const contexto={...c,get:async(...args)=>{
+        const r=await c.get(...args);http.push({host:new URL(args[0]).hostname,status:r.status});return r;
+      }};
+      try{
+        const dados=await s.run(a,contexto);
+        console.log(JSON.stringify({event:'source_run',id:s.id,status:'ok',http,ms:Date.now()-t0}));
+        return {status:'ok',timestamp:new Date().toISOString(),...dados};
+      }catch(e){
+        const status=ehAbort(e)?'timeout':'erro';
+        // Raw exception in private Worker logs; report receives a bounded message.
+        console.error(JSON.stringify({event:'source_run',id:s.id,status,http,name:e?.name,message:String(e?.message||e),stack:e?.stack,ms:Date.now()-t0}));
+        return {status,timestamp:new Date().toISOString(),erro:String(e?.message||e).slice(0,120)};
+      }
+    });
     return {id:s.id,status:valor.status||'ok',erro:valor.erro??null,ms:Date.now()-t0,provenance:s.provenance,timestamp:valor.timestamp||new Date().toISOString(),cache,dados:valor.dados??null,pivos:valor.pivos??[]};
   }catch(e){
+    console.error(JSON.stringify({event:'source_run',id:s.id,status:ehAbort(e)?'timeout':'erro',name:e?.name,message:String(e?.message||e),stack:e?.stack}));
     return {id:s.id,status:ehAbort(e)?'timeout':'erro',ms:Date.now()-t0,provenance:s.provenance,erro:String(e?.message||e).slice(0,120)};
   }
 }

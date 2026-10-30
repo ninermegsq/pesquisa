@@ -97,7 +97,7 @@ netlify dev
 
 ## Funcionamento e privacidade
 
-- `token.js` / rota Worker `/token`: checa Turnstile, assina token HMAC de uso único com TTL de 60 segundos e o vincula ao IP e ao SHA-256 do e-mail. O nonce consumido fica no KV; `GET` expõe apenas a site key pública com cache de 24 horas.
+- `token.js` / rota Worker `/token`: checa Turnstile, assina token HMAC de uso único com TTL de 60 segundos e o vincula ao IP e ao SHA-256 do e-mail. O nonce consumido fica em Durable Object SQLite no Worker; `GET` expõe apenas a site key pública com cache de 24 horas.
 - `scan.js` / rota Worker `/scan`: exige `Origin` autorizada e token de uso único. Limita cada IP a 10 scans por hora e 60 por dia, respondendo `429` com `Retry-After`; faz consultas externas no servidor com timeout e fallback.
 - O cache usa uma chave SHA-256 do e-mail e guarda os resultados por **até 24h**. O Netlify Blobs **não fornece expiração automática nativa**: o código valida timestamps ao ler, e dados antigos podem permanecer fisicamente armazenados até uma rotina de limpeza. Configure uma política de retenção e exclusão para produção de grande escala.
 - O limitador de IP no Netlify Blobs tem consistência forte, mas **não é atômico** sob concorrência elevada. Para cotas rígidas, configure também limitação por WAF/Edge.
@@ -108,7 +108,7 @@ netlify dev
 ## Limites conhecidos
 
 - **XposedOrNot:** cerca de **100 chamadas/dia por IP** para os endpoints usados (além de limites por hora), conforme a [documentação oficial](https://xposedornot.com/api_doc).
-- **GitHub:** a consulta só é feita quando `GITHUB_TOKEN` está configurado; sem ele, `availability.github` fica `false`. O resumo é cacheado por e-mail no KV durante 24 horas para reduzir chamadas compartilhadas.
+- **GitHub:** a consulta só é feita quando `GITHUB_TOKEN` está configurado; sem ele, `availability.github` fica `false`. No Worker, o resumo é cacheado por e-mail na Cache API durante 24 horas para reduzir chamadas compartilhadas.
 - **"não encontrado" ≠ seguro**. Uma ausência de resultados não elimina risco, e falhas de APIs devem ser tratadas como resultados inconclusivos.
 - APIs de terceiros podem mudar formatos, preços, restrições de CORS, políticas de consulta ou disponibilidade. As chamadas externas de investigação são feitas pela Function (com exceção do teste anônimo de senha diretamente do navegador).
 - A CSP inclui `frame-src https://challenges.cloudflare.com`, ajuste necessário além do cabeçalho original para permitir o iframe do Turnstile, conforme a documentação oficial da Cloudflare.
@@ -132,7 +132,7 @@ Projeto está pronto para ser versionado e implantado **após configurar a Netli
 
 ## Motor de fontes
 
-`POST /api/scan` recebe `alvo` e token assinado de uso único emitido após Turnstile. Cache obrigatório em OSINT_KV (fallback para CACHE no Worker existente). O orçamento é de 38 subrequests declarados; e-mail seleciona 13 fontes e custo 17. Erros também são cacheados por TTL; uma chave configurada depois pode aguardar esse TTL.
+`POST /api/scan` recebe `alvo` e token assinado de uso único emitido após Turnstile. Resultados em `caches.default`, com prefixo `https://ostnt.online/__cache/<id>/<alvo>` (componentes codificados); a rota pública desse prefixo responde 404. Sucesso usa o TTL da fonte; erros e timeouts usam 120 segundos. Cache é local ao datacenter e best-effort. KV (OSINT_KV, fallback CACHE) guarda somente limites: duas escritas por scan aceito. Tokens usam Durable Object SQLite para rejeitar replay atomicamente, sem escritas no KV. O orçamento é de 38 subrequests externos declarados; e-mail seleciona 12 fontes e custo 16. Telegram consulta somente telefone e extrai o título e a descrição do HTML. A migração `token-guard-v1` precisa acompanhar o deploy; conteúdo sem o binding TOKEN_GUARD falha de forma fechada.
 
 Chaves opcionais, somente no servidor:
 ```sh
@@ -142,3 +142,7 @@ wrangler secret put TRANSPARENCIA_KEY
 ```
 
 Sem essas chaves, as fontes correspondentes informam erro e o relatório permanece parcial. CPF está fora do escopo. Nomes são consultas públicas não conclusivas; o nome informado não confirma identidade. JSON e CSV incluem proveniência e timestamp.
+
+## Estado da verificação em 2026-10-30
+
+Consulte `verification/status.md`. Testes locais não comprovam disponibilidade das fontes nem cache de edge. A versão candidata ainda não substituiu o Worker de produção.

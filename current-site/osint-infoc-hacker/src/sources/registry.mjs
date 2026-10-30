@@ -115,15 +115,15 @@ export const REGISTRY=[
     return {dados:{dominio:d,ips:ra.map(x=>x.data).slice(0,5),mx:mx.map(x=>x.data).slice(0,5),
       txt:t.slice(0,8),hasSPF:t.some(x=>/^v=spf1/i.test(x)),dmarc}};
   }},
- {id:'crtsh',tipos:['email','dominio'],custo:1,ttl:43200,provenance:'certificate-transparency',
+ {id:'crtsh',tipos:['email','dominio'],custo:1,ttl:43200,provenance:'subdomain-center',
   async run(a,c){
     const d=a.tipo==='email'?a.valor.split('@')[1]:a.valor;
-    const r=await c.get(`https://crt.sh/?q=%25.${encodeURIComponent(d)}&output=json`,{timeout:9000});
+    const r=await c.get(`https://api.subdomain.center/?domain=${encodeURIComponent(d)}`,{timeout:9000});
     if(!r.ok) throw falhar(r);
     const arr=await J(r);
     if(!Array.isArray(arr))throw Error('formato inesperado');
-    const subs=[...new Set(arr.flatMap(x=>String(x?.name_value||'').split('\n')).map(x=>x.trim().toLowerCase())
-      .filter(x=>x&&!x.startsWith('*')))].slice(0,60);
+    const subs=[...new Set(arr.filter(x=>typeof x==='string').map(x=>x.trim().toLowerCase().replace(/\.$/,''))
+      .filter(x=>x.endsWith('.'+d)&&x.length<=253&&/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(x)&&!x.includes('..')))].slice(0,60);
     return {dados:{total:subs.length,subdominios:subs},pivos:subs.slice(0,8).map(v=>({tipo:'dominio',valor:v}))};
   }},
  {id:'wayback',tipos:['email','dominio'],custo:1,ttl:43200,provenance:'wayback-cdx',

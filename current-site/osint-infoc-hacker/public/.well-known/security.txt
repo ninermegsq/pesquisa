@@ -1,0 +1,4 @@
+Contact: https://instagram.com/infoc.hacker
+Expires: 2027-10-30T00:00:00Z
+Preferred-Languages: pt-BR
+Canonical: https://ostnt.online/.well-known/security.txt

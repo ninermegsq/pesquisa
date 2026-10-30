@@ -1,0 +1,14 @@
+name = "ostnt-migration"
+main = "cloudflare-worker.mjs"
+compatibility_date = "2026-10-30"
+compatibility_flags = ["nodejs_compat"]
+[[kv_namespaces]]
+binding = "CACHE"
+id = "d83ef821c9b44516a7d0f163088cc484"
+[[kv_namespaces]]
+binding = "OSINT_KV"
+id = "d83ef821c9b44516a7d0f163088cc484"
+[vars]
+ALLOWED_ORIGINS = "https://ostnt.online"
+UA = "ostnt.online scanner (+https://ostnt.online)"
+BUDGET_SUBREQ = "38"

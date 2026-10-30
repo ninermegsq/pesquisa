@@ -48,7 +48,7 @@
         <div class="mo-ball" aria-hidden="true"></div><div class="mo-green" aria-hidden="true"></div><div class="mo-card" aria-hidden="true"></div><div class="mo-ring" aria-hidden="true"></div>
         <form id="scan-form" class="mo-input" novalidate autocomplete="off">
           <svg class="mo-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3.5l1.7 4.8 4.8 1.7-4.8 1.7L10 16.5l-1.7-4.8L3.5 10l4.8-1.7L10 3.5z"/><path d="M18 14.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7.7-1.8z"/></svg>
-          <input id="email" name="email" class="mo-field" type="email" inputmode="email" maxlength="254" autocomplete="email" spellcheck="false" placeholder="Digite o e-mail para analisar…" aria-label="E-mail a analisar" required>
+          <input id="email" name="email" class="mo-field" type="text" inputmode="text" maxlength="254" autocomplete="email" spellcheck="false" placeholder="E-mail, domínio, IP, CNPJ, telefone ou nome…" aria-label="Alvo a analisar" required>
           <button id="scan-btn" class="mo-send" type="submit" aria-label="Iniciar análise"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M5.5 11.5L12 5l6.5 6.5"/></svg></button>
           <p id="form-error" class="mo-error" role="alert" aria-live="polite"></p>
         </form>
@@ -61,15 +61,15 @@
     <button type="button" class="mo-reset" id="clear-btn">Nova análise</button>
     <div class="mo-live" id="scan-announcement" aria-live="polite" aria-atomic="true"></div>
   </section>
-  <div class="trust-row"><span><b id="stat-total">78</b> ferramentas na base</span><span><b id="stat-auto">9</b> consultas automáticas</span><span><b id="stat-cats">4</b> categorias</span><span><b id="stat-keys">0</b> chaves exigidas do visitante</span></div>
+  <div class="trust-row"><span><b id="stat-total">24</b> fontes integradas</span><span><b id="stat-auto">13</b> fontes para e-mail</span><span><b id="stat-cats">6</b> tipos de alvo</span><span><b id="stat-keys">0</b> chaves exigidas do visitante</span></div>
   <section class="results-wrap" aria-label="Resultados da análise">
     <div id="stage" aria-live="off"></div>
     <nav id="actions" class="actions" hidden aria-label="Ações após o scan">
       <button class="bt amber" id="password-toggle" type="button" aria-expanded="false">+ TESTAR SENHA</button>
-      <button class="bt" id="export-json" type="button">JSON</button><button class="bt" id="export-csv" type="button">CSV</button><button class="bt" id="export-txt" type="button">TXT</button>
+      <button class="bt" id="export-json" type="button">JSON</button><button class="bt" id="export-csv" type="button">CSV</button>
       <a class="bt amber" href="https://pay.cakto.com.br/o9xx8id_1257625" target="_blank" rel="noopener sponsored" aria-label="Apoiar o projeto via Cakto">APOIAR</a>
     </nav>
-    <section id="pass-panel" hidden><label for="password">TESTE ANÔNIMO DE SENHA · SHA-1 / K-ANONYMITY</label><input id="password" type="password" autocomplete="new-password" placeholder="Digite uma senha para conferir"><button id="password-run" type="button" class="bt amber">VERIFICAR</button><p>A senha nunca sai do browser. Apenas os 5 primeiros caracteres do hash SHA-1 são enviados para a API.</p><p id="password-result" class="status-msg" role="status"></p></section>
+    <section id="pass-panel" hidden><label for="password">SENHAS · TESTE ANÔNIMO · SHA-1 / K-ANONYMITY</label><input id="password" type="password" autocomplete="new-password" placeholder="Digite uma senha para conferir"><button id="password-run" type="button" class="bt amber">VERIFICAR</button><p>A senha nunca sai do browser. Apenas os 5 primeiros caracteres do hash SHA-1 são enviados para a API.</p><p id="password-result" class="status-msg" role="status"></p></section>
   </section>
   <footer class="site-foot"><span>OSINT // INFOC.HACKER</span><span>Consultas públicas · Resultados podem ser parciais</span><a href="https://instagram.com/infoc.hacker" target="_blank" rel="noopener me">@infoc.hacker</a></footer>
 </main>

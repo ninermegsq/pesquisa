@@ -12,3 +12,10 @@ id = "d83ef821c9b44516a7d0f163088cc484"
 ALLOWED_ORIGINS = "https://ostnt.online"
 UA = "ostnt.online scanner (+https://ostnt.online)"
 BUDGET_SUBREQ = "38"
+
+[[durable_objects.bindings]]
+name = "TOKEN_GUARD"
+class_name = "TokenGuard"
+[[migrations]]
+tag = "token-guard-v1"
+new_sqlite_classes = ["TokenGuard"]

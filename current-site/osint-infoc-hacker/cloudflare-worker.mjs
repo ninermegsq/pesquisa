@@ -1,3 +1,5 @@
+export {TokenGuard} from './src/lib/token-guard.mjs';
+import {chaveCache} from './src/lib/cache.mjs';
 import {handleScan} from './src/scan.mjs';
 import {detectar} from './src/lib/alvo.mjs';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -28,15 +30,24 @@ const staticHeaders = {
 // Add includeSubDomains only after confirming every subdomain is HTTPS-only.
 const htmlHeaders = { ...staticHeaders, 'strict-transport-security': 'max-age=31536000' };
 function createStore(kv) {
+  // Legacy scan shares the edge cache; only rate counters use Workers KV.
+  const isRate=key=>key.startsWith('rate:');
+  const keyOf=key=>chaveCache('legacy',key);
   return {
-    get: (key, options) => kv.get(key, options?.type === 'json' ? 'json' : 'text'),
-    setJSON: async (key, value, options = {}) => {
-      const expiration = options?.metadata?.expiration;
-      const expirationTtl = expiration ? Math.max(60, Math.ceil((expiration - Date.now()) / 1000)) : undefined;
-      return kv.put(key, JSON.stringify(value), expirationTtl ? { expirationTtl } : undefined);
+    get: async (key,options) => {
+      if(isRate(key))return kv.get(key,options?.type==='json'?'json':'text');
+      const hit=await caches.default.match(keyOf(key));
+      if(!hit)return null;
+      const text=await hit.text();return options?.type==='json'?JSON.parse(text):text;
     },
-    delete: key => kv.delete(key),
-    put: (key, value, options) => kv.put(key, value, options)
+    setJSON: async (key,value,options={}) => {
+      const exp=options?.metadata?.expiration;
+      const ttl=exp?Math.max(1,Math.ceil((exp-Date.now())/1000)):86400;
+      if(isRate(key))return kv.put(key,JSON.stringify(value),{expirationTtl:Math.max(60,ttl)});
+      await caches.default.put(keyOf(key),new Response(JSON.stringify(value),{headers:{'cache-control':`public, max-age=${ttl}`,'content-type':'application/json'}}));
+    },
+    delete: key=>isRate(key)?kv.delete(key):caches.default.delete(keyOf(key)),
+    put: (key,value,options)=>{if(!isRate(key))throw Error('KV reservado a rate limit');return kv.put(key,value,options);}
   };
 }
 async function token(req, env, ip) {
@@ -54,14 +65,13 @@ async function token(req, env, ip) {
   try{email=body?.alvo!=null?detectar(body.alvo).valor:(typeof body?.email==='string'?body.email.trim().toLowerCase():'');}catch{return reply({error:'Alvo inválido.'},400);}
   if(!email || email.length>254 || (body?.alvo==null&&!emailRegex.test(email)))return reply({error:'Alvo inválido para vincular a verificação.'},400);
   if (typeof body?.cfToken !== 'string' || body.cfToken.length > 4096 || body.cfToken.length < 5) return reply({ error: 'Verificação obrigatória.' }, 400);
-  if (!env.CACHE) return reply({ error: 'Armazenamento de verificação indisponível.' }, 503);
+  if (!env.TOKEN_GUARD) return reply({ error: 'Armazenamento de verificação indisponível.' }, 503);
   try {
     const form = new URLSearchParams({ secret: env.TURNSTILE_SECRET, response: body.cfToken, remoteip: ip || '' });
     const verified = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', { method: 'POST', body: form, signal: AbortSignal.timeout(7000) }).then(r => r.json()).catch(() => null);
     if (!verified?.success || verified.hostname !== 'ostnt.online') return reply({ error: 'Verificação de segurança recusada.' }, 401);
     const nonce = randomUUID();
     const now = Math.floor(Date.now() / 1000);
-    await env.CACHE.put('nonce:' + nonce, '1', { expirationTtl: 60 });
     const payload = btoa(unescape(encodeURIComponent(JSON.stringify({ exp: now + 60, ip: ip || '', emailHash: sha256(email), nonce })))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
     const macBytes = await crypto.subtle.sign('HMAC', await crypto.subtle.importKey('raw', new TextEncoder().encode(env.HMAC_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']), new TextEncoder().encode(payload));
     const mac = btoa(String.fromCharCode(...new Uint8Array(macBytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
@@ -77,7 +87,7 @@ const sha256 = s => createHash('sha256').update(s).digest('hex');
 const emailRegex = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
 const array = x => Array.isArray(x) ? x : [];
 const n = x => Number.isFinite(Number(x)) ? Number(x) : 0;
-async function consumeToken(token, email, ip, env, store) {
+async function consumeToken(token, email, ip, env) {
   if (typeof token !== 'string' || !env.HMAC_SECRET || token.length > 2000) return false;
   const parts = token.split('.');
   if (parts.length !== 2 || !/^[\w-]+$/.test(parts[0]) || !/^[\w-]+$/.test(parts[1])) return false;
@@ -87,11 +97,8 @@ async function consumeToken(token, email, ip, env, store) {
   let payload;
   try { payload = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8')); } catch { return false; }
   if (payload.ip !== ip || payload.emailHash !== sha256(email) || !Number.isFinite(payload.exp) || payload.exp < Math.floor(Date.now() / 1000) || typeof payload.nonce !== 'string') return false;
-  const key = 'nonce:' + payload.nonce;
-  const issued = await store.get(key);
-  if (issued !== '1') return false;
-  await store.delete(key);
-  return true;
+  if(!env.TOKEN_GUARD)throw Error('Controle de uso único indisponível');
+  return env.TOKEN_GUARD.getByName(sha256(ip||'unknown')).consume(payload.nonce,payload.exp);
 }
 const enforceScanLimits = async (store, ip) => {
   const now = Date.now();
@@ -144,7 +151,7 @@ async function scan(req, env, ctx) {
   const ip = ctx.ip || '';
   const store = createStore(env.CACHE);
   try {
-    const accepted = await consumeToken(body?.token, email, ip, env, store);
+    const accepted = await consumeToken(body?.token, email, ip, env);
     if (!accepted) return reply({ error: 'Token ausente, expirado, reutilizado ou vinculado a outro e-mail. Faça uma nova verificação.' }, 429);
     const retryAfter = await enforceScanLimits(store, ip);
     if (retryAfter) return reply({ error: 'Limite de consultas atingido (10 por hora ou 60 por dia). Tente novamente após o período indicado.' }, 429, { 'retry-after': String(retryAfter) });
@@ -238,12 +245,13 @@ export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     if (url.hostname === 'www.ostnt.online') return Response.redirect(`https://ostnt.online${url.pathname}${url.search}`, 301);
+    if(url.pathname.startsWith('/__cache/'))return new Response('Not found',{status:404,headers:{'cache-control':'no-store'}});
     const ip = req.headers.get('CF-Connecting-IP') || '';
     if(url.pathname==='/api/scan'){
       if(req.method!=='POST')return reply({error:'Método não permitido.'},405);
       if(!allowed(env).has(req.headers.get('origin')||''))return reply({error:'Origem não permitida.'},403);
       let body,alvo;try{body=await req.clone().json();alvo=detectar(body?.alvo);}catch{return reply({error:'Alvo inválido.'},400);}
-      try{if(!await consumeToken(body?.token,alvo.valor,ip,env,createStore(env.CACHE)))return reply({error:'Token ausente, expirado, reutilizado ou vinculado a outro alvo.'},429);}catch{return reply({error:'Verificação indisponível.'},503);}
+      try{if(!await consumeToken(body?.token,alvo.valor,ip,env))return reply({error:'Token ausente, expirado, reutilizado ou vinculado a outro alvo.'},429);}catch{return reply({error:'Verificação indisponível.'},503);}
       return handleScan(req,{...env,OSINT_KV:env.OSINT_KV||env.CACHE},ip);
     }
     if (url.pathname === '/.netlify/functions/token') return token(req, env, ip);

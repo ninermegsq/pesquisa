@@ -1,3 +1,4 @@
+import {falhar} from '../lib/http.mjs';
 import {md5} from '../lib/md5.mjs';
 const J = async r => {
  const t=await r.text();
@@ -12,7 +13,7 @@ export const REGISTRY=[
     const h=md5(a.valor);
     const r=await c.get(`https://gravatar.com/${h}.json`,{timeout:5000});
     if(r.status===404) return {dados:{existe:false}};
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const e=lista((await J(r))?.entry)[0]||{};
     return {dados:{existe:true,nome:e.displayName??null,sobre:e.aboutMe??null,local:e.currentLocation??null,
       urls:lista(e?.urls).map(u=>u.value),contas:lista(e?.accounts).map(x=>({rede:x.shortname,url:x.url})),
@@ -22,28 +23,28 @@ export const REGISTRY=[
   async run(a,c){
     const r=await c.get(`https://keys.openpgp.org/vks/v1/by-email/${encodeURIComponent(a.valor)}`,{accept:'application/pgp-keys',timeout:5000});
     if(r.status===404) return {dados:{existe:false}};
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const t=await r.text();
     return {dados:{existe:true,uids:[...t.matchAll(/^uid\s+:(.*)$/gm)].map(m=>m[1].trim()).filter(Boolean)}};
   }},
  {id:'gitlab',tipos:['email'],custo:1,ttl:21600,provenance:'gitlab-users-api',
   async run(a,c){
     const r=await c.get(`https://gitlab.com/api/v4/users?search=${encodeURIComponent(a.valor)}`,{timeout:6000});
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const j=lista(await J(r));
     return {dados:{total:j.length,contas:j.slice(0,5).map(u=>({login:u.username,nome:u.name,bio:u.bio||null}))}};
   }},
  {id:'npm',tipos:['email'],custo:1,ttl:21600,provenance:'npm-registry',
   async run(a,c){
     const r=await c.get(`https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(a.valor)}&size=5`,{timeout:6000});
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const j=await J(r);
     return {dados:{total:j.total||0,pacotes:lista(j?.objects).map(o=>({nome:o?.package?.name,autor:o?.package?.author?.name||null}))}};
   }},
  {id:'bluesky',tipos:['email'],custo:1,ttl:21600,provenance:'bsky-public-api',
   async run(a,c){
     const r=await c.get(`https://public.api.bsky.app/xrpc/app.bsky.actor.searchActors?q=${encodeURIComponent(a.valor)}&limit=5`,{timeout:6000});
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const j=await J(r);
     return {dados:{total:lista(j?.actors).length,atores:lista(j?.actors).map(x=>({handle:x.handle,nome:x.displayName||null}))}};
   }},
@@ -63,7 +64,7 @@ export const REGISTRY=[
   async run(a,c){
     const r=await c.get(`https://api.xposedornot.com/v1/check-email/${encodeURIComponent(a.valor)}`,{timeout:8000});
     if(r.status===404) return {dados:{total:0,breaches:[],senhas:{textoPuro:0,facilQuebrar:0,hashForte:0}}};
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const j=await J(r);
     const bm=j?.BreachMetrics?.passwords||{};
     const br=lista(j?.breaches).flat().filter(x=>typeof x==='string').map(n=>({nome:n}));
@@ -73,7 +74,7 @@ export const REGISTRY=[
  {id:'hudsonrock',tipos:['email'],custo:1,ttl:43200,provenance:'hudson-rock-cavalier',
   async run(a,c){
     const r=await c.get(`https://cavalier.hudsonrock.com/api/json/v2/osint-tools/search-by-email?email=${encodeURIComponent(a.valor)}`,{timeout:7000});
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const m=(await J(r)).message||{};
     const st=lista(m?.stealers);
     return {dados:{infectado:Boolean(m.total_corporate_services||m.total_user_services),maquinas:st.length,
@@ -88,7 +89,7 @@ export const REGISTRY=[
     if(!c.env.GITHUB_TOKEN) throw Error('sem token');
     const r=await c.get(`https://api.github.com/search/users?q=${encodeURIComponent(a.valor)}+in:email&per_page=5`,{timeout:7000,
       headers:{authorization:`Bearer ${c.env.GITHUB_TOKEN}`,accept:'application/vnd.github+json'}});
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const j=await J(r);
     return {dados:{total:j.total_count||0,contas:lista(j?.items).map(u=>({login:u.login,url:u.html_url}))}};
   }},
@@ -96,7 +97,7 @@ export const REGISTRY=[
   async run(a,c){
     if(!c.env.EMAILREP_KEY) throw Error('sem chave');
     const r=await c.get(`https://emailrep.io/${encodeURIComponent(a.valor)}`,{timeout:7000,headers:{key:c.env.EMAILREP_KEY}});
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const j=await J(r);
     return {dados:{reputacao:j.reputation,suspeito:j.suspicious,blacklist:j.details?.blacklisted,perfis:j.details?.profiles||[]}};
   }},
@@ -104,7 +105,7 @@ export const REGISTRY=[
   async run(a,c){
     const d=a.tipo==='email'?a.valor.split('@')[1]:a.valor;
     const q=async t=>{const r=await c.get(`https://dns.google/resolve?name=${encodeURIComponent(d)}&type=${t}`,{timeout:5000});
-      if(!r.ok) throw Error(`HTTP ${r.status}`);return (await J(r)).Answer||[];};
+      if(!r.ok) throw falhar(r);return (await J(r)).Answer||[];};
     const [ra,tx,mx]=await Promise.all([q('A'),q('TXT'),q('MX')]);
     const t=tx.map(x=>String(x.data).replace(/"/g,''));
     let dmarc=false;
@@ -117,7 +118,7 @@ export const REGISTRY=[
   async run(a,c){
     const d=a.tipo==='email'?a.valor.split('@')[1]:a.valor;
     const r=await c.get(`https://crt.sh/?q=%25.${encodeURIComponent(d)}&output=json`,{timeout:9000});
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const arr=await J(r);
     if(!Array.isArray(arr))throw Error('formato inesperado');
     const subs=[...new Set(arr.flatMap(x=>String(x?.name_value||'').split('\n')).map(x=>x.trim().toLowerCase())
@@ -128,7 +129,7 @@ export const REGISTRY=[
   async run(a,c){
     const d=a.tipo==='email'?a.valor.split('@')[1]:a.valor;
     const r=await c.get(`https://web.archive.org/cdx/search/cdx?url=${encodeURIComponent(d)}/*&output=json&fl=original,timestamp&collapse=urlkey&limit=200`,{timeout:9000});
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const arr=await J(r);
     if(!Array.isArray(arr)||arr.length<2)return {dados:{total:0,parametros:[],amostra:[]}};
     const urls=arr.slice(1).map(x=>x?.[0]).filter(Boolean);
@@ -139,7 +140,7 @@ export const REGISTRY=[
   async run(a,c){
     const base=a.valor.endsWith('.br')?'https://rdap.registro.br/domain/':'https://rdap.org/domain/';
     const r=await c.get(base+encodeURIComponent(a.valor),{timeout:7000});
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const j=await J(r);
     return {dados:{handle:j.handle,status:j.status||[],eventos:lista(j?.events).map(e=>({acao:e.eventAction,data:e.eventDate})),
       ns:lista(j?.nameservers).map(n=>n.ldhName),entidades:lista(j?.entities).map(e=>e.handle).filter(Boolean)}};
@@ -147,7 +148,7 @@ export const REGISTRY=[
  {id:'observatory',tipos:['dominio'],custo:1,ttl:3600,provenance:'mozilla-observatory',
   async run(a,c){
     const r=await c.get(`https://observatory.mozilla.org/api/v2/analyze?host=${encodeURIComponent(a.valor)}`,{timeout:9000});
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const j=await J(r);
     return {dados:{nota:j.grade??null,score:j.score??null,
       falhas:Object.entries(j.tests||{}).filter(([,v])=>v.pass===false).map(([k])=>k)}};
@@ -155,7 +156,7 @@ export const REGISTRY=[
  {id:'urlscan',tipos:['dominio'],custo:1,ttl:21600,provenance:'urlscan-public',
   async run(a,c){
     const r=await c.get(`https://urlscan.io/api/v1/search/?q=domain:${encodeURIComponent(a.valor)}&size=10`,{timeout:7000});
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const j=await J(r);
     return {dados:{total:j.total||0,scans:lista(j?.results).map(x=>({url:x.page?.url,ip:x.page?.ip,servidor:x.page?.server}))}};
   }},
@@ -163,14 +164,14 @@ export const REGISTRY=[
   async run(a,c){
     const r=await c.get(`https://internetdb.shodan.io/${a.valor}`,{timeout:6000});
     if(r.status===404) return {dados:{portas:[],vulns:[],hostnames:[],cpes:[]}};
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const j=await J(r);
     return {dados:{portas:j.ports||[],vulns:j.vulns||[],hostnames:j.hostnames||[],cpes:j.cpes||[]}};
   }},
  {id:'ipgeo',tipos:['ip'],custo:1,ttl:86400,provenance:'ipwhois',
   async run(a,c){
     const r=await c.get(`https://ipwho.is/${encodeURIComponent(a.valor)}`,{timeout:6000});
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const j=await J(r);
     if(j.success===false) throw Error('IP inválido');
     return {dados:{pais:j.country,cidade:j.city,asn:j.connection?.asn,org:j.connection?.org,isp:j.connection?.isp}};
@@ -180,7 +181,7 @@ export const REGISTRY=[
     if(!/^\d+\.\d+\.\d+\.\d+$/.test(a.valor)) throw Error('IPv4 apenas');
     const rev=a.valor.split('.').reverse().join('.');
     const r=await c.get(`https://dns.google/resolve?name=${rev}.origin.asn.cymru.com&type=TXT`,{timeout:6000});
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const raw=((await J(r)).Answer||[]).map(x=>String(x.data).replace(/"/g,'')).join(' ');
     const [asn,prefixo,pais,registro]=raw.split('|').map(x=>x.trim());
     return {dados:{asn:asn||null,prefixo:prefixo||null,pais:pais||null,registro:registro||null}};
@@ -189,7 +190,7 @@ export const REGISTRY=[
   async run(a,c){
     const r=await c.get(`https://brasilapi.com.br/api/cnpj/v1/${a.valor}`,{timeout:8000});
     if(r.status===404) return {dados:{existe:false}};
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const j=await J(r);
     const socios=lista(j?.qsa).map(s=>({nome:s.nome_socio,qual:s.qualificacao_socio}));
     return {dados:{existe:true,razao:j.razao_social,fantasia:j.nome_fantasia,
@@ -203,7 +204,7 @@ export const REGISTRY=[
     if(!c.env.TRANSPARENCIA_KEY) throw Error('sem chave');
     const r=await c.get(`https://api.portaldatransparencia.gov.br/api-de-dados/ceis?cnpjSancionado=${a.valor}`,{timeout:8000,
       headers:{'chave-api-dados':c.env.TRANSPARENCIA_KEY}});
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const j=lista(await J(r));
     return {dados:{total:j.length,sancoes:j.slice(0,5).map(s=>({orgao:s.orgaoSancionador?.nome,ini:s.dataInicioSancao,fim:s.dataFimSancao}))}};
   }},
@@ -211,7 +212,7 @@ export const REGISTRY=[
   async run(a,c){
     const ddd=a.valor.startsWith('55')?a.valor.slice(2,4):a.valor.slice(0,2);
     const r=await c.get(`https://brasilapi.com.br/api/ddd/v1/${ddd}`,{timeout:6000});
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const j=await J(r);
     return {dados:{ddd,uf:j.state,cidades:lista(j?.cities).slice(0,10)}};
   }},
@@ -219,7 +220,7 @@ export const REGISTRY=[
   async run(a,c){
     const q=`SELECT ?item ?itemLabel ?desc WHERE{?item rdfs:label "${a.valor.replace(/"/g,'')}"@pt-BR;schema:description ?desc. SERVICE wikibase:label{bd:serviceParam wikibase:language "pt".}} LIMIT 5`;
     const r=await c.get(`https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(q)}`,{timeout:9000});
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const b=(await J(r)).results?.bindings||[];
     return {dados:{total:b.length,entidades:b.map(x=>({id:String(x?.item?.value||'').split('/').pop(),desc:x?.desc?.value??null}))}};
   }},
@@ -233,7 +234,7 @@ export const REGISTRY=[
       body:JSON.stringify({size:10,query:{query_string:{query:limpo,default_field:'partes.nome'}}})});
     if(r.status===400)r=await c.get(url,{method:'POST',timeout:9000,headers,
       body:JSON.stringify({size:10,query:{match:{'partes.nome':{query:limpo,operator:'and'}}}})});
-    if(!r.ok) throw Error(`HTTP ${r.status}`);
+    if(!r.ok) throw falhar(r);
     const j=await J(r);
     const hits=lista(j?.hits?.hits);
     return {dados:{total:j?.hits?.total?.value||0,processos:hits.map(h=>({numero:h?._source?.numeroProcesso??null,classe:h?._source?.classe?.nome??null}))}};

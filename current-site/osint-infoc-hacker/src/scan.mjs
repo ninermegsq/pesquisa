@@ -34,13 +34,13 @@ export async function rodar(s,a,c){
         const status=ehAbort(e)?'timeout':'erro';
         // Raw exception in private Worker logs; report receives a bounded message.
         console.error(JSON.stringify({event:'source_run',id:s.id,status,http,name:e?.name,message:String(e?.message||e),stack:e?.stack,ms:Date.now()-t0}));
-        return {status,timestamp:new Date().toISOString(),erro:String(e?.message||e).slice(0,120)};
+        return {status,timestamp:new Date().toISOString(),erro:String(e?.message||e).slice(0,220)};
       }
     });
     return {id:s.id,status:valor.status||'ok',erro:valor.erro??null,ms:Date.now()-t0,provenance:s.provenance,timestamp:valor.timestamp||new Date().toISOString(),cache,dados:valor.dados??null,pivos:valor.pivos??[]};
   }catch(e){
     console.error(JSON.stringify({event:'source_run',id:s.id,status:ehAbort(e)?'timeout':'erro',name:e?.name,message:String(e?.message||e),stack:e?.stack}));
-    return {id:s.id,status:ehAbort(e)?'timeout':'erro',ms:Date.now()-t0,provenance:s.provenance,erro:String(e?.message||e).slice(0,120)};
+    return {id:s.id,status:ehAbort(e)?'timeout':'erro',ms:Date.now()-t0,provenance:s.provenance,erro:String(e?.message||e).slice(0,220)};
   }
 }
 export async function handleScan(request,env,ip){

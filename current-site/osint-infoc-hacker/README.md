@@ -150,3 +150,11 @@ Consulte `verification/status.md`. Testes locais não comprovam disponibilidade 
 ### Worker de validação isolado
 
 `wrangler.validation.toml` define um worker separado e usa a sitekey de teste, que aceita qualquer visitante. Instale o secret de teste **somente** nesse worker por ambiente; nunca copie a `TURNSTILE_SITEKEY` de teste nem o secret correspondente para `ostnt-migration`. A chave pública real segue no binding `TURNSTILE_SITE_KEY` do Worker de produção. O endpoint `/token` usa `TURNSTILE_SITEKEY` quando definido, registra `TURNSTILE_SITEKEY de teste em uso` para chaves iniciadas em `1x0000` e exige que o hostname retornado pelo siteverify corresponda ao hostname da requisição.
+
+### Evidência HTTP e identificação por endpoint
+
+Respostas HTTP não bem-sucedidas têm os primeiros 200 caracteres do corpo copiados por `clone()`, sem consumir a resposta original. `falhar` preserva status e corpo na exceção; a mensagem do relatório comporta 220 caracteres. Logs privados incluem a exceção associada ao id da fonte. A captura não classifica automaticamente respostas como bloqueio 1010.
+
+`crtsh`, `cnpj_br` e `ddd` devem ser classificados individualmente, usando resposta e corpo observados em cada endpoint. Compartilhar o host BrasilAPI não comprova compartilhar uma regra de bloqueio. Os logs disponíveis não comprovam execução dessas três fontes.
+
+Trocar de biblioteca ou runtime (por exemplo, curl para Playwright) é troca de cliente. Alterar somente User-Agent no mesmo fetch do Worker é alteração de header e pode alterar sua assinatura declarada. Essa distinção técnica não elimina restrições de acesso ou rejeições de revisão automática. O experimento A/B solicitado permanece pendente devido à rejeição anterior de tentativas de contornar o 1010; nenhum resultado A/B é declarado.

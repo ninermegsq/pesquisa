@@ -96,8 +96,8 @@ netlify dev
 
 ## Funcionamento e privacidade
 
-- `token.js`: checa Turnstile com a Cloudflare, assina um token HMAC com validade de 60 segundos e o vincula ao IP. `GET` expõe apenas a site key pública.
-- `scan.js`: exige `Origin` autorizada, token válido, limite aproximado de 20 consultas por IP por hora e validação de e-mail. Faz consultas externas do servidor para XposedOrNot, Hudson Rock, EmailRep (opcional), DNS over HTTPS, GitHub, Keybase, Gravatar e InternetDB, com timeout e fallback.
+- `token.js` / rota Worker `/token`: checa Turnstile, assina token HMAC de uso único com TTL de 60 segundos e o vincula ao IP e ao SHA-256 do e-mail. O nonce consumido fica no KV; `GET` expõe apenas a site key pública com cache de 24 horas.
+- `scan.js` / rota Worker `/scan`: exige `Origin` autorizada e token de uso único. Limita cada IP a 10 scans por hora e 60 por dia, respondendo `429` com `Retry-After`; faz consultas externas no servidor com timeout e fallback.
 - O cache usa uma chave SHA-256 do e-mail e guarda os resultados por **até 24h**. O Netlify Blobs **não fornece expiração automática nativa**: o código valida timestamps ao ler, e dados antigos podem permanecer fisicamente armazenados até uma rotina de limpeza. Configure uma política de retenção e exclusão para produção de grande escala.
 - O limitador de IP no Netlify Blobs tem consistência forte, mas **não é atômico** sob concorrência elevada. Para cotas rígidas, configure também limitação por WAF/Edge.
 - A verificação da senha é independente: SHA-1 feito em WebCrypto localmente, envio só dos cinco primeiros caracteres do hash para `api.pwnedpasswords.com`, comparação local do sufixo. **A senha em texto puro não é enviada.**

@@ -235,7 +235,7 @@ async function scan(event){
   await delay(190);const host=email.split('@')[1];try{pushLog(2,PROVIDERS.has(host)?'Host classificado: provedor pessoal.':'Host classificado: domínio próprio.','info');}catch{pushLog(2,'Falha na classificação do host.','warning');}
   await delay(210);pushLog(3,'Aguardando verificação de segurança e checagens externas…','info');
   const cfToken=await challenge();
-  const signed=await getJson('/.netlify/functions/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cfToken})});
+  const signed=await getJson('/.netlify/functions/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cfToken,email})});
   const response=await getJson('/.netlify/functions/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:signed.token,email})});
   const av=response.availability||{};
   await delay(175);pushLog(3,`Gravatar: ${response.gravatar===true?'imagem pública identificada':response.gravatar===false?'sem imagem pública':'consulta indisponível'}`,response.gravatar===true?'success':response.gravatar===null?'warning':'neutral');

@@ -254,7 +254,26 @@ async function scan(event){
 form.addEventListener('submit',scan);
 $('stage').addEventListener('click',event=>{const btn=event.target.closest('.copy-dork');if(!btn)return;const value=btn.dataset.dork||'';const old=btn.textContent;navigator.clipboard.writeText(value).then(()=>{btn.textContent='COPIADO';setTimeout(()=>btn.textContent=old,1300);}).catch(()=>{btn.textContent='ERRO';});});
 $('clear-btn').addEventListener('click',()=>{if(scanning)return;setOrbPhase('idle');current=null;$('stage').replaceChildren();$('actions').hidden=true;$('email').value='';$('form-error').textContent='';$('pass-panel').hidden=true;$('password').value='';$('password-result').textContent='';$('password-toggle').setAttribute('aria-expanded','false');$('scan-btn').removeAttribute('data-ready');positionIdlePill();$('email').focus();});
-$('export-btn').addEventListener('click',()=>{if(!current)return;const content=['OSINT REPORT','E-mail: '+current.email,'Data ISO: '+new Date().toISOString(),'Breaches: '+(current.data.breaches||[]).length,'','DORKS:',...getDorks(current.email),'','por @infoc.hacker'].join('\n');const url=URL.createObjectURL(new Blob([content],{type:'text/plain;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='osint-report-'+current.email.replace(/[^a-z0-9.-]/gi,'_')+'.txt';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+function reportFilename(ext){return 'osint-report-'+current.email.replace(/[^a-z0-9.-]/gi,'_')+'.'+ext;}
+function downloadReport(content,type,ext){if(!current)return;const url=URL.createObjectURL(new Blob([content],{type}));const a=document.createElement('a');a.href=url;a.download=reportFilename(ext);document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function csvCell(value){let v=String(value??'');if(/^[=+@\-\t\r]/.test(v))v="'"+v;return '"'+v.replace(/"/g,'""')+'"';}
+function reportRows(){const d=current.data,src=d.sources||{},rows=[['fonte','campo','valor','severidade','timestamp']];const add=(source,field,value,severity='info')=>rows.push([source,field,value,severity,src[source]?.checkedAt||d.checkedAt||new Date().toISOString()]);
+ (d.breaches||[]).forEach(b=>add('xposedornot','breach',JSON.stringify(b),/plain|clear|easy|weak/i.test(String(b.passwordRisk))?'high':'medium'));
+ if(Number(d.pastes)>0)add('xposedornot','pastes',d.pastes,'medium');
+ if(d.stealer?.detected)add('hudsonRock','stealer_records',d.stealer.count||'exposição identificada','high');
+ if(d.reputation?.suspicious||d.reputation?.blacklisted)add('emailRep','reputation',JSON.stringify(d.reputation),'medium');
+ if(d.dns?.available&&!d.dns?.hasSPF)add('googleDns','spf','ausente','medium');
+ if(d.dns?.available&&!d.dns?.dmarc)add('googleDns','dmarc','ausente','medium');
+ (d.internetdb?.ports||[]).forEach(v=>add('internetdb','ip_associated_port',v,'info'));
+ (d.internetdb?.vulns||[]).forEach(v=>add('internetdb','ip_associated_vulnerability',v,'info'));
+ if(d.github?.count)(d.github.users||[]).forEach(v=>add('github','matching_account',v,'info'));
+ if(d.keybase)add('keybase','profile',d.keybase,'info');
+ if(d.gravatar===true)add('gravatar','public_avatar','identificado','info');
+ if(rows.length===1)add('summary','result','nenhum achado confirmado nas fontes disponíveis','info');
+ return rows;}
+$('export-json').addEventListener('click',()=>{if(!current)return;const report={schemaVersion:1,generatedAt:new Date().toISOString(),email:current.email,data:current.data,sources:current.data.sources||{}};downloadReport(JSON.stringify(report,null,2),'application/json;charset=utf-8','json');});
+$('export-csv').addEventListener('click',()=>{if(!current)return;const csv='\uFEFF'+reportRows().map(row=>row.map(csvCell).join(',')).join('\r\n');downloadReport(csv,'text/csv;charset=utf-8','csv');});
+$('export-txt').addEventListener('click',()=>{if(!current)return;const content=['OSINT REPORT','E-mail: '+current.email,'Data ISO: '+new Date().toISOString(),'Breaches: '+(current.data.breaches||[]).length,'','DORKS:',...getDorks(current.email),'','por @infoc.hacker'].join('\n');downloadReport(content,'text/plain;charset=utf-8','txt');});
 $('password-toggle').addEventListener('click',()=>{const show=$('pass-panel').hidden;$('pass-panel').hidden=!show;$('password-toggle').setAttribute('aria-expanded',String(show));if(show)$('password').focus();});
 $('password-run').addEventListener('click',async()=>{const p=$('password').value;if(!p){$('password-result').textContent='Digite uma senha.';return;}const btn=$('password-run');btn.disabled=true;try{const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-1',new TextEncoder().encode(p)))).map(v=>v.toString(16).padStart(2,'0')).join('').toUpperCase();const prefix=hash.slice(0,5),suffix=hash.slice(5);const response=await fetch(`https://api.pwnedpasswords.com/range/${prefix}`,{cache:'no-store',headers:{'Add-Padding':'true'}});if(!response.ok)throw Error(`HTTP ${response.status}`);const body=await response.text();const match=body.split(/\r?\n/).find(line=>line.split(':')[0]===suffix);const hits=match?Number(match.split(':')[1]||0):0;$('password-result').textContent=hits?`Senha encontrada ${fmt(hits)} vezes em coleções de vazamentos. Não a reutilize.`:'não encontrada — isso não garante que a senha seja segura.';}catch(err){$('password-result').textContent='Não foi possível consultar a base de senhas: '+err.message;}finally{btn.disabled=false;}});
 

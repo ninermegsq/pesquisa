@@ -187,12 +187,13 @@ export const REGISTRY=[
     const [asn,prefixo,pais,registro]=raw.split('|').map(x=>x.trim());
     return {dados:{asn:asn||null,prefixo:prefixo||null,pais:pais||null,registro:registro||null}};
   }},
- {id:'cnpj_br',tipos:['cnpj'],custo:1,ttl:86400,provenance:'brasilapi-cnpj',
+ {id:'cnpj_br',tipos:['cnpj'],custo:1,ttl:86400,provenance:'minha-receita-cnpj',
   async run(a,c){
-    const r=await c.get(`https://brasilapi.com.br/api/cnpj/v1/${a.valor}`,{timeout:8000});
+    const r=await c.get(`https://minhareceita.org/${encodeURIComponent(a.valor)}`,{timeout:8000});
     if(r.status===404) return {dados:{existe:false}};
     if(!r.ok) throw falhar(r);
     const j=await J(r);
+    if(!j||typeof j!=='object'||Array.isArray(j)||String(j.cnpj)!==a.valor)throw Error('formato inesperado de CNPJ');
     const socios=lista(j?.qsa).map(s=>({nome:s.nome_socio,qual:s.qualificacao_socio}));
     return {dados:{existe:true,razao:j.razao_social,fantasia:j.nome_fantasia,
       situacao:j.descricao_situacao_cadastral,cnae:j.cnae_fiscal_descricao,capital:j.capital_social,

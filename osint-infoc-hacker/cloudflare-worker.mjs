@@ -158,6 +158,16 @@ async function scan(req, env, ctx) {
   // Server-side fanout; client cannot learn private API keys.
   const fetchGravatar = fetch(`https://www.gravatar.com/avatar/${md5}?d=404`, { method: 'HEAD', signal: AbortSignal.timeout(3000) })
     .then(r => r.status === 200).catch(() => null);
+  const githubRequest = env.GITHUB_TOKEN ? (async () => {
+    const key = 'github:' + sha256(email);
+    try {
+      const cached = await store.get(key, { type: 'json' });
+      if (cached && cached.cacheExpiresAt > Date.now()) return { ok: true, status: 200, data: cached.data };
+      const result = await external('https://api.github.com/search/users?q=' + enc, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'osint-infoc-hacker', Authorization: 'Bearer ' + env.GITHUB_TOKEN } });
+      if (result?.ok) await store.setJSON(key, { data: result.data, cacheExpiresAt: Date.now() + 86400000 }, { metadata: { expiration: Date.now() + 86400000 } });
+      return result;
+    } catch { return null; }
+  })() : Promise.resolve(null);
   const requests = [
     external(`https://api.xposedornot.com/v1/check-email/${enc}`),
     external(`https://api.xposedornot.com/v1/breach-analytics?email=${enc}`),
@@ -167,7 +177,7 @@ async function scan(req, env, ctx) {
     external(`https://dns.google/resolve?name=${encodeURIComponent(host)}&type=MX`),
     external(`https://dns.google/resolve?name=${encodeURIComponent(host)}&type=A`),
     external(`https://dns.google/resolve?name=${encodeURIComponent('_dmarc.' + host)}&type=TXT`),
-    external(`https://api.github.com/search/users?q=${enc}`, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'osint-infoc-hacker' } }),
+    githubRequest,
     external(`https://keybase.io/_/api/1.0/user/lookup.json?emails=${enc}`),
     fetchGravatar
   ];
@@ -195,7 +205,7 @@ async function scan(req, env, ctx) {
     github: gh?.ok ? { count: n(gh.data?.total_count), users: array(gh.data?.items).slice(0, 5).map(u => String(u.login || '').slice(0, 70)).filter(Boolean) } : null,
     keybase: keybase?.ok ? String(keybase.data?.them?.[0]?.basics?.username || '') : null,
     gravatar,
-    availability: { xon: Boolean(analytic?.ok || check?.ok), analytics: Boolean(analytic?.ok), hudson: Boolean(hudson?.ok), emailrep: Boolean(rep?.ok), dns: dnsOK, github: Boolean(gh?.ok), keybase: Boolean(keybase?.ok), internetdb: Boolean(db?.ok), gravatar: gravatar !== null },
+    availability: { xon: Boolean(analytic?.ok || check?.ok), analytics: Boolean(analytic?.ok), hudson: Boolean(hudson?.ok), emailrep: Boolean(rep?.ok), dns: dnsOK, github: Boolean(gh?.ok && env.GITHUB_TOKEN), keybase: Boolean(keybase?.ok), internetdb: Boolean(db?.ok), gravatar: gravatar !== null },
     checkedAt: new Date().toISOString(), cached: false
   };
   try { await store.setJSON(ck, { ...data, cacheExpiresAt: Date.now() + 86400000 }, { metadata: { expiration: Date.now() + 86400000 } }); }

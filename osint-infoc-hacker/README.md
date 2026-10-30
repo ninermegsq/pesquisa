@@ -46,6 +46,7 @@ Para hospedar pela Netlify, use `public/` e `netlify/functions/` e configure as 
 | `TURNSTILE_SITE_KEY` | Sim | Chave **pública** do widget do Turnstile. Obtida por GET na Function `/token`; **não** é segredo. |
 | `ALLOWED_ORIGINS` | Sim | Origens HTTP(S) exatas, separadas por vírgula. Ex.: `https://site.netlify.app,https://seudominio.com`. |
 | `EMAILREP_KEY` | Não | API key opcional da EmailRep. Sem ela a checagem EmailRep aparece como indisponível. |
+| `GITHUB_TOKEN` | Não | Token opcional de leitura da API GitHub; configure com `wrangler secret put GITHUB_TOKEN`. Sem ele, GitHub aparece indisponível. A resposta é cacheada por e-mail durante 24 horas. |
 | `AWS_LAMBDA_JS_RUNTIME` | Conforme plano/ambiente | Caso necessário na Netlify, valor `nodejs20.x` para selecionar explicitamente runtime das Functions. |
 
 **Nenhum segredo aparece no HTML.** A site key do Turnstile foi criada para divulgação pública; é impossível validar o Turnstile usando apenas o segredo no servidor sem configurar um widget no cliente.
@@ -107,7 +108,7 @@ netlify dev
 ## Limites conhecidos
 
 - **XposedOrNot:** cerca de **100 chamadas/dia por IP** para os endpoints usados (além de limites por hora), conforme a [documentação oficial](https://xposedornot.com/api_doc).
-- **GitHub:** limites de requisição sem autenticação, muitas vezes apresentados como **60/h sem token**; o Search API também possui limites próprios e pode retornar bloqueio independentemente da cota REST geral.
+- **GitHub:** a consulta só é feita quando `GITHUB_TOKEN` está configurado; sem ele, `availability.github` fica `false`. O resumo é cacheado por e-mail no KV durante 24 horas para reduzir chamadas compartilhadas.
 - **"não encontrado" ≠ seguro**. Uma ausência de resultados não elimina risco, e falhas de APIs devem ser tratadas como resultados inconclusivos.
 - APIs de terceiros podem mudar formatos, preços, restrições de CORS, políticas de consulta ou disponibilidade. As chamadas externas de investigação são feitas pela Function (com exceção do teste anônimo de senha diretamente do navegador).
 - A CSP inclui `frame-src https://challenges.cloudflare.com`, ajuste necessário além do cabeçalho original para permitir o iframe do Turnstile, conforme a documentação oficial da Cloudflare.

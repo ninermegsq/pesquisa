@@ -228,8 +228,8 @@ async function scan(event){
  event.preventDefault();if(scanning)return;
  const email=$('email').value.trim().toLowerCase();$('form-error').textContent='';
  if(!EMAIL_RE.test(email)||email.length>254){$('form-error').textContent='E-mail inválido. Use alvo@dominio.com.';orbActor.setAttribute('data-shake','');setTimeout(()=>orbActor.removeAttribute('data-shake'),300);$('email').focus();return;}
- scanning=true;setOrbPhase('scanning');$('scan-btn').disabled=true;$('actions').hidden=false;$('stage').replaceChildren();$('pass-panel').hidden=true;$('password-toggle').setAttribute('aria-expanded','false');current=null;
- const log=document.createElement('div');log.id='scan-log';log.className='log';log.setAttribute('role','status');log.setAttribute('aria-live','polite');$('stage').append(log);
+ scanning=true;$('scan-announcement').textContent='';setOrbPhase('scanning');$('scan-btn').disabled=true;$('actions').hidden=false;$('stage').replaceChildren();$('pass-panel').hidden=true;$('password-toggle').setAttribute('aria-expanded','false');current=null;
+ const log=document.createElement('div');log.id='scan-log';log.className='log';$('stage').append(log);
  try{
   let hash;try{hash=md5(email);pushLog(1,`E-mail normalizado. Hash MD5 local: ${hash.slice(0,8)}…`,'success');}catch{pushLog(1,'Falha ao calcular o hash local.','warning');}
   await delay(190);const host=email.split('@')[1];try{pushLog(2,PROVIDERS.has(host)?'Host classificado: provedor pessoal.':'Host classificado: domínio próprio.','info');}catch{pushLog(2,'Falha na classificação do host.','warning');}
@@ -247,13 +247,13 @@ async function scan(event){
   await delay(180);pushLog(9,'Verificação finalizada. Resultados públicos e parciais quando houver indisponibilidade.','success');
   const rendered=renderResults(response,email),wrapper=document.createElement('div');wrapper.innerHTML=rendered.html;$('stage').append(...wrapper.childNodes);
   requestAnimationFrame(()=>$('risk-fill')&&($('risk-fill').style.width=rendered.score+'%'));
-  current={email,data:response};setOrbPhase('done',response);
- }catch(err){const message=err?.message||'erro não identificado';setOrbPhase('error',message);pushLog(9,'Scan interrompido: '+message,'bad');$('form-error').textContent=message;}
+  current={email,data:response};setOrbPhase('done',response);const findingCount=reportRows().filter(row=>row[0]!=='fonte'&&row[0]!=='summary').length;$('scan-announcement').textContent=`Análise concluída. ${findingCount} achados.`;
+ }catch(err){const message=err?.message||'erro não identificado';$('scan-announcement').textContent='Verificação interrompida';setOrbPhase('error',message);pushLog(9,'Scan interrompido: '+message,'bad');$('form-error').textContent=message;}
  finally{scanning=false;$('scan-btn').disabled=false;$('security-slot').classList.remove('active');$('security-slot').replaceChildren();try{if(widgetId!==null)window.turnstile?.remove(widgetId);}catch{}widgetId=null;}
 }
 form.addEventListener('submit',scan);
 $('stage').addEventListener('click',event=>{const btn=event.target.closest('.copy-dork');if(!btn)return;const value=btn.dataset.dork||'';const old=btn.textContent;navigator.clipboard.writeText(value).then(()=>{btn.textContent='COPIADO';setTimeout(()=>btn.textContent=old,1300);}).catch(()=>{btn.textContent='ERRO';});});
-$('clear-btn').addEventListener('click',()=>{if(scanning)return;setOrbPhase('idle');current=null;$('stage').replaceChildren();$('actions').hidden=true;$('email').value='';$('form-error').textContent='';$('pass-panel').hidden=true;$('password').value='';$('password-result').textContent='';$('password-toggle').setAttribute('aria-expanded','false');$('scan-btn').removeAttribute('data-ready');positionIdlePill();$('email').focus();});
+$('clear-btn').addEventListener('click',()=>{if(scanning)return;setOrbPhase('idle');current=null;$('stage').replaceChildren();$('scan-announcement').textContent='';$('actions').hidden=true;$('email').value='';$('form-error').textContent='';$('pass-panel').hidden=true;$('password').value='';$('password-result').textContent='';$('password-toggle').setAttribute('aria-expanded','false');$('scan-btn').removeAttribute('data-ready');positionIdlePill();$('email').focus();});
 function reportFilename(ext){return 'osint-report-'+current.email.replace(/[^a-z0-9.-]/gi,'_')+'.'+ext;}
 function downloadReport(content,type,ext){if(!current)return;const url=URL.createObjectURL(new Blob([content],{type}));const a=document.createElement('a');a.href=url;a.download=reportFilename(ext);document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function csvCell(value){let v=String(value??'');if(/^[=+@\-\t\r]/.test(v))v="'"+v;return '"'+v.replace(/"/g,'""')+'"';}

@@ -1,3 +1,4 @@
+import {DDD} from '../data/ddd.mjs';
 import {falhar} from '../lib/http.mjs';
 import {md5} from '../lib/md5.mjs';
 const J = async r => {
@@ -208,13 +209,12 @@ export const REGISTRY=[
     const j=lista(await J(r));
     return {dados:{total:j.length,sancoes:j.slice(0,5).map(s=>({orgao:s.orgaoSancionador?.nome,ini:s.dataInicioSancao,fim:s.dataFimSancao}))}};
   }},
- {id:'ddd',tipos:['telefone'],custo:1,ttl:604800,provenance:'brasilapi-ddd',
+ {id:'ddd',tipos:['telefone'],custo:0,ttl:0,provenance:'anatel-pgcn-snapshot-2026-10-30',
   async run(a,c){
     const ddd=a.valor.startsWith('55')?a.valor.slice(2,4):a.valor.slice(0,2);
-    const r=await c.get(`https://brasilapi.com.br/api/ddd/v1/${ddd}`,{timeout:6000});
-    if(!r.ok) throw falhar(r);
-    const j=await J(r);
-    return {dados:{ddd,uf:j.state,cidades:lista(j?.cities).slice(0,10)}};
+    const registro=DDD[ddd];
+    if(!registro)throw Error('DDD não encontrado na tabela local da Anatel');
+    return {dados:{ddd,...registro}};
   }},
  {id:'wikidata',tipos:['nome'],custo:1,ttl:604800,provenance:'wikidata-sparql',
   async run(a,c){

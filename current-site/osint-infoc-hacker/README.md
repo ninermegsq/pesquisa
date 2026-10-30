@@ -169,3 +169,19 @@ Trocar de biblioteca ou runtime (por exemplo, curl para Playwright) é troca de 
 alterar o modo muda apenas o header User-Agent; o cliente HTTP permanece fetch do runtime
 
 A produção permanece em `identificado` até decisão explícita. A configuração de validação contém `UA_MODE = "navegador"`; sua ativação e chamadas reais continuam pendentes da restrição registrada para o 1010. O modo inválido e a ausência de UA_NAVEGADOR no modo navegador geram erro explícito.
+
+### Limitações dos provedores e 1010
+
+O operador relatou: "1010 é reputação de IP de saída do Worker; a mitigação é troca de provedor, não ajuste de UA". Essa atribuição causal ainda não foi comprovada pelos registros disponíveis neste ambiente. UA_MODE permanece configurado como identificado em produção; a mudança de UA não é tratada como solução comprovada.
+
+| ID | Mudança | Motivo e evidência |
+| --- | --- | --- |
+| `ddd` | BrasilAPI DDD substituída por snapshot local Anatel (67 DDDs) | Elimina chamadas de rede; não depende de provar bloqueio do antigo endpoint |
+| `cnpj_br` | BrasilAPI CNPJ substituída por Minha Receita | Troca solicitada pelo operador; novo endpoint retornou 200/JSON no teste local, pendente no Worker |
+| `crtsh` | crt.sh substituído por Subdomain Center | Troca solicitada pelo operador; novo endpoint retornou 503/server busy no teste local, pendente de sucesso e teste no Worker |
+
+Nenhuma fonte foi movida ao browser nem removida nesta etapa. Cada endpoint é classificado pelo próprio resultado. CORS do BrasilAPI CNPJ foi observado como `*`; o HEAD de crt.sh retornou 502 sem header CORS, portanto seu suporte permanece inconclusivo. Resultados completos e limites da comprovação estão em `verification/provider-switch.md`.
+
+O snapshot de DDD foi obtido de https://www.anatel.gov.br/dadosabertos/PDA/Codigo_Nacional/PGCN.csv em 2026-10-30; o hash SHA-256 está em `src/data/ddd.mjs`. O arquivo conserva cidades de UFs distintas para DDDs compartilhados. É uma versão estática que precisa de atualização deliberada; não promete dados mais novos que o arquivo obtido.
+
+Referências dos novos adaptadores: https://docs.minhareceita.org/como-usar/ e https://github.com/ARPSyndicate/docs . Subdomain Center retorna amostra anônima, não inventário completo; o adaptador limita o resultado a 60 subdomínios.

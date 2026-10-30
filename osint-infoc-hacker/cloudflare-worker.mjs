@@ -16,6 +16,9 @@ const staticHeaders = {
   // api.github.com, dns.google, internetdb.shodan.io, api.xposedornot.com, keybase.io
   'content-security-policy': "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; img-src 'self' data: https://www.gravatar.com; style-src 'self' 'unsafe-inline'; script-src 'self' https://challenges.cloudflare.com https://static.cloudflareinsights.com; connect-src 'self' https://challenges.cloudflare.com https://api.pwnedpasswords.com https://cloudflareinsights.com; frame-src https://challenges.cloudflare.com"
 };
+// HSTS rollout is phased: preload submission to hstspreload.org is a later manual step.
+// Add includeSubDomains only after confirming every subdomain is HTTPS-only.
+const htmlHeaders = { ...staticHeaders, 'strict-transport-security': 'max-age=31536000' };
 function createStore(kv) {
   return {
     get: (key, options) => kv.get(key, options?.type === 'json' ? 'json' : 'text'),
@@ -190,8 +193,8 @@ export default {
     if (req.method !== 'GET' && req.method !== 'HEAD') return reply({ error: 'Método não permitido.' }, 405);
     if (url.pathname === '/app.js') return new Response(APP_JS, { status: 200, headers: { ...staticHeaders, 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'public, max-age=300' } });
     if (url.pathname === '/favicon.svg') return new Response(FAVICON, { status: 200, headers: { ...staticHeaders, 'content-type': 'image/svg+xml; charset=utf-8', 'cache-control': 'public, max-age=86400' } });
-    if (url.pathname === '/obrigado.html') return new Response(THANKS, { status: 200, headers: staticHeaders });
-    if (url.pathname === '/' || url.pathname === '/index.html' || !url.pathname.includes('.')) return new Response(req.method === 'HEAD' ? null : HTML, { status: 200, headers: staticHeaders });
+    if (url.pathname === '/obrigado.html') return new Response(THANKS, { status: 200, headers: htmlHeaders });
+    if (url.pathname === '/' || url.pathname === '/index.html' || !url.pathname.includes('.')) return new Response(req.method === 'HEAD' ? null : HTML, { status: 200, headers: htmlHeaders });
     return new Response('Not found', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } });
   }
 };

@@ -21,7 +21,7 @@ async function limite(env,ip){
 async function rodar(s,a,c){
   const t0=Date.now();
   try{
-    const {valor,cache}=await comCache(c.env,s.id,a.valor,s.ttl,async()=>{try{return {status:'ok',timestamp:new Date().toISOString(),...await s.run(a,c)};}catch(e){return {status:ehAbort(e)?'timeout':'erro',timestamp:new Date().toISOString(),erro:String(e?.message||e).slice(0,120)};}});
+    const {valor,cache}=await comCache(c.env,s.id,a.valor,valor=>valor.status==='ok'?s.ttl:120,async()=>{try{return {status:'ok',timestamp:new Date().toISOString(),...await s.run(a,c)};}catch(e){return {status:ehAbort(e)?'timeout':'erro',timestamp:new Date().toISOString(),erro:String(e?.message||e).slice(0,120)};}});
     return {id:s.id,status:valor.status||'ok',erro:valor.erro??null,ms:Date.now()-t0,provenance:s.provenance,timestamp:valor.timestamp||new Date().toISOString(),cache,dados:valor.dados??null,pivos:valor.pivos??[]};
   }catch(e){
     return {id:s.id,status:ehAbort(e)?'timeout':'erro',ms:Date.now()-t0,provenance:s.provenance,erro:String(e?.message||e).slice(0,120)};

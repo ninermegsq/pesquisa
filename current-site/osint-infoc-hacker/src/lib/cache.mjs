@@ -3,6 +3,7 @@ export async function comCache(env,id,alvo,ttl,fn){
  try{hit=await env.OSINT_KV.get(k,'json');}catch{}
  if(hit && typeof hit==='object')return {valor:hit,cache:'hit'};
  const valor=await fn();
- if(ttl>0){try{await env.OSINT_KV.put(k,JSON.stringify(valor),{expirationTtl:ttl});}catch{}}
+ const segundos=typeof ttl==='function'?ttl(valor):ttl;
+ if(segundos>0){try{await env.OSINT_KV.put(k,JSON.stringify(valor),{expirationTtl:segundos});}catch{}}
  return {valor,cache:'miss'};
 }

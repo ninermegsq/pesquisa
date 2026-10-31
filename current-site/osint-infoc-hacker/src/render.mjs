@@ -5,7 +5,7 @@ const bloco=(titulo,corpo,r)=>{if(!corpo)return '';
  const est=r&&r.status!=='ok'?chip(r.erro||r.status,'red'):'';
  return `<details class="acc" open><summary>${esc(titulo)}${selo}${est}</summary><div class="accbody">${corpo}</div></details>`;
 };
-const titulos={xon:'BREACHES & SENHAS',hudsonrock:'INFOSTEALER',gravatar:'GRAVATAR',pgp:'PGP',github:'GITHUB',emailrep:'REPUTAÇÃO',dns:'DNS & E-MAIL',crtsh:'SUBDOMÍNIOS',wayback:'URLS HISTÓRICAS',internetdb:'EXPOSIÇÃO',ipgeo:'REDE',asn:'ASN',cnpj_br:'EMPRESA',ceis:'SANÇÕES',ddd:'REGIÃO',wikidata:'WIKIDATA',datajud:'PROCESSOS',telegram:'TELEGRAM',gitlab:'GITLAB',npm:'NPM',bluesky:'BLUESKY',rdap:'RDAP',observatory:'OBSERVATORY',urlscan:'URLSCAN'};
+const titulos={xon:'BREACHES & SENHAS',hudsonrock:'INFOSTEALER',gravatar:'GRAVATAR',pgp:'PGP',github:'GITHUB',dns:'DNS & E-MAIL',crtsh:'SUBDOMÍNIOS',wayback:'URLS HISTÓRICAS',internetdb:'EXPOSIÇÃO',ipgeo:'REDE',asn:'ASN',cnpj_br:'EMPRESA',ceis:'SANÇÕES',ddd:'REGIÃO',wikidata:'WIKIDATA',datajud:'PROCESSOS',telegram:'TELEGRAM',npm:'NPM',bluesky:'BLUESKY',rdap:'RDAP',observatory:'OBSERVATORY',urlscan:'URLSCAN'};
 function campo(k,v){
  if(v==null)return '';
  if(Array.isArray(v))return v.length?`<div class="kv"><strong>${esc(k)}</strong>${v.map((x,i)=>campo(String(i+1),x)).join('')}</div>`:`<div class="kv">${esc(k)}: nenhum</div>`;

@@ -19,7 +19,6 @@ export function pontuar(res){
     if(r.id==='dns'&&d.dmarc===false){s+=7;motivos.push('DMARC ausente');}
     if(r.id==='internetdb'){s+=Math.min((d.vulns||[]).length*3,12);}
     if(r.id==='ceis'&&(d.total||0)>0){s+=8;motivos.push('sanção');}
-    if(r.id==='emailrep'&&d.suspeito){s+=2;motivos.push('reputação suspeita');}
     if(r.id==='datajud'&&(d.total||0)>0){s+=Math.min(d.total*3,9);}
   }
   const valor=Math.max(0,Math.min(100,Math.round(s)));

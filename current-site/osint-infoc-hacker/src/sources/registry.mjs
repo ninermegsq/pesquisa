@@ -29,13 +29,6 @@ export const REGISTRY=[
     const t=await r.text();
     return {dados:{existe:true,uids:[...t.matchAll(/^uid\s+:(.*)$/gm)].map(m=>m[1].trim()).filter(Boolean)}};
   }},
- {id:'gitlab',tipos:['email'],custo:1,ttl:21600,provenance:'gitlab-users-api',
-  async run(a,c){
-    const r=await c.get(`https://gitlab.com/api/v4/users?search=${encodeURIComponent(a.valor)}`,{timeout:6000});
-    if(!r.ok) throw falhar(r);
-    const j=await J(r);if(!Array.isArray(j))throw Error('Formato GitLab inesperado');
-    return {dados:{total:j.length,contas:j.slice(0,5).map(u=>({login:u.username,nome:u.name,bio:u.bio||null}))}};
-  }},
  {id:'npm',tipos:['email'],custo:1,ttl:21600,provenance:'npm-registry-exact-email-v2',
   async run(a,c){
     const r=await c.get(`https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(a.valor)}&size=5`,{timeout:6000});
@@ -112,14 +105,6 @@ export const REGISTRY=[
     const j=await J(r);
     if(!Array.isArray(j?.items)||typeof j?.total_count!=='number')throw Error('Formato GitHub inesperado');
     return {dados:{total:j.total_count||0,contas:lista(j?.items).map(u=>({login:u.login,url:u.html_url}))}};
-  }},
- {id:'emailrep',tipos:['email'],custo:1,ttl:43200,provenance:'emailrep',
-  async run(a,c){
-    if(!c.env.EMAILREP_KEY) throw Error('sem chave');
-    const r=await c.get(`https://emailrep.io/${encodeURIComponent(a.valor)}`,{timeout:7000,headers:{key:c.env.EMAILREP_KEY}});
-    if(!r.ok) throw falhar(r);
-    const j=await J(r);
-    return {dados:{reputacao:j.reputation,suspeito:j.suspicious,blacklist:j.details?.blacklisted,perfis:j.details?.profiles||[]}};
   }},
  {id:'dns',tipos:['email','dominio'],custo:4,ttl:300,provenance:'google-doh',
   async run(a,c){

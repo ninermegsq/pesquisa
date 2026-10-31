@@ -53,7 +53,6 @@ A TURNSTILE_SITEKEY de teste nunca pode ir para produção porque aceita qualque
 | Segredo opcional | Uso | Cadastro/documentação |
 | --- | --- | --- |
 | GITHUB_TOKEN | Busca de perfis públicos, cache de sucesso 24h | https://docs.github.com/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens |
-| EMAILREP_KEY | Reputação de e-mail | https://emailrep.io/ |
 | TRANSPARENCIA_KEY | Consulta CEIS | https://portaldatransparencia.gov.br/api-de-dados |
 
 sem a chave a fonte aparece indisponível e score.parcial vira true; o restante do relatório não é afetado

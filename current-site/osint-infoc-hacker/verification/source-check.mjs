@@ -48,3 +48,8 @@ assert.equal(turnstileVerificado({success:false,hostname:'example.com'},testConf
 assert.equal(turnstileVerificado({success:true,hostname:'example.com'},{teste:false,hostname:'ostnt.online'}),false);
 assert.equal(turnstileVerificado({success:true,hostname:'other.invalid'},testConfig),false);
 console.log('Observed dummy hostname accepted only for guarded validation keys: passed');
+
+const xonEmpty=await source('xon').run({tipo:'email',valor:'fixture@example.invalid'},context(async()=>Response.json({Error:'Not found',email:null})));
+assert.equal(xonEmpty.dados.total,0);assert.equal(xonEmpty.dados.senhas.disponivel,false);
+await assert.rejects(()=>source('xon').run({tipo:'email',valor:'fixture@example.invalid'},context(async()=>Response.json({Error:'Rate limit exceeded'}))),/Formato XposedOrNot inesperado/);
+console.log('Documented XON no-breach response accepted; other error envelopes rejected: passed');

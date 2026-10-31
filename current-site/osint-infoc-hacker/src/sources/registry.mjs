@@ -73,13 +73,14 @@ export const REGISTRY=[
     const titulo=campos.titulo.trim(),descricao=campos.descricao.trim();
     return {dados:{existe:Boolean(titulo),usuario:'+'+numero,titulo:titulo||null,descricao:descricao||null}};
   }},
- {id:'xon',tipos:['email'],custo:2,ttl:43200,provenance:'xposedornot',
+ {id:'xon',tipos:['email'],custo:2,ttl:43200,provenance:'xposedornot-check-email-v2',
   async run(a,c){
     const r=await c.get(`https://api.xposedornot.com/v1/check-email/${encodeURIComponent(a.valor)}`,{timeout:8000});
     if(r.status===404) return {dados:{total:0,breaches:[],senhas:{textoPuro:0,facilQuebrar:0,hashForte:0}}};
     if(!r.ok) throw falhar(r);
     const j=await J(r);
-    if(!Array.isArray(j?.breaches))throw Error('Formato XposedOrNot inesperado');
+    if(j?.Error==='Not found'&&j?.email===null)return {dados:{total:0,breaches:[],senhas:{disponivel:false,textoPuro:null,facilQuebrar:null,hashForte:null}}};
+    if(!Array.isArray(j?.breaches))throw Error('Formato XposedOrNot inesperado | '+JSON.stringify(j).slice(0,180));
     const bm=j?.BreachMetrics?.passwords||{};
     const br=lista(j?.breaches).flat().filter(x=>typeof x==='string').map(n=>({nome:n}));
     return {dados:{total:br.length,breaches:br,

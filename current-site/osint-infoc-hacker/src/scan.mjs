@@ -11,6 +11,11 @@ export const json=(o,s=200,h={})=>new Response(JSON.stringify(o),{status:s,heade
 
 async function limite(env,ip){
   const h=new Date().toISOString().slice(0,13),d=h.slice(0,10);
+  if(env.SCAN_RATE_AUTHORIZATION?.valid){
+    try{await env.OSINT_KV.put(`rl:h:${ip}:${h}`,String(env.SCAN_RATE_AUTHORIZATION.hourCount),{expirationTtl:3700});await env.OSINT_KV.put(`rl:d:${ip}:${d}`,String(env.SCAN_RATE_AUTHORIZATION.dayCount),{expirationTtl:90000});}
+    catch{console.warn('rate_limit_kv_mirror_unavailable');}
+    return {ok:true};
+  }
   const nh=await env.OSINT_KV.get(`rl:h:${ip}:${h}`);const nd=await env.OSINT_KV.get(`rl:d:${ip}:${d}`);
   if(+nh>=LIM_HORA) return {ok:false,retry:3600};
   if(+nd>=LIM_DIA) return {ok:false,retry:86400};
@@ -29,19 +34,27 @@ export async function rodar(s,a,c){
       try{
         const dados=await s.run(a,contexto);
         console.log(JSON.stringify({event:'source_run',id:s.id,status:'ok',http,ms:Date.now()-t0}));
-        return {status:'ok',timestamp:new Date().toISOString(),...dados};
+        return {status:'ok',timestamp:new Date().toISOString(),...dados,provenance:s.provenance};
       }catch(e){
         const status=ehAbort(e)?'timeout':'erro';
         // Raw exception in private Worker logs; report receives a bounded message.
         console.error(JSON.stringify({event:'source_run',id:s.id,status,http,name:e?.name,message:String(e?.message||e),stack:e?.stack,ms:Date.now()-t0}));
-        return {status,timestamp:new Date().toISOString(),erro:String(e?.message||e).slice(0,220)};
+        return {status,provenance:s.provenance,timestamp:new Date().toISOString(),erro:String(e?.message||e).slice(0,220)};
       }
-    });
+    },s.provenance);
     return {id:s.id,status:valor.status||'ok',erro:valor.erro??null,ms:Date.now()-t0,provenance:s.provenance,timestamp:valor.timestamp||new Date().toISOString(),cache,dados:valor.dados??null,pivos:valor.pivos??[]};
   }catch(e){
     console.error(JSON.stringify({event:'source_run',id:s.id,status:ehAbort(e)?'timeout':'erro',name:e?.name,message:String(e?.message||e),stack:e?.stack}));
     return {id:s.id,status:ehAbort(e)?'timeout':'erro',ms:Date.now()-t0,provenance:s.provenance,erro:String(e?.message||e).slice(0,220)};
   }
+}
+export function pivosDe(res){
+ const valores=[];
+ for(const r of res){for(const p of Array.isArray(r?.pivos)?r.pivos:[]){
+  if(typeof p?.valor!=='string'||typeof p?.tipo!=='string')continue;
+  try{const alvo=detectar(p.valor);if(alvo.tipo!==p.tipo||alvo.tipo==='cpf')continue;valores.push(`${alvo.tipo}:${alvo.valor}`);}catch{}
+ }}
+ return [...new Set(valores)].slice(0,12).map(x=>({tipo:x.split(':')[0],valor:x.slice(x.indexOf(':')+1)}));
 }
 export async function handleScan(request,env,ip){
   const body=await request.json().catch(()=>null);const bruto=body?.alvo;
@@ -50,15 +63,20 @@ export async function handleScan(request,env,ip){
   let rl;try{rl=await limite(env,ip);}catch{return json({erro:'Cache obrigatório indisponível.'},503);}
   if(!rl.ok) return json({erro:'Limite atingido.'},429,{'retry-after':String(rl.retry)});
   const origem=new URL(request.url).origin;
-  const c=ctx(env,origem);let gasto=0;
-  const fila=REGISTRY.filter(s=>s.tipos.includes(alvo.tipo)).sort((x,y)=>x.custo-y.custo)
-    .filter(s=>{if(gasto+s.custo>Math.min(BUDGET,Number(env.BUDGET_SUBREQ)||BUDGET))return false;gasto+=s.custo;return true;});
+  const c=ctx(env,origem);let gasto=0,estimativa=3;
+  const candidatas=REGISTRY.filter(s=>s.tipos.includes(alvo.tipo)).sort((x,y)=>x.custo-y.custo);
+  const fila=candidatas.filter(s=>{
+    const custoTotal=s.custo+(s.custo>0?2:0);
+    if(gasto+s.custo>Math.min(BUDGET,Number(env.BUDGET_SUBREQ)||BUDGET)||estimativa+custoTotal>50)return false;
+    gasto+=s.custo;estimativa+=custoTotal;return true;
+  });
+  const omitidas=candidatas.filter(s=>!fila.includes(s)).map(s=>({id:s.id,motivo:'Orçamento de subrequests'}));
   const res=await Promise.all(fila.map(s=>rodar(s,alvo,c)));
-  const pivos=[...new Set(res.flatMap(r=>r.pivos||[]).map(p=>`${p.tipo}:${p.valor}`))]
-    .slice(0,12).map(x=>({tipo:x.split(':')[0],valor:x.slice(x.indexOf(':')+1)}));
+  const pivos=pivosDe(res);
+  const score=pontuar(res);if(omitidas.length)score.parcial=true;
   return json({alvo,gerado_em:new Date().toISOString(),
     fontes:res.map(({pivos:p,...r})=>r),
     disponibilidade:Object.fromEntries(res.map(r=>[r.id,r.status==='ok'])),
-    score:pontuar(res),pivos,html:render(res),
-    meta:{planejadas:fila.length,executadas:res.length,subrequests:gasto}});
+    score,pivos,html:render(res),
+    meta:{planejadas:candidatas.length,executadas:res.length,subrequests:gasto,subrequestsEstimadas:estimativa,omitidas}});
 }

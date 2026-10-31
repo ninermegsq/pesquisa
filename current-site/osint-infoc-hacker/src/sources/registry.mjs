@@ -164,14 +164,20 @@ export const REGISTRY=[
     const j=await J(r);
     return {dados:{portas:j.ports||[],vulns:j.vulns||[],hostnames:j.hostnames||[],cpes:j.cpes||[]}};
   }},
- {id:'ipgeo',tipos:['ip'],custo:1,ttl:86400,provenance:'ipwhois',
+ {id:'ipgeo',tipos:['ip'],custo:2,ttl:86400,provenance:'ipapi-geojs-v2',
   async run(a,c){
-    const r=await c.get(`https://ipwho.is/${encodeURIComponent(a.valor)}`,{timeout:6000});
-    if(!r.ok) throw falhar(r);
-    const j=await J(r);
-    if(j?.success===false) throw Error('IP inválido');
-    if(j?.success!==true)throw Error('Formato IPWHOIS inesperado');
-    return {dados:{pais:j.country,cidade:j.city,asn:j.connection?.asn,org:j.connection?.org,isp:j.connection?.isp}};
+    const tentativas=[];
+    for(const provider of ['ipapi','geojs']){
+      try{
+        const url=provider==='ipapi'?`https://ipapi.co/${encodeURIComponent(a.valor)}/json/`:`https://get.geojs.io/v1/ip/geo/${encodeURIComponent(a.valor)}.json`;
+        const r=await c.get(url,{timeout:6000});if(!r.ok)throw falhar(r);const j=await J(r);
+        if(j?.error||typeof j?.country!=='string')throw Error('Formato de geolocalização inválido');
+        return {dados:{pais:provider==='ipapi'?(j?.country_name??j.country):j.country,cidade:j?.city??null,
+          asn:j?.asn??j?.organization_asn??null,org:j?.org??j?.organization_name??j?.organization??null,isp:null,
+          provedor:provider,criterio:'Localização de rede provável; não indica localização de uma pessoa.',tentativas}};
+      }catch(e){tentativas.push({provedor:provider,erro:String(e?.message||e).slice(0,220)});}
+    }
+    throw Error(tentativas.map(x=>x.provedor+': '+x.erro).join(' | '));
   }},
  {id:'asn',tipos:['ip'],custo:1,ttl:86400,provenance:'team-cymru-dns',
   async run(a,c){

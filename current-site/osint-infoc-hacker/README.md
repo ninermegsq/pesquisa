@@ -108,3 +108,5 @@ Scans reais dos seis tipos exercitaram as 24 fontes. GitHub autenticado responde
 ## Fechamento do motor — 31/10/2026
 
 CEIS removida. OpenSanctions não foi ativada: a API hospedada exige chave; teste sem chave retornou `{"detail":"No API key provided."}`. Ausência de acesso não significa ausência de sanções. A seção SANÇÕES só poderá ser habilitada após uma fonte operacional ser validada. Documentação: https://www.opensanctions.org/docs/api/authentication/ .
+
+IPGEO: ipapi.co principal, GeoJS reserva. 17NAS não integrado: a documentação atual só descreve IP do chamador, exige chave no endpoint comercial e não documenta `/api/{ip}`. Usá-lo atribuiria o IP do Worker ao alvo. Custo considera ambas as chamadas; campo ausente permanece nulo.

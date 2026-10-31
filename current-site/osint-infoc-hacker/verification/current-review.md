@@ -119,3 +119,12 @@ O 403/1010 do acesso ao Worker público de validação e a rejeição automátic
 - Correção de correspondência exata implantada somente em ostnt-validation: HTTP 200, deployment_id a17e35b1860346649e5f9d11799237cc, etag 5384fb19d5d3ce41f170d7db35e7853ef698d2bf93b1d7b047069adba1b60200. Bindings e secrets herdados da configuração de validação; nenhuma rota aberta.
 - Painel de senha da produção testado com valor fictício: respondeu “não encontrada — isso não garante que a senha seja segura.” Downloads JSON e CSV geraram eventos reais de download; conteúdo dos arquivos não foi revalidado nesta etapa.
 - Aceite da candidata ainda depende de consultas reais no ambiente isolado por acesso autorizado. O scan e o painel acima pertencem à produção anterior.
+
+## Access e hostname autorizado — 31/10/2026
+
+Após o usuário alterar a permissão e solicitar nova tentativa pelo plugin:
+- Organização ostnt criada HTTP 201, auth_domain ostnt.cloudflareaccess.com, sessão 1h, sem bloqueio global de recursos sem aplicativo.
+- Aplicativo Access ac492dc7-6a98-48ab-8426-eb78d6f96727 criado HTTP 201 para validation.ostnt.online; única política allow inclui somente o e-mail do proprietário, relida antes de publicar hostname.
+- Hostname validation.ostnt.online vinculado ao Worker ostnt-validation HTTP 200 (domain id 8fbe0b1e97c6d40c324b822565d3fea705394d6f). ALLOWED_ORIGINS da candidata atualizado para esse hostname, preservando demais bindings.
+- Primeiro acesso pelo navegador redirecionou ao Access, sem executar scan. Tela indicou ausência de método de login; provedor onetimepin criado HTTP 201 (f8bf77d3-a446-492d-8850-d1a5ccde7b50). Novo acesso exibiu formulário “Log in to ostnt-validation” / “Send login code”, confirmando a barreira Access. Login e scan candidato continuam pendentes.
+- ostnt.online e www.ostnt.online continuam vinculados a ostnt-migration. Nenhuma promoção de código para produção.

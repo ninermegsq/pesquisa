@@ -185,3 +185,5 @@ Nenhuma fonte foi movida ao browser nem removida nesta etapa. Cada endpoint é c
 O snapshot de DDD foi obtido de https://www.anatel.gov.br/dadosabertos/PDA/Codigo_Nacional/PGCN.csv em 2026-10-30; o hash SHA-256 está em `src/data/ddd.mjs`. O arquivo conserva cidades de UFs distintas para DDDs compartilhados. É uma versão estática que precisa de atualização deliberada; não promete dados mais novos que o arquivo obtido.
 
 Referências dos novos adaptadores: https://docs.minhareceita.org/como-usar/ e https://github.com/ARPSyndicate/docs . Subdomain Center retorna amostra anônima, não inventário completo; o adaptador limita o resultado a 60 subdomínios.
+
+Rechecagem do Subdomain Center com o mesmo curl/UA: timeout após 20 segundos e zero bytes, sem resposta HTTP do destino. Somado ao 503 anterior, o provedor continua sem sucesso comprovado; não está classificado como 1010. O Worker de validação permanece com rota pública e previews desligados; sua configuração de UA no repositório ainda não foi aplicada no serviço. O aceite pela saída do Worker permanece pendente.

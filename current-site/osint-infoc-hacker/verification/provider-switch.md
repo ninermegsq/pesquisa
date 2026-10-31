@@ -42,3 +42,11 @@ Essa evidência aplica-se ao endpoint de CNPJ; não classifica o antigo endpoint
 ## Pendências reais
 
 Confirmar respostas pela saída do Worker e capturar corpo/id nesse ambiente. A rejeição anterior bloqueou mudar de cliente após 403/1010 no acesso ao Worker de validação; essa observação não prova 1010 de uma fonte. O relato externo de A/B negativo de UA não foi reproduzido aqui nem prova isoladamente a causa do bloqueio.
+
+## Rechecagem no mesmo cliente e UA
+
+Nova chamada de `curl` ao mesmo endpoint `https://api.subdomain.center/?domain=ostnt.online`, com UA identificado e timeout de 20 segundos: exit code 28, status de destino `000`, zero bytes recebidos. A linha HTTP 200 disponível pertence exclusivamente ao túnel do proxy. Não houve corpo da API a registrar nesta tentativa. Não é evidência de 1010 nem de ausência de CORS. Não houve troca de cliente ou UA entre essas tentativas.
+
+Consulta autenticada à API de gerenciamento Cloudflare confirmou no Worker `ostnt-validation`: `enabled: false`, `previews_enabled: false`; bindings `CACHE`, `GITHUB_TOKEN` e `TOKEN_GUARD`. UA_MODE/UA_NAVEGADOR preparados no arquivo de configuração ainda não estão instalados nesse Worker. Essa consulta não executou nenhuma fonte.
+
+O aceite permanece incompleto: Subdomain Center não respondeu com sucesso nos testes disponíveis, e não há execução comprovada do novo motor na saída do Worker. Remoção ou migração ao browser por 1010 não foi acionada, pois não se observou 1010 nos provedores alternativos.

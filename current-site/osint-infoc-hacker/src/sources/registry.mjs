@@ -36,21 +36,29 @@ export const REGISTRY=[
     const j=await J(r);if(!Array.isArray(j))throw Error('Formato GitLab inesperado');
     return {dados:{total:j.length,contas:j.slice(0,5).map(u=>({login:u.username,nome:u.name,bio:u.bio||null}))}};
   }},
- {id:'npm',tipos:['email'],custo:1,ttl:21600,provenance:'npm-registry',
+ {id:'npm',tipos:['email'],custo:1,ttl:21600,provenance:'npm-registry-exact-email-v2',
   async run(a,c){
     const r=await c.get(`https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(a.valor)}&size=5`,{timeout:6000});
     if(!r.ok) throw falhar(r);
     const j=await J(r);
     if(!Array.isArray(j?.objects)||typeof j?.total!=='number')throw Error('Formato npm inesperado');
-    return {dados:{total:j.total||0,pacotes:lista(j?.objects).map(o=>({nome:o?.package?.name,autor:o?.package?.author?.name||null}))}};
+    const email=a.valor.toLowerCase();
+    const objetos=j.objects.filter(o=>[o?.package?.author,o?.package?.publisher,...lista(o?.package?.maintainers)]
+      .some(x=>typeof x?.email==='string'&&x.email.trim().toLowerCase()===email));
+    return {dados:{total:objetos.length,pacotes:objetos.map(o=>({nome:o?.package?.name||null,autor:o?.package?.author?.name||null})),
+      criterio:'E-mail exato nos metadados públicos do pacote; não comprova identidade.',amostra_examinada:j.objects.length,total_busca_ampla:j.total}};
   }},
- {id:'bluesky',tipos:['email'],custo:1,ttl:21600,provenance:'bsky-public-api',
+ {id:'bluesky',tipos:['email'],custo:1,ttl:21600,provenance:'bsky-public-email-mention-v2',
   async run(a,c){
     const r=await c.get(`https://public.api.bsky.app/xrpc/app.bsky.actor.searchActors?q=${encodeURIComponent(a.valor)}&limit=5`,{timeout:6000});
     if(!r.ok) throw falhar(r);
     const j=await J(r);
     if(!Array.isArray(j?.actors))throw Error('Formato Bluesky inesperado');
-    return {dados:{total:lista(j?.actors).length,atores:lista(j?.actors).map(x=>({handle:x.handle,nome:x.displayName||null}))}};
+    const email=a.valor.toLowerCase();
+    const atores=j.actors.filter(x=>[x?.displayName,x?.description].some(v=>typeof v==='string'&&
+      (v.toLowerCase().match(/[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\.[a-z]{2,}/g)||[]).includes(email)));
+    return {dados:{total:atores.length,atores:atores.map(x=>({handle:x?.handle||null,nome:x?.displayName||null})),
+      criterio:'Menção pública literal ao e-mail; não comprova titularidade da conta.',amostra_examinada:j.actors.length}};
   }},
  {id:'telegram',tipos:['telefone'],custo:1,ttl:3600,provenance:'telegram-tme',
   async run(a,c){

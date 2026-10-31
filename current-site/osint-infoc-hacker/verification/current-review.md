@@ -106,3 +106,10 @@ O 403/1010 do acesso ao Worker público de validação e a rejeição automátic
 - workers.dev e previews continuam desativados após upload. Não houve invocação remota nem contorno do bloqueio anterior. Aceite de API não comprova scans, cache ou cotas na borda.
 - Produção não recebeu código nem configuração deste candidato.
 - Navegador conectado local indisponível. Teste funcional iniciado na página de produção pelo navegador cloud: formulário carregou e scan pediu checkbox Turnstile “Confirme que é humano”. Aguardando interação manual; nenhum resultado de scan confirmado nesta etapa. Isso testa a versão anterior em produção, não o candidato.
+
+## Verificação humana concluída e regressão de correlação — 31/10/2026
+
+- Após a confirmação humana pelo usuário, o scan de produção concluiu: 13 fontes processadas, relatório parcial. Esta continua sendo a versão anterior, não o candidato isolado.
+- Eventos de download JSON e CSV confirmados no navegador; painel de senha abriu.
+- Observação real: npm trouxe 11202 resultados de busca ampla e Bluesky perfis sem correspondência literal ao alvo. Não são vínculos comprovados. Corrigido no candidato: npm exige e-mail exato em author/publisher/maintainers; Bluesky exige menção literal do e-mail em texto público, sem afirmar titularidade. Totais passam a contar apenas correspondências da amostra examinada; proveniência versionada invalida cache anterior.
+- Testes de regressão excluem registros alheios e prefixos de e-mail e preservam correspondência exata; suite de fontes, build e sintaxe passaram. Correção ainda não implantada.

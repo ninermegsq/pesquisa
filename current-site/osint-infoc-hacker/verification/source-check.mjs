@@ -32,3 +32,11 @@ console.log('Unknown source schemas rejected; unavailable DMARC remains unknown:
 
 assert.deepEqual(pivosDe([{pivos:[{tipo:'nome'},{tipo:'nome',valor:'undefined'},{tipo:'dominio',valor:'https://evil.invalid'},{tipo:'ip',valor:'2001:db8::1'},{tipo:'ip',valor:'2001:db8::1'}]}]),[{tipo:'ip',valor:'2001:db8::1'}]);
 console.log('Invalid pivots discarded, IPv6 preserved and duplicates removed: passed');
+
+// Regressão observada no scan real: busca ampla não comprova vínculo com o e-mail.
+const alvoEmail={tipo:'email',valor:'fixture@example.invalid'};
+const npmResult=await source('npm').run(alvoEmail,context(async()=>Response.json({total:11202,objects:[{package:{name:'unrelated',publisher:{email:'other@example.invalid'}}},{package:{name:'exact',maintainers:[{email:'Fixture@Example.Invalid'}]}}]})));
+assert.equal(npmResult.dados.total,1);assert.equal(npmResult.dados.pacotes[0].nome,'exact');assert.equal(npmResult.dados.total_busca_ampla,11202);
+const bskyResult=await source('bluesky').run(alvoEmail,context(async()=>Response.json({actors:[{handle:'unrelated',displayName:'other@example.invalid'},{handle:'exact',displayName:'Contato: fixture@example.invalid'},{handle:'prefix',displayName:'notfixture@example.invalid'}]})));
+assert.equal(bskyResult.dados.total,1);assert.equal(bskyResult.dados.atores[0].handle,'exact');
+console.log('Broad npm/Bluesky search results require exact public email evidence: passed');

@@ -119,10 +119,10 @@ export const REGISTRY=[
     return {dados:{dominio:d,ips:ra.map(x=>x.data).slice(0,5),mx:mx.map(x=>x.data).slice(0,5),
       txt:t.slice(0,8),hasSPF:t.some(x=>/^v=spf1/i.test(x)),dmarc}};
   }},
- {id:'wayback',tipos:['email','dominio'],custo:1,ttl:43200,provenance:'wayback-cdx',
+ {id:'wayback',tipos:['dominio'],custo:1,ttl:43200,provenance:'wayback-cdx-60-v2',
   async run(a,c){
     const d=a.tipo==='email'?a.valor.split('@')[1]:a.valor;
-    const r=await c.get(`https://web.archive.org/cdx/search/cdx?url=${encodeURIComponent(d)}/*&output=json&fl=original,timestamp&collapse=urlkey&limit=200`,{timeout:9000});
+    const r=await c.get(`https://web.archive.org/cdx/search/cdx?url=${encodeURIComponent(d)}/*&output=json&fl=original&collapse=urlkey&limit=60&filter=statuscode:200`,{timeout:7000});
     if(!r.ok) throw falhar(r);
     const arr=await J(r);
     if(!Array.isArray(arr))throw Error('Formato Wayback inesperado');

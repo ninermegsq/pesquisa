@@ -72,8 +72,20 @@ async function token(req, env, ip) {
   if (!env.TOKEN_GUARD) return reply({ error: 'Armazenamento de verificação indisponível.' }, 503);
   try {
     const form = new URLSearchParams({ secret: env.TURNSTILE_SECRET, response: body.cfToken, remoteip: ip || '' });
-    const verified = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', { method: 'POST', body: form, signal: AbortSignal.timeout(7000) }).then(r => r.json()).catch(() => null);
-    if (!turnstileVerificado(verified,config)) return reply({ error: 'Verificação de segurança recusada.' }, 401);
+    let verified=null,verificationStatus=null,verificationFailure='';
+    try{
+      const response=await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify',{method:'POST',body:form,signal:AbortSignal.timeout(7000)});
+      verificationStatus=response.status;
+      const text=await response.text();
+      try{verified=JSON.parse(text);}catch{verificationFailure='resposta não-JSON';}
+      if(!response.ok){verified=null;verificationFailure='HTTP '+response.status;}
+    }catch(e){verificationFailure=String(e?.name||'Erro de rede');}
+    if (!turnstileVerificado(verified,config)) {
+      const codes=Array.isArray(verified?.['error-codes'])?verified['error-codes'].filter(v=>typeof v==='string').slice(0,5):[];
+      console.warn(JSON.stringify({event:'turnstile_rejected',http:verificationStatus,codes,hostname:verified?.hostname||null,failure:verificationFailure}));
+      const details=env.APP_ENV==='validation'?['HTTP '+(verificationStatus??'indisponível'),...codes,verificationFailure,verified?.hostname?'hostname '+verified.hostname:''].filter(Boolean).join('; '):'';
+      return reply({error:'Verificação de segurança recusada.'+(details?' '+details:'')},401);
+    }
     const nonce = randomUUID();
     const now = Math.floor(Date.now() / 1000);
     const payload = btoa(unescape(encodeURIComponent(JSON.stringify({ exp: now + 60, ip: ip || '', emailHash: sha256(email), nonce })))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');

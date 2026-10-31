@@ -128,3 +128,10 @@ Após o usuário alterar a permissão e solicitar nova tentativa pelo plugin:
 - Hostname validation.ostnt.online vinculado ao Worker ostnt-validation HTTP 200 (domain id 8fbe0b1e97c6d40c324b822565d3fea705394d6f). ALLOWED_ORIGINS da candidata atualizado para esse hostname, preservando demais bindings.
 - Primeiro acesso pelo navegador redirecionou ao Access, sem executar scan. Tela indicou ausência de método de login; provedor onetimepin criado HTTP 201 (f8bf77d3-a446-492d-8850-d1a5ccde7b50). Novo acesso exibiu formulário “Log in to ostnt-validation” / “Send login code”, confirmando a barreira Access. Login e scan candidato continuam pendentes.
 - ostnt.online e www.ostnt.online continuam vinculados a ostnt-migration. Nenhuma promoção de código para produção.
+
+## Siteverify real da candidata — 31/10/2026
+
+- Usuário concluiu Access; navegador chegou à candidata em validation.ostnt.online com 12 fontes de e-mail, distinto da produção anterior.
+- Primeira tentativa recusada antes das fontes. Diagnóstico limitado a HTTP, error-codes e hostname (nunca token/secret) revelou HTTP 200 e hostname example.com no Siteverify dummy. Documentação exemplifica localhost, que era o único hostname dummy permitido.
+- Compatibilidade adicionada para localhost/example.com somente quando turnstileConfig já validou par dummy, APP_ENV validation e origem permitida. Produção continua sem exceção dummy e success:false/hostname alheio continuam recusados. Testes de regressão passaram.
+- Diagnóstico e correção implantados apenas no Worker de validação; versão corrigida e61c604307cb42d8b1f4ab7fc74ae8d7, HTTP 200. Nova tentativa de scan iniciada.

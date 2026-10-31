@@ -40,3 +40,11 @@ assert.equal(npmResult.dados.total,1);assert.equal(npmResult.dados.pacotes[0].no
 const bskyResult=await source('bluesky').run(alvoEmail,context(async()=>Response.json({actors:[{handle:'unrelated',displayName:'other@example.invalid'},{handle:'exact',displayName:'Contato: fixture@example.invalid'},{handle:'prefix',displayName:'notfixture@example.invalid'}]})));
 assert.equal(bskyResult.dados.total,1);assert.equal(bskyResult.dados.atores[0].handle,'exact');
 console.log('Broad npm/Bluesky search results require exact public email evidence: passed');
+
+const {turnstileConfig,turnstileVerificado}=await import('../src/lib/turnstile-config.mjs');
+const testConfig=turnstileConfig({APP_ENV:'validation',ALLOWED_ORIGINS:'https://validation.ostnt.online',TURNSTILE_SITEKEY:'1x00000000000000000000AA',TURNSTILE_SECRET:'1x0000000000000000000000000000000AA'},'https://validation.ostnt.online/');
+for(const hostname of ['localhost','example.com'])assert.equal(turnstileVerificado({success:true,hostname},testConfig),true);
+assert.equal(turnstileVerificado({success:false,hostname:'example.com'},testConfig),false);
+assert.equal(turnstileVerificado({success:true,hostname:'example.com'},{teste:false,hostname:'ostnt.online'}),false);
+assert.equal(turnstileVerificado({success:true,hostname:'other.invalid'},testConfig),false);
+console.log('Observed dummy hostname accepted only for guarded validation keys: passed');

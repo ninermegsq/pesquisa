@@ -12,6 +12,7 @@ export function turnstileConfig(env,url){
 }
 export function turnstileVerificado(resultado,config){
  if(resultado?.success!==true)return false;
- // Official dummy keys return hostname localhost, irrespective of the test URL.
- return resultado.hostname===config.hostname||(config.teste&&resultado.hostname==='localhost');
+ // Dummy Siteverify responses observed/documented with localhost or example.com.
+ // This exception is reachable only after the validation-only test-key guard.
+ return resultado.hostname===config.hostname||(config.teste&&['localhost','example.com'].includes(resultado.hostname));
 }

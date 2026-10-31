@@ -87,3 +87,13 @@ O 403/1010 do acesso ao Worker público de validação e a rejeição automátic
 - Confirmar downloads JSON/CSV no navegador e fluxo real Turnstile; teste local dummy não substitui essa prova.
 - Confirmar beacon /cdn-cgi/rum 200 ou remover sua injeção na origem correta; medir Lighthouse mobile.
 - Conferir dados e headers da versão publicada e somente então promover com chaves reais e rollback disponível.
+
+## Retomada de 31/10/2026
+
+- Build, sintaxe e todas as suítes unitárias passaram novamente.
+- workerd local repetido com seis tipos, replay sequencial e paralelo, burst 10/11, Retry-After, apenas contadores em KV e cache miss → hit → miss após 121 segundos. As fontes externas continuam sendo fixtures neste teste.
+- Wrangler 4.156.0: deploy --dry-run do candidato passou; nenhuma publicação executada.
+- Candidato salvo na branch codex/ostnt-hardening-20261031, separado de main.
+- workers_dev e preview_urls desativados também no arquivo de validação, para não reabrir entrada pública no próximo deploy.
+- Criado KV exclusivo ostnt-validation-rate-limit (e97462664ae64aaab17374b2c3f4936d). Config local de validação usa esse namespace; produção mantém o namespace anterior. Binding CACHE do Worker ostnt-validation atualizado e relido pela API (HTTP 200); GITHUB_TOKEN e TOKEN_GUARD preservados. Nenhuma invocação do endpoint bloqueado foi feita.
+- Persistem as pendências de execução na borda, fontes reais, Turnstile no navegador, beacon e Lighthouse; não são aceitas como concluídas por estes testes locais.

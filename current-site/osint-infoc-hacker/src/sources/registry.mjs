@@ -207,15 +207,6 @@ export const REGISTRY=[
       endereco:[j.logradouro,j.numero,j.bairro,j.cep].filter(Boolean).join(', ')},
       pivos:socios.map(s=>({tipo:'nome',valor:s.nome}))};
   }},
- {id:'ceis',tipos:['cnpj'],custo:1,ttl:86400,provenance:'portal-transparencia-ceis',
-  async run(a,c){
-    if(!c.env.TRANSPARENCIA_KEY) throw Error('sem chave');
-    const r=await c.get(`https://api.portaldatransparencia.gov.br/api-de-dados/ceis?cnpjSancionado=${a.valor}`,{timeout:8000,
-      headers:{'chave-api-dados':c.env.TRANSPARENCIA_KEY}});
-    if(!r.ok) throw falhar(r);
-    const j=lista(await J(r));
-    return {dados:{total:j.length,sancoes:j.slice(0,5).map(s=>({orgao:s.orgaoSancionador?.nome,ini:s.dataInicioSancao,fim:s.dataFimSancao}))}};
-  }},
  {id:'ddd',tipos:['telefone'],custo:0,ttl:0,provenance:'anatel-pgcn-snapshot-2026-10-30',
   async run(a,c){
     const ddd=a.valor.length>11&&a.valor.startsWith('55')?a.valor.slice(2,4):a.valor.slice(0,2);

@@ -131,9 +131,10 @@ export const REGISTRY=[
     const params=[...new Set(urls.flatMap(u=>{try{return [...new URL(u).searchParams.keys()]}catch{return[]}}))].slice(0,20);
     return {dados:{total:urls.length,parametros:params,amostra:urls.slice(0,15)}};
   }},
- {id:'rdap',tipos:['dominio'],custo:1,ttl:86400,provenance:'rdap',
+ {id:'rdap',tipos:['dominio'],custo:1,ttl:86400,provenance:'rdap-registry-direct-v2',
   async run(a,c){
-    const base=a.valor.endsWith('.br')?'https://rdap.registro.br/domain/':'https://rdap.org/domain/';
+    const base=a.valor.endsWith('.br')?'https://rdap.registro.br/domain/':a.valor.endsWith('.com')?'https://rdap.verisign.com/com/v1/domain/':a.valor.endsWith('.net')?'https://rdap.verisign.com/net/v1/domain/':null;
+    if(!base)throw Error('tld sem rdap');
     const r=await c.get(base+encodeURIComponent(a.valor),{timeout:7000});
     if(!r.ok) throw falhar(r);
     const j=await J(r);

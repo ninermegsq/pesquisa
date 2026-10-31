@@ -1,0 +1,15 @@
+import {readFile} from 'node:fs/promises';import assert from 'node:assert/strict';import {createHash,randomUUID,webcrypto} from 'node:crypto';
+import {chaveCache} from '../src/lib/cache.mjs';
+const source=await readFile(new URL('../cloudflare-worker.mjs',import.meta.url),'utf8');
+const storeSource=source.slice(source.indexOf('function createStore('),source.indexOf('async function token('));
+const createStore=new Function('chaveCache',storeSource+';return createStore;')(chaveCache);
+const data=new Map();let writes=0;globalThis.caches={default:{match:async k=>data.get(k.url)?.clone(),put:async(k,r)=>data.set(k.url,r.clone()),delete:async k=>data.delete(k.url)}};
+const kv={get:async()=>null,put:async()=>writes++};const store=createStore(kv,'https://validation.example');
+await store.setJSON('e:fixture',{value:1});assert.deepEqual(await store.get('e:fixture',{type:'json'}),{value:1});assert.equal(writes,0);assert.ok([...data.keys()][0].startsWith('https://validation.example/__cache/legacy/'));
+const tokenSource=source.slice(source.indexOf('async function token('),source.indexOf('const headers ='));
+const reply=(data,status=200,headers={})=>Response.json(data,{status,headers});
+const token=new Function('reply','allowed','detectar','emailRegex','fetch','randomUUID','crypto','sha256',tokenSource+';return token;')(reply,()=>new Set(['https://validation.example']),v=>({valor:v}),/./,async()=>Response.json({success:true,hostname:'validation.example'}),randomUUID,webcrypto,v=>createHash('sha256').update(v).digest('hex'));
+const env={TURNSTILE_SITEKEY:'sitekey-fixture',TURNSTILE_SECRET:'fixture',HMAC_SECRET:'fixture',TOKEN_GUARD:{}};
+const r=await token(new Request('https://validation.example/.netlify/functions/token',{method:'POST',headers:{origin:'https://validation.example'},body:JSON.stringify({alvo:'fixture@example.invalid',cfToken:'fixture-token'})}),env,'test-ip');
+assert.equal(r.status,200);assert.equal(typeof (await r.json()).token,'string');
+console.log(JSON.stringify({scope:'local regression; siteverify mocked',tokenIssuance:200,legacyCacheRoundTrip:true,originScoped:true,dataKVWrites:writes}));

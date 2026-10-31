@@ -30,10 +30,10 @@ const staticHeaders = {
 // HSTS rollout is phased: preload submission to hstspreload.org is a later manual step.
 // Add includeSubDomains only after confirming every subdomain is HTTPS-only.
 const htmlHeaders = { ...staticHeaders, 'strict-transport-security': 'max-age=31536000' };
-function createStore(kv) {
+function createStore(kv,origem) {
   // Legacy scan shares the edge cache; only rate counters use Workers KV.
   const isRate=key=>key.startsWith('rate:');
-  const keyOf=key=>chaveCache('legacy',key);
+  const keyOf=key=>chaveCache(origem,'legacy',key);
   return {
     get: async (key,options) => {
       if(isRate(key))return kv.get(key,options?.type==='json'?'json':'text');
@@ -52,8 +52,8 @@ function createStore(kv) {
   };
 }
 async function token(req, env, ip) {
+  const siteKey = env.TURNSTILE_SITEKEY || env.TURNSTILE_SITE_KEY || '';
   if (req.method === 'GET') {
-    const siteKey = env.TURNSTILE_SITEKEY || env.TURNSTILE_SITE_KEY;
     if (!siteKey) return reply({ error: 'Turnstile não configurado.' }, 503);
     return reply({ siteKey }, 200, { 'cache-control': 'public, max-age=86400' });
   }
@@ -151,7 +151,7 @@ async function scan(req, env, ctx) {
   const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
   if (!emailRegex.test(email) || email.length > 254) return reply({ error: 'E-mail inválido.' }, 400);
   const ip = ctx.ip || '';
-  const store = createStore(env.CACHE);
+  const store = createStore(env.CACHE,new URL(req.url).origin);
   try {
     const accepted = await consumeToken(body?.token, email, ip, env);
     if (!accepted) return reply({ error: 'Token ausente, expirado, reutilizado ou vinculado a outro e-mail. Faça uma nova verificação.' }, 429);

@@ -113,3 +113,9 @@ O 403/1010 do acesso ao Worker público de validação e a rejeição automátic
 - Eventos de download JSON e CSV confirmados no navegador; painel de senha abriu.
 - Observação real: npm trouxe 11202 resultados de busca ampla e Bluesky perfis sem correspondência literal ao alvo. Não são vínculos comprovados. Corrigido no candidato: npm exige e-mail exato em author/publisher/maintainers; Bluesky exige menção literal do e-mail em texto público, sem afirmar titularidade. Totais passam a contar apenas correspondências da amostra examinada; proveniência versionada invalida cache anterior.
 - Testes de regressão excluem registros alheios e prefixos de e-mail e preservam correspondência exata; suite de fontes, build e sintaxe passaram. Correção ainda não implantada.
+
+### Atualização de implantação e teste de senha
+
+- Correção de correspondência exata implantada somente em ostnt-validation: HTTP 200, deployment_id a17e35b1860346649e5f9d11799237cc, etag 5384fb19d5d3ce41f170d7db35e7853ef698d2bf93b1d7b047069adba1b60200. Bindings e secrets herdados da configuração de validação; nenhuma rota aberta.
+- Painel de senha da produção testado com valor fictício: respondeu “não encontrada — isso não garante que a senha seja segura.” Downloads JSON e CSV geraram eventos reais de download; conteúdo dos arquivos não foi revalidado nesta etapa.
+- Aceite da candidata ainda depende de consultas reais no ambiente isolado por acesso autorizado. O scan e o painel acima pertencem à produção anterior.

@@ -6,7 +6,7 @@ export function ctx(env,origem){
     const ua=modo==='navegador'?env.UA_NAVEGADOR:(env.UA||UA_DEFAULT);
     if(!ua)throw Error('UA_NAVEGADOR não configurado');
     const cabecalhos=new Headers({accept,...headers});
-    cabecalhos.set('user-agent',ua);
+    if(!cabecalhos.has('user-agent'))cabecalhos.set('user-agent',ua);
     // Keep the deadline active while J() or text() reads the response body.
     const res=await fetch(url,{method,body,signal:AbortSignal.timeout(timeout),redirect:'follow',
       headers:cabecalhos});

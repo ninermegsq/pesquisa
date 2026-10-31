@@ -210,13 +210,11 @@ export const REGISTRY=[
     if(!registro)throw Error('DDD não encontrado na tabela local da Anatel');
     return {dados:{ddd,...registro}};
   }},
- {id:'wikidata',tipos:['nome'],custo:1,ttl:604800,provenance:'wikidata-sparql',
+ {id:'wikidata',tipos:['nome'],custo:1,ttl:604800,provenance:'wikidata-search-v2',
   async run(a,c){
-    const q=`SELECT ?item ?itemLabel ?desc WHERE{?item rdfs:label "${a.valor.replace(/"/g,'')}"@pt-BR;schema:description ?desc. SERVICE wikibase:label{bd:serviceParam wikibase:language "pt".}} LIMIT 5`;
-    const r=await c.get(`https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(q)}`,{timeout:9000});
-    if(!r.ok) throw falhar(r);
-    const b=(await J(r)).results?.bindings||[];
-    return {dados:{total:b.length,entidades:b.map(x=>({id:String(x?.item?.value||'').split('/').pop(),desc:x?.desc?.value??null}))}};
+    const r=await c.get(`https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(a.valor)}&language=pt&uselang=pt&format=json&limit=5`,{timeout:9000,headers:{'user-agent':c.env.UA_CONTATO||'ostnt.online/1.0 (+https://ostnt.online)'}});
+    if(!r.ok)throw falhar(r);const j=await J(r);if(!Array.isArray(j?.search))throw Error('Formato Wikidata inesperado');
+    return {dados:{total:j.search.length,entidades:j.search.map(x=>({id:x?.id??null,nome:x?.label??null,desc:x?.description??null})),criterio:'Correspondências de nome; não confirmam identidade.'}};
   }},
  {id:'datajud',tipos:['nome'],custo:2,ttl:86400,provenance:'cnj-datajud',
   async run(a,c){

@@ -110,3 +110,89 @@ Scans reais dos seis tipos exercitaram as 24 fontes. GitHub autenticado responde
 CEIS removida. OpenSanctions não foi ativada: a API hospedada exige chave; teste sem chave retornou `{"detail":"No API key provided."}`. Ausência de acesso não significa ausência de sanções. A seção SANÇÕES só poderá ser habilitada após uma fonte operacional ser validada. Documentação: https://www.opensanctions.org/docs/api/authentication/ .
 
 IPGEO: ipapi.co principal, GeoJS reserva. 17NAS não integrado: a documentação atual só descreve IP do chamador, exige chave no endpoint comercial e não documenta `/api/{ip}`. Usá-lo atribuiria o IP do Worker ao alvo. Custo considera ambas as chamadas; campo ausente permanece nulo.
+
+## Estado do fechamento do motor (candidata, 31/10/2026)
+
+**Produção não promovida. O item 13 ainda não foi comprovado nesta revisão.**
+As evidências anteriores pertencem à revisão anterior. Testes locais não comprovam a saída do Worker.
+
+### Fontes e reservas
+
+| Fonte | Principal | Reserva / situação | Motivo ou limite |
+|---|---|---|---|
+| gravatar | Gravatar | principal | 404 válido, perfil inexistente |
+| pgp | OpenPGP | principal | 404 válido |
+| npm | npm registry | principal | vínculo exige e-mail literal nos metadados |
+| bluesky | API pública Bluesky | principal | menção literal, não prova titularidade |
+| github | GitHub | principal, chave opcional | sem token: indisponível, nunca zero achados |
+| xon | XposedOrNot | principal | 404/Not found válidos, 429 indisponível |
+| hudsonrock | Cavalier | principal | senhas sempre mascaradas |
+| dns | Google DoH | principal | quatro consultas, DMARC ausente ≠ indisponível |
+| emailval | DISIFY e Kickbox | Presend no navegador | formato/domínio, não existência de caixa |
+| crtsh | crt.sh no navegador | HackerTarget no navegador | CORS `*` comprovado nos dois; reserva só em falha |
+| wayback | CDX | principal, só domínio | 60 URLs HTTP 200, prazo total de 7s |
+| rdap | Registro.br / Verisign | Presend em falha transitória | .org não suportado; 401/403 não encaminhados à reserva |
+| observatory | MDN Observatory v2 | principal | análise de headers |
+| urlscan | busca pública urlscan | principal | consulta a resultados existentes |
+| internetdb | Shodan InternetDB | principal | 404 válido; sem sondagem ativa |
+| ipgeo | ipapi.co | GeoJS | 17NAS fora: endpoint documentado retorna IP do chamador |
+| asn | Team Cymru via DNS | principal | IPv4 |
+| ipreputacao | IPGuardian | principal | máximo 10 listas retornadas; não é prova de abuso |
+| ipcontexto | IPLogs modo fast | VPNDetection | reserva sem chave só fornece VPN; demais campos nulos |
+| cnpj_br | Minha Receita | principal | CNPJ e shape preservados |
+| ddd | mapa Anatel local | principal | zero chamadas externas |
+| telegram | t.me embed | principal | apenas telefone, presença não confirma titularidade |
+| wikidata | wbsearchentities | principal | nome correspondente não confirma identidade |
+| nomeperfil | Agify, Genderize, Nationalize | principal | 3 chamadas; estatística provável do primeiro nome |
+| datajud | CNJ STJ | principal | query_string sanitizado, um fallback match em 400 |
+| gitlab | removida | — | endpoint de usuários negou acesso |
+| emailrep | removida | — | dependência de chave e ausência de acesso |
+| ceis | removida | — | substituição solicitada |
+| sancoes | OpenSanctions não ativada | — | teste sem chave retornou HTTP 401, não 1010 |
+| Subdomain Center | removida | — | crt.sh restaurado com reserva |
+| ipwho.is | removida | — | 429 observado; substituído pela cascata |
+
+E-mail: **9 fontes no Worker + 1 fonte lógica de subdomínios no navegador = 10**.
+HackerTarget é reserva da mesma fonte lógica. Wayback fica apenas no domínio para preservar dez
+fontes por e-mail. O JSON direto do Worker contém `browserFontes`; só o relatório final do navegador
+inclui a execução cliente. Exportações carregam proveniência, timestamp e tentativas da reserva.
+
+### Limites, cache e erros
+
+O custo declarado considera chamadas de cada provedor; o planejador reserva o dobro para retry,
+mais Cache API e operações internas. O contexto conta chamadas reais. Há no máximo um retry, após
+2s, apenas em 429/503, dentro do prazo original. `Retry-After` maior que 2s impede retry antecipado.
+Nenhum retry em 401/403/404. Falhas de cache e timeout continuam parciais. Resultado de fonte usa
+Cache API: sucesso com TTL da fonte e erro com 120s. KV recebe só dois espelhos de quota por scan.
+As fontes de navegador não escrevem em Cache API: repetem a consulta, conforme permitido no roteiro.
+
+A hipótese operacional anterior era: "1010 é reputação de IP de saída do Worker; mitigação é troca
+de provedor, não ajuste de UA". Isso descreve o diagnóstico anterior, não uma definição universal
+nem prova da causa em outro endpoint. Cada resposta deve ser classificada pelo corpo observado.
+Alterar o modo muda apenas o header User-Agent; o cliente HTTP permanece fetch do runtime.
+Troca de cliente seria alterar o runtime/biblioteca ou acrescentar proxy; não é o que UA_MODE faz.
+Produção continua identificada. Wikidata usa UA_CONTATO explícito.
+
+### Segredos e promoção
+
+GITHUB_TOKEN é opcional para o motor; necessário para habilitar aquela fonte. HMAC_SECRET e as
+credenciais reais de Turnstile são obrigatórios para proteção em produção, não opcionais.
+OpenSanctions exige chave na API hospedada; não inventar acesso gratuito sem autenticação.
+**TURNSTILE_SITEKEY de teste nunca vai a produção**, nem o secret de teste. O guard bloqueia essa
+combinação fora da validação. Não promover até scans reais, tail, cache de borda e demais aceites.
+Não remover o Worker de validação antes do smoke test e da janela de rollback.
+
+### Infra verificada no código e pendências reais
+
+Worker é a única fonte dos headers. HSTS HTML max-age=31536000 sem includeSubDomains; CSP libera
+hosts de beacon já previstos. HTML não contém beacon nem token de Web Analytics: não inventar token,
+nem afirmar `/cdn-cgi/rum` 200. Sem beacon ativo no código, essa medição permanece não aplicável até
+verificar eventual injeção no edge. Robots e sitemap já existem; o arquivo local não contém bloco
+content-signals a preservar. Canonical e 14 tags OG/Twitter já existem. Card final JPEG 1200x630,
+69.609 bytes, revisado visualmente: "vazou" e "INFOC" corretos. `og.png` antigo não é o card final;
+Worker redireciona para JPEG. Regerar PNG correto ainda pendente se exigido em vez do JPEG.
+
+Evidência de endpoints locais: `verification/provider-probes-2026-10-31.json`.
+OpenSanctions sem chave: 401; RDAP .br: 403 com Nicbr-Permission-Denied; .com: 200.
+Presend RDAP, headers e e-mail: 200 e CORS *. Wikidata, perfil de nome, IPGuardian, IPLogs e
+VPNDetection: 200. ipapi, GeoJS, DISIFY e Kickbox: timeout local nessa rodada; não comprovados na borda.

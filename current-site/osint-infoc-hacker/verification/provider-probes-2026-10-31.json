@@ -1,0 +1,146 @@
+[
+  {
+    "id": "ipapi",
+    "url": "https://ipapi.co/8.8.8.8/json/",
+    "status": "000",
+    "exit": 28,
+    "headers": "",
+    "body": "",
+    "stderr": "curl: (28) Connection timed out after 12002 milliseconds\n"
+  },
+  {
+    "id": "geojs",
+    "url": "https://get.geojs.io/v1/ip/geo/8.8.8.8.json",
+    "status": "000",
+    "exit": 28,
+    "headers": "",
+    "body": "",
+    "stderr": "curl: (28) Connection timed out after 12002 milliseconds\n"
+  },
+  {
+    "id": "wikidata",
+    "url": "https://www.wikidata.org/w/api.php?action=wbsearchentities&search=Nome%20de%20Teste&language=pt&uselang=pt&format=json&limit=5",
+    "status": "200",
+    "exit": 0,
+    "headers": "HTTP/1.1 200 OK\ndate: Sat, 31 Oct 2026 22:36:29 GMT\n\nHTTP/2 200 \ndate: Sat, 31 Oct 2026 22:36:29 GMT\nserver: envoy\nx-content-type-options: nosniff\nx-search-id: esfl8r1m1aegoxb24o77vm3kd\ncontent-security-policy: default-src 'self'; script-src 'none'; object-src 'none'\nx-frame-options: DENY\ncontent-disposition: inline; filename=api-result.json\ncache-control: private, must-revalidate, max-age=0\ncontent-type: application/json; charset=utf-8\nage: 0\naccept-ranges: bytes\nx-cache: cp2051 miss, cp2051 pass\nx-cache-status: pass\nstrict-transport-security: max-age=106384710; includeSubDomains; preload\nreport-to: { \"group\": \"wm_nel\", \"max_age\": 604800, \"endpoints\": [{ \"url\": \"https://intake-logging.wikimedia.org/v1/events?stream=w3c.reportingapi.network_error&schema_uri=/w3c/reportingapi/network_error/1.0.0\" }] }\nnel: { \"report_to\": \"wm_nel\", \"max_age\": 604800, \"failure_fraction\": 0.05, \"success_fraction\": 0.0}\nset-cookie: WMF-Last-Access=31-Oct-2026;Path=/;HttpOnly;secure;Expires=Wed, 02 Dec 2026 12:00:00 GMT\nset-cookie: WMF-Last-Access-Global=31-Oct-2026;Path=/;Domain=.wikidata.org;HttpOnly;secure;Expires=Wed, 02 Dec 2026 12:00:00 GMT\nx-client-ip: 2a13:9500:1e4:242::4d2:29\nvary: Accept-Encoding,X-Subdomain,Treat-as-Untrusted,X-Forwarded-Proto,Cookie,Authorization,User-Agent\nset-cookie: GeoIP=GB:::51.50:-0.12:v4; Path=/; secure; Domain=.wikidata.org\nset-cookie: NetworkProbeLimit=0.001;Path=/;Secure;SameSite=None;Max-Age=3600\nset-cookie: WMF-Uniq=YLwG2U_VfqHp5dgT9np2UAQKAAAAAFvd_BO8WZEz67dMSxoaCBxy5F9pT42ByuFg;Domain=.wikidata.org;Path=/;HttpOnly;secure;SameSite=None;Expires=Sun, 31 Oct 2027 00:00:00 GMT\ncontent-length: 65\nx-request-id: 2da55e14-839d-4252-a277-8233d3e771d8\nserver-timing: cache;desc=\"pass\", host;desc=\"cp2051\",co_id;desc=\"3215429171\"\nx-envoy-upstream-service-time: 199\n\n",
+    "body": "{\"searchinfo\":{\"search\":\"Nome de Teste\"},\"search\":[],\"success\":1}",
+    "stderr": ""
+  },
+  {
+    "id": "disify",
+    "url": "https://disify.com/api/email/teste%40example.com",
+    "status": "000",
+    "exit": 28,
+    "headers": "",
+    "body": "",
+    "stderr": "curl: (28) Connection timed out after 12003 milliseconds\n"
+  },
+  {
+    "id": "kickbox",
+    "url": "https://open.kickbox.com/v1/disposable/teste%40example.com",
+    "status": "000",
+    "exit": 28,
+    "headers": "",
+    "body": "",
+    "stderr": "curl: (28) Connection timed out after 12002 milliseconds\n"
+  },
+  {
+    "id": "agify",
+    "url": "https://api.agify.io?name=Maria",
+    "status": "200",
+    "exit": 0,
+    "headers": "HTTP/1.1 200 OK\ndate: Sat, 31 Oct 2026 22:36:38 GMT\n\nHTTP/2 200 \nserver: envoy\ndate: Sat, 31 Oct 2026 22:36:39 GMT\ncontent-type: application/json; charset=utf-8\ncontent-length: 40\nvary: accept-encoding\ncache-control: max-age=0, private, must-revalidate\nx-request-id: 3d2c3b14-1506-4232-9e5e-3afa7fac292c\naccess-control-allow-credentials: true\naccess-control-allow-origin: *\naccess-control-expose-headers: x-rate-limit-limit,x-rate-limit-remaining,x-rate-limit-reset,mcp-session-id\nx-rate-limit-limit: 10\nx-rate-limit-remaining: 9\nx-rate-limit-reset: 5001\nx-envoy-upstream-service-time: 529\n\n",
+    "body": "{\"count\":564048,\"name\":\"Maria\",\"age\":53}",
+    "stderr": ""
+  },
+  {
+    "id": "genderize",
+    "url": "https://api.genderize.io?name=Maria",
+    "status": "200",
+    "exit": 0,
+    "headers": "HTTP/1.1 200 OK\ndate: Sat, 31 Oct 2026 22:36:40 GMT\n\nHTTP/2 200 \nserver: envoy\ndate: Sat, 31 Oct 2026 22:36:40 GMT\ncontent-type: application/json; charset=utf-8\ncontent-length: 69\nvary: accept-encoding\ncache-control: max-age=0, private, must-revalidate\nx-request-id: 25d6bc8e-8e60-4b57-b190-2827ee44e2ea\naccess-control-allow-credentials: true\naccess-control-allow-origin: *\naccess-control-expose-headers: x-rate-limit-limit,x-rate-limit-remaining,x-rate-limit-reset,mcp-session-id\nx-rate-limit-limit: 10\nx-rate-limit-remaining: 8\nx-rate-limit-reset: 5000\nx-envoy-upstream-service-time: 264\n\n",
+    "body": "{\"count\":4097023,\"name\":\"Maria\",\"gender\":\"female\",\"probability\":0.99}",
+    "stderr": ""
+  },
+  {
+    "id": "nationalize",
+    "url": "https://api.nationalize.io?name=Maria",
+    "status": "200",
+    "exit": 0,
+    "headers": "HTTP/1.1 200 OK\ndate: Sat, 31 Oct 2026 22:36:40 GMT\n\nHTTP/2 200 \nserver: envoy\ndate: Sat, 31 Oct 2026 22:36:40 GMT\ncontent-type: application/json; charset=utf-8\ncontent-length: 259\nvary: accept-encoding\ncache-control: max-age=0, private, must-revalidate\nx-request-id: 7fd2833c-7c17-466b-88ef-50799e5674c8\naccess-control-allow-credentials: true\naccess-control-allow-origin: *\naccess-control-expose-headers: x-rate-limit-limit,x-rate-limit-remaining,x-rate-limit-reset,mcp-session-id\nx-rate-limit-limit: 10\nx-rate-limit-remaining: 7\nx-rate-limit-reset: 5000\nx-envoy-upstream-service-time: 532\n\n",
+    "body": "{\"count\":4261604,\"name\":\"Maria\",\"country\":[{\"country_id\":\"ES\",\"probability\":0.107771},{\"country_id\":\"BR\",\"probability\":0.082991},{\"country_id\":\"IT\",\"probability\":0.072949},{\"country_id\":\"AR\",\"probability\":0.060435},{\"country_id\":\"CO\",\"probability\":0.060242}]}",
+    "stderr": ""
+  },
+  {
+    "id": "ipguardian",
+    "url": "https://ipguardian.net/api/check",
+    "status": "200",
+    "exit": 0,
+    "headers": "HTTP/1.1 200 OK\ndate: Sat, 31 Oct 2026 22:36:40 GMT\n\nHTTP/2 200 \ndate: Sat, 31 Oct 2026 22:36:40 GMT\ncontent-type: application/json\naccess-control-allow-origin: *\naccess-control-allow-methods: GET, POST, OPTIONS\naccess-control-allow-headers: Content-Type, X-API-Key\nx-content-type-options: nosniff\nreferrer-policy: same-origin\nreport-to: {\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=wj6%2FZeoe5ymFak%2FBJyx1M1Dj3leoct1WtIXXsYAZoGHdvTcQ900tC1aX8t7bYNBfQKLjv3aIohF0HnihdJu6oNIGN%2FQa4tlo%2BepkkMKgaq2txPSvi9wNNLNAIuaKoYynqTjHVdsEExbIbT2zQw%3D%3D\"}]}\nnel: {\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}\ncf-cache-status: DYNAMIC\nserver: envoy\ncf-ray: a53623d06b5e5aba-DFW\nalt-svc: h3=\":443\"; ma=86400\nx-envoy-upstream-service-time: 577\n\n",
+    "body": "{\"success\":true,\"timestamp\":\"2026-10-31T22:36:40.802Z\",\"count\":1,\"results\":{\"ip\":\"8.8.8.8\",\"found\":false,\"sources\":[],\"network\":{\"asn\":15169,\"org\":\"GOOGLE\",\"country\":\"US\",\"type\":\"datacenter\",\"type_source\":\"bad-asn-list\"},\"delisted\":[{\"filename\":\"myip.ipset\",\"category\":\"abuse\",\"removed_at\":\"2026-10-26T00:02:15.000Z\"},{\"filename\":\"firehol_webserver.netset\",\"category\":\"attacks\",\"removed_at\":\"2026-10-26T00:01:14.000Z\"},{\"filename\":\"firehol_level3.netset\",\"category\":\"attacks\",\"removed_at\":\"2026-10-26T00:01:09.000Z\"}]}}",
+    "stderr": ""
+  },
+  {
+    "id": "iplogs",
+    "url": "https://iplogs.com/v1/check",
+    "status": "200",
+    "exit": 0,
+    "headers": "HTTP/1.1 200 OK\ndate: Sat, 31 Oct 2026 22:36:40 GMT\n\nHTTP/2 200 \naccess-control-allow-headers: Content-Type\naccess-control-allow-methods: GET, POST, OPTIONS\naccess-control-allow-origin: *\naccess-control-expose-headers: X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After\nalt-svc: h3=\":443\"; ma=2592000\ncache-control: no-store\ncontent-security-policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: fonts.gstatic.com; connect-src 'self' https://api.iplogs.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\ncontent-type: application/json\ndate: Sat, 31 Oct 2026 22:36:40 GMT\npermissions-policy: geolocation=(), microphone=(), camera=()\nreferrer-policy: strict-origin-when-cross-origin\nstrict-transport-security: max-age=63072000; includeSubDomains; preload\nvia: 1.1 Caddy\nx-content-type-options: nosniff\nx-frame-options: SAMEORIGIN\nx-ratelimit-limit: 1000\nx-ratelimit-remaining: 999\nx-ratelimit-reset: 5000\ncontent-length: 689\nx-envoy-upstream-service-time: 483\nserver: envoy\n\n",
+    "body": "{\"score\":0,\"verdict\":\"clean\",\"is_vpn\":false,\"is_proxy\":false,\"is_tor\":false,\"is_relay\":false,\"is_hosting\":true,\"is_crawler\":false,\"reputation\":\"allowlist\",\"confidence\":0.35,\"signals\":[{\"type\":\"asn_trusted_infra\",\"weight\":0,\"matched\":true,\"detail\":\"trusted public-DNS anycast IP — datacenter/hosting signals suppressed\"}],\"ip_info\":{\"ip\":\"8.8.8.8\",\"asn\":\"AS15169\",\"org\":\"Google LLC\",\"isp\":\"Google LLC\",\"country\":\"United States\",\"country_code\":\"US\",\"city\":\"Mountain View\",\"lat\":37.422,\"lon\":-122.085,\"type\":\"datacenter\",\"is_vpn\":false,\"is_proxy\":false,\"abuse_contact\":\"network-abuse@google.com\",\"prefix\":\"8.8.8.0/24\",\"prefix_holder\":\"GOOGLE - Google LLC\"},\"request_id\":\"req_8952a075-2d0\"}\n",
+    "stderr": ""
+  },
+  {
+    "id": "vpndetection",
+    "url": "https://api.vpndetection.io/8.8.8.8",
+    "status": "200",
+    "exit": 0,
+    "headers": "HTTP/1.1 200 OK\ndate: Sat, 31 Oct 2026 22:36:44 GMT\n\nHTTP/2 200 \naccess-control-allow-origin: *\naccess-control-expose-headers: Retry-After\ncontent-type: application/json; charset=utf-8\ndate: Sat, 31 Oct 2026 22:36:45 GMT\ncontent-length: 41\nx-request-id: 9271bb6c7fef40bba495a3975ddf87ed\nx-envoy-upstream-service-time: 670\nserver: envoy\n\n",
+    "body": "{\n  \"ip\": \"8.8.8.8\",\n  \"is_vpn\": false\n}\n",
+    "stderr": ""
+  },
+  {
+    "id": "presend_rdap",
+    "url": "https://presend.pages.dev/api/whois-lookup?domain=example.com",
+    "status": "200",
+    "exit": 0,
+    "headers": "HTTP/1.1 200 OK\ndate: Sat, 31 Oct 2026 22:36:45 GMT\n\nHTTP/2 200 \ndate: Sat, 31 Oct 2026 22:36:45 GMT\ncontent-type: application/json\ncontent-length: 461\naccess-control-allow-origin: *\ncache-control: public, max-age=3600\naccess-control-allow-methods: GET, OPTIONS\nreport-to: {\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=nqtvZXnrccfPdtx7hlg1iYqPLE5ADRBOP2%2BQs3y1i%2FhcjCU7Nrq7RYE8t%2BnLIPItHLxYoLCYM6WW8uW2wJD4TISPWbaxzbbZFFdFMfIwCGHQcC%2Fk4QEC3pFKrg0XUlB%2BA63z4JbEPQ01zuLQAiAmQg%3D%3D\"}]}\nnel: {\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}\nserver: envoy\ncf-ray: a53623efd9e95aba-DFW\nalt-svc: h3=\":443\"; ma=86400\nx-envoy-upstream-service-time: 493\n\n",
+    "body": "{\"domain\":\"example.com\",\"registered\":true,\"registrar\":\"RESERVED-Internet Assigned Numbers Authority\",\"created\":\"1995-08-14T04:00:00Z\",\"expires\":\"2027-08-13T04:00:00Z\",\"last_changed\":\"2026-08-14T08:01:43Z\",\"age_days\":11401,\"nameservers\":[\"elliott.ns.cloudflare.com\",\"hera.ns.cloudflare.com\"],\"status\":[\"client delete prohibited\",\"client transfer prohibited\",\"client update prohibited\"],\"source\":\"RDAP (rdap.org) -- the ICANN-mandated successor to legacy WHOIS.\"}",
+    "stderr": ""
+  },
+  {
+    "id": "presend_headers",
+    "url": "https://presend.pages.dev/api/security-headers?url=https://ostnt.online",
+    "status": "200",
+    "exit": 0,
+    "headers": "HTTP/1.1 200 OK\ndate: Sat, 31 Oct 2026 22:36:45 GMT\n\nHTTP/2 200 \ndate: Sat, 31 Oct 2026 22:36:45 GMT\ncontent-type: application/json\ncontent-length: 1460\naccess-control-allow-origin: *\ncache-control: public, max-age=3600\naccess-control-allow-methods: GET, OPTIONS\nreport-to: {\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=GT4akNy4PWM8OYmrFx21wC7KFrUG2CiHrzkEw%2F2ctJEBiAmHpxrBKKn%2B9BDqohg14KNq0BJa86DJK11jK1aIy%2FuA76KQBP5AFTg0%2B0%2FIjNQyQYh9mbf0SjqMQjrcbW9i80fTVsVpsKk%2Bzhiw2Z8H0A%3D%3D\"}]}\nnel: {\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}\nserver: envoy\ncf-ray: a53623efce05f1be-DFW\nalt-svc: h3=\":443\"; ma=86400\nx-envoy-upstream-service-time: 553\n\n",
+    "body": "{\"url\":\"https://ostnt.online\",\"grade\":\"A+\",\"score\":95,\"checks\":[{\"header\":\"HSTS\",\"present\":true,\"value\":\"max-age=31536000\",\"points\":20,\"max_points\":20,\"advice\":null},{\"header\":\"Content-Security-Policy\",\"present\":true,\"value\":\"default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; img-src 'self' data: https://www.gravatar.com; style-src 'self' 'unsafe-inline'; script-src 'self' https://challenges.cloudflare.com https://static.cloudflareinsights.com; connect-src 'self' https://challenges.cloudflare.com https://api.pwnedpasswords.com https://cloudflareinsights.com; frame-src https://challenges.cloudflare.com\",\"points\":25,\"max_points\":25,\"advice\":null},{\"header\":\"X-Content-Type-Options\",\"present\":true,\"value\":\"nosniff\",\"points\":10,\"max_points\":10,\"advice\":null},{\"header\":\"X-Frame-Options\",\"present\":true,\"value\":\"DENY\",\"points\":15,\"max_points\":15,\"advice\":null},{\"header\":\"Referrer-Policy\",\"present\":true,\"value\":\"strict-origin-when-cross-origin\",\"points\":10,\"max_points\":10,\"advice\":null},{\"header\":\"Permissions-Policy\",\"present\":true,\"value\":\"geolocation=(), microphone=(), camera=()\",\"points\":10,\"max_points\":10,\"advice\":null},{\"header\":\"X-XSS-Protection\",\"present\":false,\"value\":null,\"points\":0,\"max_points\":5,\"advice\":\"Legacy header, low impact on modern browsers, but cheap to add.\"},{\"header\":\"Cross-Origin-Opener-Policy\",\"present\":true,\"value\":\"same-origin\",\"points\":5,\"max_points\":5,\"advice\":null}]}",
+    "stderr": ""
+  },
+  {
+    "id": "presend_email",
+    "url": "https://presend.pages.dev/api/email-validate?email=teste%40example.com",
+    "status": "200",
+    "exit": 0,
+    "headers": "HTTP/1.1 200 OK\ndate: Sat, 31 Oct 2026 22:36:45 GMT\n\nHTTP/2 200 \ndate: Sat, 31 Oct 2026 22:36:45 GMT\ncontent-type: application/json\ncontent-length: 130\naccess-control-allow-origin: *\ncache-control: public, max-age=3600\naccess-control-allow-methods: GET, OPTIONS\nreport-to: {\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=2sSScnB%2FcLd2gTMFRm8UFSPKwZA6uxPfdYoRI0FfRLHQ3h2yQpGn5QS7L%2FvV2WkkkWmHS9PDbRsLyx1p9XxijR3zRb0tkIPfBlsPebH2Edqs2cHy1D0J0Vtp2xHh4MKOQh7OZ7sv%2FWi9LiR4JORkug%3D%3D\"}]}\nnel: {\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}\nserver: envoy\ncf-ray: a53623efce06f1be-DFW\nalt-svc: h3=\":443\"; ma=86400\nx-envoy-upstream-service-time: 262\n\n",
+    "body": "{\"email\":\"teste@example.com\",\"syntax_valid\":true,\"domain\":\"example.com\",\"mx_checked\":true,\"has_mx\":true,\"mx_count\":1,\"valid\":true}",
+    "stderr": ""
+  },
+  {
+    "id": "rdap_br",
+    "url": "https://rdap.registro.br/domain/registro.br",
+    "status": "403",
+    "exit": 0,
+    "headers": "HTTP/1.1 200 OK\ndate: Sat, 31 Oct 2026 22:36:45 GMT\n\nHTTP/2 403 \naccess-control-allow-origin: *\naccess-control-expose-headers: Nicbr-Permission-Denied\ncontent-security-policy: default-src 'none'; base-uri 'self'; connect-src 'self'; img-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; media-src 'self'; form-action 'self'; frame-ancestors 'self'\nfeature-policy: accelerometer 'none';ambient-light-sensor 'none';autoplay 'none';camera 'none';encrypted-media 'none';fullscreen 'self';geolocation 'none';gyroscope 'none';magnetometer 'none';microphone 'none';midi 'none';payment 'none';picture-in-picture 'none';speaker 'self';sync-xhr 'none';usb 'none';vr 'none';\nnicbr-permission-denied: 1\nreferrer-policy: same-origin\nstrict-transport-security: max-age=63072000; includeSubdomains; preload\nx-content-type-options: nosniff\nx-frame-options: SAMEORIGIN\nx-xss-protection: 1; mode=block\ncontent-length: 0\ndate: Sat, 31 Oct 2026 22:36:45 GMT\nx-envoy-upstream-service-time: 502\nserver: envoy\n\n",
+    "body": "",
+    "stderr": ""
+  },
+  {
+    "id": "rdap_com",
+    "url": "https://rdap.verisign.com/com/v1/domain/example.com",
+    "status": "200",
+    "exit": 0,
+    "headers": "HTTP/1.1 200 OK\ndate: Sat, 31 Oct 2026 22:36:51 GMT\n\nHTTP/2 200 \ncontent-length: 2440\ncontent-type: application/rdap+json\naccess-control-allow-origin: *\nstrict-transport-security: max-age=15768000; includeSubDomains; preload\nx-envoy-upstream-service-time: 80\ndate: Sat, 31 Oct 2026 22:36:51 GMT\nserver: envoy\n\n",
+    "body": "{\"objectClassName\":\"domain\",\"handle\":\"2336799_DOMAIN_COM-VRSN\",\"ldhName\":\"EXAMPLE.COM\",\"links\":[{\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/example.com\",\"rel\":\"self\",\"href\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/example.com\",\"type\":\"application\\/rdap+json\"}],\"status\":[\"client delete prohibited\",\"client transfer prohibited\",\"client update prohibited\"],\"entities\":[{\"objectClassName\":\"entity\",\"handle\":\"376\",\"roles\":[\"registrar\"],\"publicIds\":[{\"type\":\"IANA Registrar ID\",\"identifier\":\"376\"}],\"vcardArray\":[\"vcard\",[[\"version\",{},\"text\",\"4.0\"],[\"fn\",{},\"text\",\"RESERVED-Internet Assigned Numbers Authority\"]]],\"entities\":[{\"objectClassName\":\"entity\",\"roles\":[\"abuse\"],\"vcardArray\":[\"vcard\",[[\"version\",{},\"text\",\"4.0\"],[\"fn\",{},\"text\",\"\"],[\"tel\",{\"type\":\"voice\"},\"uri\",\"\"],[\"email\",{},\"text\",\"\"]]]}]}],\"events\":[{\"eventAction\":\"registration\",\"eventDate\":\"1995-08-14T04:00:00Z\"},{\"eventAction\":\"expiration\",\"eventDate\":\"2027-08-13T04:00:00Z\"},{\"eventAction\":\"last changed\",\"eventDate\":\"2026-08-14T08:01:43Z\"},{\"eventAction\":\"last update of RDAP database\",\"eventDate\":\"2026-10-31T22:36:29Z\"}],\"secureDNS\":{\"delegationSigned\":true,\"dsData\":[{\"keyTag\":2371,\"algorithm\":13,\"digestType\":2,\"digest\":\"C988EC423E3880EB8DD8A46FE06CA230EE23F35B578D64E78B29C3E1C83D245A\"}]},\"nameservers\":[{\"objectClassName\":\"nameserver\",\"ldhName\":\"ELLIOTT.NS.CLOUDFLARE.COM\"},{\"objectClassName\":\"nameserver\",\"ldhName\":\"HERA.NS.CLOUDFLARE.COM\"}],\"rdapConformance\":[\"rdap_level_0\",\"icann_rdap_technical_implementation_guide_1\",\"icann_rdap_response_profile_1\"],\"notices\":[{\"title\":\"Terms of Service\",\"description\":[\"Service subject to Terms of Use.\"],\"links\":[{\"href\":\"https:\\/\\/www.verisign.com\\/domain-names\\/registration-data-access-protocol\\/terms-service\\/index.xhtml\",\"type\":\"text\\/html\",\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/example.com\",\"rel\":\"terms-of-service\"}]},{\"title\":\"Status Codes\",\"description\":[\"For more information on domain status codes, please visit https:\\/\\/icann.org\\/epp",
+    "stderr": ""
+  }
+]

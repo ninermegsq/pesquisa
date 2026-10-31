@@ -250,6 +250,32 @@ async function subdominiosBrowser(j){
  const body=result.status==='ok'?`<p>${result.dados.total} subdomínios · ${escapeHTML(result.provenance)}</p><ul>${result.dados.subdominios.map(x=>`<li>${escapeHTML(x)}</li>`).join('')}</ul>`:`<p>${escapeHTML(result.erro)}</p>`;
  j.html+=makeAccordion('SUBDOMÍNIOS',result.dados?.total??0,body,true);
 }
+async function reservasPresend(j){
+ for(const id of ['rdap','emailval']){
+  const index=j.fontes.findIndex(s=>s.id===id),s=j.fontes[index];
+  if(!s||(s.status==='ok'&&!s.dados?.parcial))continue;
+  // Do not relay explicit access denials or unsupported TLDs through another service.
+  if(id==='rdap'&&/HTTP 40[134]|tld sem rdap/.test(s.erro||''))continue;
+  const path=id==='rdap'?`whois-lookup?domain=${encodeURIComponent(j.alvo.valor)}`:`email-validate?email=${encodeURIComponent(j.alvo.valor)}`;
+  try{
+   const r=await fetch('https://presend.pages.dev/api/'+path,{credentials:'omit',signal:AbortSignal.timeout(7000)}),t=await r.text();
+   if(!r.ok)throw Error(`HTTP ${r.status} | ${t.slice(0,200)}`);
+   let data;try{data=JSON.parse(t);}catch{throw Error('resposta não-JSON');}
+   let dados;
+   if(id==='rdap'){
+    if(typeof data.registered!=='boolean')throw Error('Formato RDAP reserva inesperado');
+    dados={handle:null,status:Array.isArray(data.status)?data.status:[],eventos:[{acao:'registration',data:data.created??null},{acao:'expiration',data:data.expires??null}],ns:Array.isArray(data.nameservers)?data.nameservers:[],entidades:[],registrado:data.registered};
+   }else{
+    if(typeof data.syntax_valid!=='boolean'||typeof data.has_mx!=='boolean')throw Error('Formato de validação reserva inesperado');
+    dados={descartavel:s.dados?.descartavel??null,valido:data.syntax_valid,dominioExiste:data.has_mx,parcial:true,criterio:'Sintaxe e MX; não confirma caixa postal. Detecção de descartável pode estar indisponível.'};
+   }
+   const result={...s,status:'ok',erro:null,dados,provenance:'presend-'+id,cache:'miss',timestamp:new Date().toISOString(),tentativas:[{provenance:s.provenance,erro:s.erro??s.dados?.erros}]};
+   j.fontes[index]=result;j.disponibilidade[id]=true;
+   j.html+=makeAccordion(id==='rdap'?'RDAP — RESERVA':'E-MAIL — RESERVA',0,`<p>Presend · ${escapeHTML(dados.criterio||'Dados do registro')}</p><pre>${escapeHTML(JSON.stringify(dados,null,2))}</pre>`,true);
+  }catch(e){s.reserva={provenance:'presend-'+id,erro:String(e?.message||e).slice(0,220)};}
+ }
+}
+
 async function scan(event){
  event.preventDefault();if(scanning)return;
  const alvo=$('email').value.trim();$('form-error').textContent='';if(!alvo){$('form-error').textContent='Informe um alvo.';return;}
@@ -259,6 +285,7 @@ async function scan(event){
  const signed=await getJson('/.netlify/functions/token',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({cfToken,alvo})});
  const j=await getJson('/api/scan',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({alvo,token:signed.token})});
  await subdominiosBrowser(j);
+ await reservasPresend(j);
  const card=document.createElement('section');card.className='scorecard';
  card.innerHTML=`<div class="eyebrow">RISCO DE EXPOSIÇÃO</div><span class="score-num">${escapeHTML(j.score?.valor??0)}</span><span class="score-suffix">/100 · ${escapeHTML(j.score?.nivel||'BAIXO')}${j.score?.parcial?' · PARCIAL':''}</span><p class="public-note">${escapeHTML((j.score?.motivos||[]).join(' · ')||(j.score?.nivel==='INCONCLUSIVO'?'Fontes indisponíveis; análise inconclusiva.':'Nenhum sinal de exposição confirmado nas fontes disponíveis.'))}</p><p class="public-note">Índice heurístico de exposição; não é probabilidade de invasão. Correspondências públicas não confirmam identidade.</p>`;
  $('stage').append(card);const wrapper=document.createElement('div');wrapper.innerHTML=j.html||'';$('stage').append(...wrapper.childNodes);

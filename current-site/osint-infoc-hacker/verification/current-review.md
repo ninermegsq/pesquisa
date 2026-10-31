@@ -97,3 +97,12 @@ O 403/1010 do acesso ao Worker público de validação e a rejeição automátic
 - workers_dev e preview_urls desativados também no arquivo de validação, para não reabrir entrada pública no próximo deploy.
 - Criado KV exclusivo ostnt-validation-rate-limit (e97462664ae64aaab17374b2c3f4936d). Config local de validação usa esse namespace; produção mantém o namespace anterior. Binding CACHE do Worker ostnt-validation atualizado e relido pela API (HTTP 200); GITHUB_TOKEN e TOKEN_GUARD preservados. Nenhuma invocação do endpoint bloqueado foi feita.
 - Persistem as pendências de execução na borda, fontes reais, Turnstile no navegador, beacon e Lighthouse; não são aceitas como concluídas por estes testes locais.
+
+## Candidato implantado no Worker isolado — 31/10/2026
+
+- Upload administrativo aceito HTTP 200 em ostnt-validation. deployment_id b9a410b9ac9a494e8d5b857c635332ea; etag 19753a9e16fe128d04b2ff9a12d9563c5bfb418ad4e2977b59a8c2c567b52d1f.
+- Bundle de wrangler deploy --dry-run: 326602 bytes. Primeiro upload rejeitado por corrupção de caracteres na transferência; montagem corrigida e segundo upload aceito.
+- Configuração relida HTTP 200: APP_ENV validation, UA_MODE navegador, CACHE exclusivo e TOKEN_GUARD; GITHUB_TOKEN preservado; HMAC e secret dummy instalados apenas no ambiente isolado. Observability habilitada com logs persistentes.
+- workers.dev e previews continuam desativados após upload. Não houve invocação remota nem contorno do bloqueio anterior. Aceite de API não comprova scans, cache ou cotas na borda.
+- Produção não recebeu código nem configuração deste candidato.
+- Navegador conectado local indisponível. Teste funcional iniciado na página de produção pelo navegador cloud: formulário carregou e scan pediu checkbox Turnstile “Confirme que é humano”. Aguardando interação manual; nenhum resultado de scan confirmado nesta etapa. Isso testa a versão anterior em produção, não o candidato.

@@ -15,7 +15,8 @@ export const REGISTRY=[
     const r=await c.get(`https://gravatar.com/${h}.json`,{timeout:5000});
     if(r.status===404) return {dados:{existe:false}};
     if(!r.ok) throw falhar(r);
-    const e=lista((await J(r))?.entry)[0]||{};
+    const j=await J(r);if(!Array.isArray(j?.entry))throw Error('Formato Gravatar inesperado');
+    const e=j.entry[0];if(!e)return {dados:{existe:false}};
     return {dados:{existe:true,nome:e.displayName??null,sobre:e.aboutMe??null,local:e.currentLocation??null,
       urls:lista(e?.urls).map(u=>u.value),contas:lista(e?.accounts).map(x=>({rede:x.shortname,url:x.url})),
       avatar:`https://www.gravatar.com/avatar/${h}?d=404`}};
@@ -32,27 +33,38 @@ export const REGISTRY=[
   async run(a,c){
     const r=await c.get(`https://gitlab.com/api/v4/users?search=${encodeURIComponent(a.valor)}`,{timeout:6000});
     if(!r.ok) throw falhar(r);
-    const j=lista(await J(r));
+    const j=await J(r);if(!Array.isArray(j))throw Error('Formato GitLab inesperado');
     return {dados:{total:j.length,contas:j.slice(0,5).map(u=>({login:u.username,nome:u.name,bio:u.bio||null}))}};
   }},
- {id:'npm',tipos:['email'],custo:1,ttl:21600,provenance:'npm-registry',
+ {id:'npm',tipos:['email'],custo:1,ttl:21600,provenance:'npm-registry-exact-email-v2',
   async run(a,c){
     const r=await c.get(`https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(a.valor)}&size=5`,{timeout:6000});
     if(!r.ok) throw falhar(r);
     const j=await J(r);
-    return {dados:{total:j.total||0,pacotes:lista(j?.objects).map(o=>({nome:o?.package?.name,autor:o?.package?.author?.name||null}))}};
+    if(!Array.isArray(j?.objects)||typeof j?.total!=='number')throw Error('Formato npm inesperado');
+    const email=a.valor.toLowerCase();
+    const objetos=j.objects.filter(o=>[o?.package?.author,o?.package?.publisher,...lista(o?.package?.maintainers)]
+      .some(x=>typeof x?.email==='string'&&x.email.trim().toLowerCase()===email));
+    return {dados:{total:objetos.length,pacotes:objetos.map(o=>({nome:o?.package?.name||null,autor:o?.package?.author?.name||null})),
+      criterio:'E-mail exato nos metadados públicos do pacote; não comprova identidade.',amostra_examinada:j.objects.length,total_busca_ampla:j.total}};
   }},
- {id:'bluesky',tipos:['email'],custo:1,ttl:21600,provenance:'bsky-public-api',
+ {id:'bluesky',tipos:['email'],custo:1,ttl:21600,provenance:'bsky-public-email-mention-v2',
   async run(a,c){
     const r=await c.get(`https://public.api.bsky.app/xrpc/app.bsky.actor.searchActors?q=${encodeURIComponent(a.valor)}&limit=5`,{timeout:6000});
     if(!r.ok) throw falhar(r);
     const j=await J(r);
-    return {dados:{total:lista(j?.actors).length,atores:lista(j?.actors).map(x=>({handle:x.handle,nome:x.displayName||null}))}};
+    if(!Array.isArray(j?.actors))throw Error('Formato Bluesky inesperado');
+    const email=a.valor.toLowerCase();
+    const atores=j.actors.filter(x=>[x?.displayName,x?.description].some(v=>typeof v==='string'&&
+      (v.toLowerCase().match(/[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\.[a-z]{2,}/g)||[]).includes(email)));
+    return {dados:{total:atores.length,atores:atores.map(x=>({handle:x?.handle||null,nome:x?.displayName||null})),
+      criterio:'Menção pública literal ao e-mail; não comprova titularidade da conta.',amostra_examinada:j.actors.length}};
   }},
  {id:'telegram',tipos:['telefone'],custo:1,ttl:3600,provenance:'telegram-tme',
   async run(a,c){
     const numero=so(a.valor);
     const r=await c.get(`https://t.me/+${numero}?embed=1`,{accept:'text/html',timeout:5000});
+    if(!r.ok&&r.status!==404)throw falhar(r);
     const campos={titulo:'',descricao:''};
     const parser=new HTMLRewriter()
       .on('.tgme_page_title',{text(t){campos.titulo+=t.text;}})
@@ -67,31 +79,37 @@ export const REGISTRY=[
     if(r.status===404) return {dados:{total:0,breaches:[],senhas:{textoPuro:0,facilQuebrar:0,hashForte:0}}};
     if(!r.ok) throw falhar(r);
     const j=await J(r);
+    if(!Array.isArray(j?.breaches))throw Error('Formato XposedOrNot inesperado');
     const bm=j?.BreachMetrics?.passwords||{};
     const br=lista(j?.breaches).flat().filter(x=>typeof x==='string').map(n=>({nome:n}));
     return {dados:{total:br.length,breaches:br,
-      senhas:{textoPuro:bm.plain||0,facilQuebrar:bm.easyToCrack||0,hashForte:bm.strongHash||0}}};
+      senhas:{disponivel:Object.keys(bm).length>0,textoPuro:bm.plain??null,facilQuebrar:bm.easyToCrack??null,hashForte:bm.strongHash??null}}};
   }},
  {id:'hudsonrock',tipos:['email'],custo:1,ttl:43200,provenance:'hudson-rock-cavalier',
   async run(a,c){
     const r=await c.get(`https://cavalier.hudsonrock.com/api/json/v2/osint-tools/search-by-email?email=${encodeURIComponent(a.valor)}`,{timeout:7000});
     if(!r.ok) throw falhar(r);
-    const m=(await J(r)).message||{};
-    const st=lista(m?.stealers);
-    return {dados:{infectado:Boolean(m.total_corporate_services||m.total_user_services),maquinas:st.length,
-      logins:[...new Set(st.flatMap(s=>s?.stealer?.top_logins||[]))].slice(0,10),
-      senhas:[...new Set(st.flatMap(s=>lista(s?.stealer?.top_passwords)))].slice(0,10).map(v=>String(v).length>2?String(v).slice(0,1)+'***'+String(v).slice(-1):'***'),
-      antivirus:[...new Set(st.map(s=>s?.stealer?.antivirus).filter(Boolean))].slice(0,5),
-      os:[...new Set(st.map(s=>s?.stealer?.operating_system).filter(Boolean))].slice(0,5),
-      ultima:st.map(s=>s?.stealer?.date_compromised).filter(Boolean).sort().pop()||null}};
+    const j=await J(r);
+    const m=j?.message&&typeof j.message==='object'?j.message:j;
+    if(!Array.isArray(m?.stealers))throw Error('Formato de infostealer não reconhecido; resultado inconclusivo');
+    const st=m.stealers;
+    if(st.some(s=>!s||typeof s!=='object'))throw Error('Formato de infostealer inesperado');
+    const maquinas=st.map(s=>s?.stealer&&typeof s.stealer==='object'?s.stealer:s);
+    return {dados:{infectado:Boolean(st.length||Number(m.total_corporate_services)||Number(m.total_user_services)),maquinas:st.length,
+      logins:[...new Set(maquinas.flatMap(s=>lista(s?.top_logins).filter(x=>typeof x==='string')))].slice(0,10),
+      senhas:[...new Set(maquinas.flatMap(s=>lista(s?.top_passwords).filter(x=>typeof x==='string')))].slice(0,10).map(v=>String(v).length>2?String(v).slice(0,1)+'***'+String(v).slice(-1):'***'),
+      antivirus:[...new Set(maquinas.map(s=>s?.antivirus).filter(Boolean))].slice(0,5),
+      os:[...new Set(maquinas.map(s=>s?.operating_system).filter(Boolean))].slice(0,5),
+      ultima:maquinas.map(s=>s?.date_compromised).filter(Boolean).sort().pop()||null}};
   }},
  {id:'github',tipos:['email'],custo:1,ttl:86400,provenance:'github-users-api',
   async run(a,c){
     if(!c.env.GITHUB_TOKEN) throw Error('sem token');
     const r=await c.get(`https://api.github.com/search/users?q=${encodeURIComponent(a.valor)}+in:email&per_page=5`,{timeout:7000,
       headers:{authorization:`Bearer ${c.env.GITHUB_TOKEN}`,accept:'application/vnd.github+json'}});
-    if(!r.ok) throw falhar(r);
+    if(!r.ok){const e=falhar(r);if(r.status===401)e.message='Token do GitHub inválido. '+e.message;else if(r.status===429||(r.status===403&&r.headers.get('x-ratelimit-remaining')==='0'))e.message='Limite do GitHub atingido. '+e.message;throw e;}
     const j=await J(r);
+    if(!Array.isArray(j?.items)||typeof j?.total_count!=='number')throw Error('Formato GitHub inesperado');
     return {dados:{total:j.total_count||0,contas:lista(j?.items).map(u=>({login:u.login,url:u.html_url}))}};
   }},
  {id:'emailrep',tipos:['email'],custo:1,ttl:43200,provenance:'emailrep',
@@ -106,12 +124,12 @@ export const REGISTRY=[
   async run(a,c){
     const d=a.tipo==='email'?a.valor.split('@')[1]:a.valor;
     const q=async t=>{const r=await c.get(`https://dns.google/resolve?name=${encodeURIComponent(d)}&type=${t}`,{timeout:5000});
-      if(!r.ok) throw falhar(r);return (await J(r)).Answer||[];};
+      if(!r.ok) throw falhar(r);const j=await J(r);if(j?.Status!==0)throw Error(`Resposta DNS ${j?.Status??'inválida'}`);return lista(j?.Answer);};
     const [ra,tx,mx]=await Promise.all([q('A'),q('TXT'),q('MX')]);
     const t=tx.map(x=>String(x.data).replace(/"/g,''));
-    let dmarc=false;
+    let dmarc=null;
     try{const r=await c.get(`https://dns.google/resolve?name=_dmarc.${encodeURIComponent(d)}&type=TXT`,{timeout:5000});
-      dmarc=r.ok&&((await J(r)).Answer||[]).length>0;}catch{}
+      if(r.ok){const j=await J(r);if(j?.Status===0||j?.Status===3)dmarc=lista(j?.Answer).length>0;}}catch{}
     return {dados:{dominio:d,ips:ra.map(x=>x.data).slice(0,5),mx:mx.map(x=>x.data).slice(0,5),
       txt:t.slice(0,8),hasSPF:t.some(x=>/^v=spf1/i.test(x)),dmarc}};
   }},
@@ -132,7 +150,8 @@ export const REGISTRY=[
     const r=await c.get(`https://web.archive.org/cdx/search/cdx?url=${encodeURIComponent(d)}/*&output=json&fl=original,timestamp&collapse=urlkey&limit=200`,{timeout:9000});
     if(!r.ok) throw falhar(r);
     const arr=await J(r);
-    if(!Array.isArray(arr)||arr.length<2)return {dados:{total:0,parametros:[],amostra:[]}};
+    if(!Array.isArray(arr))throw Error('Formato Wayback inesperado');
+    if(arr.length<2)return {dados:{total:0,parametros:[],amostra:[]}};
     const urls=arr.slice(1).map(x=>x?.[0]).filter(Boolean);
     const params=[...new Set(urls.flatMap(u=>{try{return [...new URL(u).searchParams.keys()]}catch{return[]}}))].slice(0,20);
     return {dados:{total:urls.length,parametros:params,amostra:urls.slice(0,15)}};
@@ -146,13 +165,13 @@ export const REGISTRY=[
     return {dados:{handle:j.handle,status:j.status||[],eventos:lista(j?.events).map(e=>({acao:e.eventAction,data:e.eventDate})),
       ns:lista(j?.nameservers).map(n=>n.ldhName),entidades:lista(j?.entities).map(e=>e.handle).filter(Boolean)}};
   }},
- {id:'observatory',tipos:['dominio'],custo:1,ttl:3600,provenance:'mozilla-observatory',
+ {id:'observatory',tipos:['dominio'],custo:1,ttl:3600,provenance:'mdn-observatory-v2',
   async run(a,c){
-    const r=await c.get(`https://observatory.mozilla.org/api/v2/analyze?host=${encodeURIComponent(a.valor)}`,{timeout:9000});
+    const r=await c.get(`https://observatory-api.mdn.mozilla.net/api/v2/scan?host=${encodeURIComponent(a.valor)}`,{method:'POST',timeout:9000});
     if(!r.ok) throw falhar(r);
     const j=await J(r);
-    return {dados:{nota:j.grade??null,score:j.score??null,
-      falhas:Object.entries(j.tests||{}).filter(([,v])=>v.pass===false).map(([k])=>k)}};
+    if(j?.error)throw Error(String(j.message||j.error));
+    return {dados:{nota:j?.grade??null,score:j?.score??null,falhas:null,testes_falhos:j?.tests_failed??null,testes_aprovados:j?.tests_passed??null,detalhes:j?.details_url??null}};
   }},
  {id:'urlscan',tipos:['dominio'],custo:1,ttl:21600,provenance:'urlscan-public',
   async run(a,c){
@@ -174,7 +193,8 @@ export const REGISTRY=[
     const r=await c.get(`https://ipwho.is/${encodeURIComponent(a.valor)}`,{timeout:6000});
     if(!r.ok) throw falhar(r);
     const j=await J(r);
-    if(j.success===false) throw Error('IP inválido');
+    if(j?.success===false) throw Error('IP inválido');
+    if(j?.success!==true)throw Error('Formato IPWHOIS inesperado');
     return {dados:{pais:j.country,cidade:j.city,asn:j.connection?.asn,org:j.connection?.org,isp:j.connection?.isp}};
   }},
  {id:'asn',tipos:['ip'],custo:1,ttl:86400,provenance:'team-cymru-dns',
@@ -212,7 +232,7 @@ export const REGISTRY=[
   }},
  {id:'ddd',tipos:['telefone'],custo:0,ttl:0,provenance:'anatel-pgcn-snapshot-2026-10-30',
   async run(a,c){
-    const ddd=a.valor.startsWith('55')?a.valor.slice(2,4):a.valor.slice(0,2);
+    const ddd=a.valor.length>11&&a.valor.startsWith('55')?a.valor.slice(2,4):a.valor.slice(0,2);
     const registro=DDD[ddd];
     if(!registro)throw Error('DDD não encontrado na tabela local da Anatel');
     return {dados:{ddd,...registro}};

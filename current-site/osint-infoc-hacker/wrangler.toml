@@ -1,4 +1,5 @@
 name = "ostnt-migration"
+account_id = "7c0ca4c5f751bfd807e7bf6f17da8430"
 main = "cloudflare-worker.mjs"
 compatibility_date = "2026-10-30"
 compatibility_flags = ["nodejs_compat"]
@@ -9,6 +10,7 @@ id = "d83ef821c9b44516a7d0f163088cc484"
 binding = "OSINT_KV"
 id = "d83ef821c9b44516a7d0f163088cc484"
 [vars]
+APP_ENV = "production"
 UA_MODE = "identificado"
 UA_NAVEGADOR = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 ALLOWED_ORIGINS = "https://ostnt.online"

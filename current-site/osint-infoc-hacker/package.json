@@ -1,0 +1,26 @@
+{
+  "name": "osint-infoc-hacker",
+  "version": "1.2.0",
+  "private": true,
+  "type": "module",
+  "description": "OSINT // infoc.hacker \u2014 an\u00e1lise de exposi\u00e7\u00e3o de e-mail",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "check": "node --check netlify/functions/token.js && node --check netlify/functions/scan.js",
+    "build:worker": "node scripts/build-worker.mjs",
+    "check:worker": "node --check cloudflare-worker.mjs && node --check public/app.js && node --check src/scan.mjs && node --check src/sources/registry.mjs",
+    "test:unit": "node verification/worker-regression.mjs && node verification/cache-check.mjs && node verification/frontend-check.cjs && node verification/quota-check.mjs && node verification/source-check.mjs",
+    "test:runtime": "node verification/runtime-check.cjs",
+    "dev:validation": "wrangler dev --config wrangler.remote-client.toml --ip 127.0.0.1 --port 8787",
+    "verify:remote": "node verification/remote-check.mjs",
+    "dev:remote:legacy": "wrangler dev --remote --config wrangler.validation.toml"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^10.0.0"
+  },
+  "devDependencies": {
+    "wrangler": "4.156.0"
+  }
+}

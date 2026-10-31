@@ -135,3 +135,11 @@ Após o usuário alterar a permissão e solicitar nova tentativa pelo plugin:
 - Primeira tentativa recusada antes das fontes. Diagnóstico limitado a HTTP, error-codes e hostname (nunca token/secret) revelou HTTP 200 e hostname example.com no Siteverify dummy. Documentação exemplifica localhost, que era o único hostname dummy permitido.
 - Compatibilidade adicionada para localhost/example.com somente quando turnstileConfig já validou par dummy, APP_ENV validation e origem permitida. Produção continua sem exceção dummy e success:false/hostname alheio continuam recusados. Testes de regressão passaram.
 - Diagnóstico e correção implantados apenas no Worker de validação; versão corrigida e61c604307cb42d8b1f4ab7fc74ae8d7, HTTP 200. Nova tentativa de scan iniciada.
+
+## Estado atual após execução real da candidata
+
+O bloqueio de entrada foi resolvido com organização Access e hostname customizado autorizados; o usuário autenticou pelo código por e-mail. Foram concluídos scans reais dos seis tipos no Worker isolado, com todas as 24 fontes exercitadas. GitHub autenticado respondeu, sem “sem token”. A falha real de hostname dummy example.com foi diagnosticada/corrigida apenas para validação; XON “Not found” HTTP 200 passou a ser interpretado corretamente.
+
+Após correções, 16 fontes responderam de forma interpretável e 8 ainda apresentam erro, timeout ou chave ausente. Não estão todas saudáveis e não houve promoção. Repetição real mostrou cache nas 12 fontes do e-mail. Dez consultas concluíram; a décima primeira exibiu quota atingida. JSON e CSV geraram downloads reais da candidata.
+
+Evidências por endpoint, corpos preservados, limitações da captura e pendências em [candidate-live-2026-10-31.md](candidate-live-2026-10-31.md). Não confundir esta evidência com o antigo teste de produção. Sessão/IP de validação atingiu a quota; respeitar expiração sem zerar ou contornar. Produção permanece anterior e intacta.

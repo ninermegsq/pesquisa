@@ -72,3 +72,22 @@ Os seis tipos e as 24 fontes foram exercitados. São 15 fontes com resposta inte
 ### Correção XON em andamento
 
 Documentação oficial https://xposedornot.com/api_doc descreve {"Error":"Not found","email":null} como resposta de ausência. Adicionado tratamento explícito desse envelope, sem converter erros genéricos em ausência; proveniência versionada. Ainda requer repetição real para comprovar qual envelope a fonte devolve neste caso.
+
+## Reteste após correção XON
+
+- Candidata 4c6fc554202947adafdf956aa44bc07e implantada HTTP 200 somente em validação. Scan de e-mail concluiu; XON passou para resposta interpretada com total 0 e métricas de senhas indisponíveis. Isso confirma a correção do parser no caso real, sem inventar zeros para métricas não fornecidas.
+- Repetição imediata do mesmo scan exibiu cache nos 12 acordeões de fontes, inclusive erros/timeouts. Primeiro uso da nova proveniência XON não usou o resultado anterior incompatível.
+- Situação por fonte após reteste: 16 fontes responderam de forma interpretável; 8 permanecem com falha, timeout ou credencial ausente (gitlab, emailrep, crtsh, wayback, rdap, ipgeo, ceis, wikidata). Não afirmar que as 24 estão saudáveis.
+- Telegram repetido exibiu cache; DDD não tem selo de cache porque é leitura local de custo zero.
+
+## Quota real pela interface
+
+Contagem de consultas concluídas nesta sessão/IP: e-mail, domínio, IP, CNPJ, telefone, nome, reteste e-mail, repetição e-mail, telefone, telefone = 10. A próxima tentativa exibiu “Limite atingido (10 scans por hora ou 60 por dia).” Não foram feitas novas consultas após a recusa. Isso comprova comportamento visível do limite horário no Worker implantado. O status/header Retry-After não foi capturado pelo Network nesta etapa; replay e limite diário continuam com prova apenas local. Não zerar contador nem trocar IP para contornar quota.
+
+## Aceites ainda pendentes
+
+- Resolver ou reclassificar as oito fontes com falhas; credenciais EmailRep/Transparência não disponíveis neste ambiente.
+- Replay com mesmo token e Retry-After documentados na borda, além da expiração temporizada do cache de erros; os testes locais já passaram.
+- Lighthouse mobile, beacon Network e todos os headers da versão candidata.
+- TXT fallback está ausente da UI (há JSON/CSV); precisa implementação e validação.
+- Versão com chaves reais e teste humano final antes de produção. Dummy está restrito à validação com Access.

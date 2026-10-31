@@ -100,3 +100,9 @@ A CSP permite o beacon, mas sua injeção observada vem de fora do HTML do repos
 ## Promoção
 
 Nenhum teste local substitui o aceite remoto. Antes de promover: confirmar fontes por endpoint, cache de edge, token, cotas, exportações, arquivos públicos e console. Produção usa chaves reais, APP_ENV=production e UA_MODE=identificado. Faça smoke tests com rollback disponível; falhas bloqueiam a conclusão. A versão candidata desta revisão não foi publicada em produção.
+
+## Validação real da candidata — 31/10/2026
+
+O ambiente `https://validation.ostnt.online` usa `ostnt-validation`, KV exclusivo e Access restrito ao proprietário com sessão de 1h e código por e-mail. Configuração não foi promovida a produção. A origem está no arquivo de validação para não perder a configuração no próximo deploy.
+
+Scans reais dos seis tipos exercitaram as 24 fontes. GitHub autenticado respondeu; 16 fontes retornaram resposta interpretável e 8 ficaram com falha/timeout/chave ausente nesta rodada. Cache nas 12 fontes do e-mail e recusa na 11ª consulta foram observados na interface real. Relatório por endpoint e limites da prova: [verification/candidate-live-2026-10-31.md](verification/candidate-live-2026-10-31.md). Ainda faltam reclassificações/correções de fontes, replay/Retry-After na borda, Lighthouse, beacon, TXT fallback e validação final com chaves reais.

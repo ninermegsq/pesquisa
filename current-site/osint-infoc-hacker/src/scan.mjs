@@ -66,9 +66,9 @@ export async function handleScan(request,env,ip){
   const c=ctx(env,origem);let gasto=0,estimativa=3;
   const candidatas=REGISTRY.filter(s=>s.tipos.includes(alvo.tipo)).sort((x,y)=>x.custo-y.custo);
   const fila=candidatas.filter(s=>{
-    const custoTotal=s.custo+(s.custo>0?2:0);
-    if(gasto+s.custo>Math.min(BUDGET,Number(env.BUDGET_SUBREQ)||BUDGET)||estimativa+custoTotal>50)return false;
-    gasto+=s.custo;estimativa+=custoTotal;return true;
+    const custoTotal=s.custo*2+(s.custo>0?2:0);
+    if(gasto+s.custo*2>Math.min(BUDGET,Number(env.BUDGET_SUBREQ)||BUDGET)||estimativa+custoTotal>50)return false;
+    gasto+=s.custo*2;estimativa+=custoTotal;return true;
   });
   const omitidas=candidatas.filter(s=>!fila.includes(s)).map(s=>({id:s.id,motivo:'Orçamento de subrequests'}));
   const res=await Promise.all(fila.map(s=>rodar(s,alvo,c)));
@@ -79,5 +79,5 @@ export async function handleScan(request,env,ip){
     fontes:res.map(({pivos:p,...r})=>r),
     disponibilidade:Object.fromEntries(res.map(r=>[r.id,r.status==='ok'])),
     score,pivos,browserFontes,html:render(res),
-    meta:{planejadas:candidatas.length,executadas:res.length,subrequests:gasto,subrequestsEstimadas:estimativa,omitidas}});
+    meta:{planejadas:candidatas.length,executadas:res.length,subrequests:c.requests,subrequestsMaximas:gasto,subrequestsEstimadas:estimativa,omitidas}});
 }

@@ -229,6 +229,13 @@ function renderPivos(pivos){
  for(const p of pivos||[]){const btn=document.createElement('button');btn.type='button';btn.className='chip';btn.textContent=p.valor||'';btn.addEventListener('click',()=>{if(scanning)return;$('email').value=p.valor;form.requestSubmit();});box.append(btn);}
  $('stage').append(box);
 }
+async function consultaBrowser(url,timeout){
+ const signal=AbortSignal.timeout(timeout);
+ let r=await fetch(url,{signal,credentials:'omit'});
+ const ra=r.headers.get('retry-after'),delay=ra?(Number.isFinite(Number(ra))?Number(ra)*1000:Date.parse(ra)-Date.now()):2000;
+ if([429,503].includes(r.status)&&delay<=2000){await r.body?.cancel();await new Promise(resolve=>setTimeout(resolve,2000));signal.throwIfAborted();r=await fetch(url,{signal,credentials:'omit'});}
+ return r;
+}
 async function subdominiosBrowser(j){
  if(!j.browserFontes?.some(s=>s.id==='crtsh'))return;
  const d=j.alvo.tipo==='email'?j.alvo.valor.split('@')[1]:j.alvo.valor;
@@ -236,7 +243,7 @@ async function subdominiosBrowser(j){
  for(const provider of ['crtsh','hackertarget']){
   const url=provider==='crtsh'?`https://crt.sh/?q=%25.${encodeURIComponent(d)}&output=json`:`https://api.hackertarget.com/hostsearch/?q=${encodeURIComponent(d)}`;
   try{
-   const r=await fetch(url,{signal:AbortSignal.timeout(9000),credentials:'omit'}),body=await r.text();
+   const r=await consultaBrowser(url,9000),body=await r.text();
    if(!r.ok)throw Error(`HTTP ${r.status} | ${body.slice(0,200).replace(/\s+/g,' ')}`);
    let hosts;if(provider==='crtsh'){let arr;try{arr=JSON.parse(body);}catch{throw Error('resposta não-JSON');}if(!Array.isArray(arr))throw Error('formato inesperado');hosts=arr.flatMap(x=>String(x?.name_value||'').split('\n'));}
    else {if(/error|limit|invalid/i.test(body))throw Error(body.slice(0,200));hosts=body.split('\n').filter(x=>x.includes(',')).map(x=>x.split(',')[0]);}
@@ -258,7 +265,7 @@ async function reservasPresend(j){
   if(id==='rdap'&&/HTTP 40[134]|tld sem rdap/.test(s.erro||''))continue;
   const path=id==='rdap'?`whois-lookup?domain=${encodeURIComponent(j.alvo.valor)}`:`email-validate?email=${encodeURIComponent(j.alvo.valor)}`;
   try{
-   const r=await fetch('https://presend.pages.dev/api/'+path,{credentials:'omit',signal:AbortSignal.timeout(7000)}),t=await r.text();
+   const r=await consultaBrowser('https://presend.pages.dev/api/'+path,7000),t=await r.text();
    if(!r.ok)throw Error(`HTTP ${r.status} | ${t.slice(0,200)}`);
    let data;try{data=JSON.parse(t);}catch{throw Error('resposta não-JSON');}
    let dados;

@@ -72,11 +72,12 @@ export async function handleScan(request,env,ip){
   });
   const omitidas=candidatas.filter(s=>!fila.includes(s)).map(s=>({id:s.id,motivo:'Orçamento de subrequests'}));
   const res=await Promise.all(fila.map(s=>rodar(s,alvo,c)));
+  const browserFontes=['email','dominio'].includes(alvo.tipo)?[{id:'crtsh',provenance:'crtsh',reserva:'hackertarget'}]:[];
   const pivos=pivosDe(res);
   const score=pontuar(res);if(omitidas.length)score.parcial=true;
   return json({alvo,gerado_em:new Date().toISOString(),
     fontes:res.map(({pivos:p,...r})=>r),
     disponibilidade:Object.fromEntries(res.map(r=>[r.id,r.status==='ok'])),
-    score,pivos,html:render(res),
+    score,pivos,browserFontes,html:render(res),
     meta:{planejadas:candidatas.length,executadas:res.length,subrequests:gasto,subrequestsEstimadas:estimativa,omitidas}});
 }

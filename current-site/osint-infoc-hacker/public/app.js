@@ -229,6 +229,27 @@ function renderPivos(pivos){
  for(const p of pivos||[]){const btn=document.createElement('button');btn.type='button';btn.className='chip';btn.textContent=p.valor||'';btn.addEventListener('click',()=>{if(scanning)return;$('email').value=p.valor;form.requestSubmit();});box.append(btn);}
  $('stage').append(box);
 }
+async function subdominiosBrowser(j){
+ if(!j.browserFontes?.some(s=>s.id==='crtsh'))return;
+ const d=j.alvo.tipo==='email'?j.alvo.valor.split('@')[1]:j.alvo.valor;
+ const started=Date.now(),tentativas=[];let result;
+ for(const provider of ['crtsh','hackertarget']){
+  const url=provider==='crtsh'?`https://crt.sh/?q=%25.${encodeURIComponent(d)}&output=json`:`https://api.hackertarget.com/hostsearch/?q=${encodeURIComponent(d)}`;
+  try{
+   const r=await fetch(url,{signal:AbortSignal.timeout(9000),credentials:'omit'}),body=await r.text();
+   if(!r.ok)throw Error(`HTTP ${r.status} | ${body.slice(0,200).replace(/\s+/g,' ')}`);
+   let hosts;if(provider==='crtsh'){let arr;try{arr=JSON.parse(body);}catch{throw Error('resposta não-JSON');}if(!Array.isArray(arr))throw Error('formato inesperado');hosts=arr.flatMap(x=>String(x?.name_value||'').split('\n'));}
+   else {if(/error|limit|invalid/i.test(body))throw Error(body.slice(0,200));hosts=body.split('\n').filter(x=>x.includes(',')).map(x=>x.split(',')[0]);}
+   const subs=[...new Set(hosts.map(x=>x.trim().toLowerCase()).filter(x=>(x===d||x.endsWith('.'+d))&&!x.startsWith('*')&&/^[a-z0-9.-]+$/.test(x)))].slice(0,provider==='crtsh'?60:40);
+   result={id:'crtsh',status:'ok',provenance:provider,cache:'miss',timestamp:new Date().toISOString(),dados:{total:subs.length,subdominios:subs},tentativas};break;
+  }catch(e){tentativas.push({provenance:provider,erro:String(e?.message||e).slice(0,220)});}
+ }
+ result||={id:'crtsh',status:'erro',provenance:'crtsh',cache:'miss',timestamp:new Date().toISOString(),erro:tentativas.map(t=>t.provenance+': '+t.erro).join(' | ').slice(0,440),dados:null,tentativas};
+ result.ms=Date.now()-started;j.fontes.push(result);j.disponibilidade.crtsh=result.status==='ok';if(result.status!=='ok')j.score.parcial=true;
+ j.meta.executadas++;j.meta.planejadas++;
+ const body=result.status==='ok'?`<p>${result.dados.total} subdomínios · ${escapeHTML(result.provenance)}</p><ul>${result.dados.subdominios.map(x=>`<li>${escapeHTML(x)}</li>`).join('')}</ul>`:`<p>${escapeHTML(result.erro)}</p>`;
+ j.html+=makeAccordion('SUBDOMÍNIOS',result.dados?.total??0,body,true);
+}
 async function scan(event){
  event.preventDefault();if(scanning)return;
  const alvo=$('email').value.trim();$('form-error').textContent='';if(!alvo){$('form-error').textContent='Informe um alvo.';return;}
@@ -237,6 +258,7 @@ async function scan(event){
  const cfToken=await challenge();
  const signed=await getJson('/.netlify/functions/token',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({cfToken,alvo})});
  const j=await getJson('/api/scan',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({alvo,token:signed.token})});
+ await subdominiosBrowser(j);
  const card=document.createElement('section');card.className='scorecard';
  card.innerHTML=`<div class="eyebrow">RISCO DE EXPOSIÇÃO</div><span class="score-num">${escapeHTML(j.score?.valor??0)}</span><span class="score-suffix">/100 · ${escapeHTML(j.score?.nivel||'BAIXO')}${j.score?.parcial?' · PARCIAL':''}</span><p class="public-note">${escapeHTML((j.score?.motivos||[]).join(' · ')||(j.score?.nivel==='INCONCLUSIVO'?'Fontes indisponíveis; análise inconclusiva.':'Nenhum sinal de exposição confirmado nas fontes disponíveis.'))}</p><p class="public-note">Índice heurístico de exposição; não é probabilidade de invasão. Correspondências públicas não confirmam identidade.</p>`;
  $('stage').append(card);const wrapper=document.createElement('div');wrapper.innerHTML=j.html||'';$('stage').append(...wrapper.childNodes);

@@ -50,3 +50,7 @@ Nova chamada de `curl` ao mesmo endpoint `https://api.subdomain.center/?domain=o
 Consulta autenticada à API de gerenciamento Cloudflare confirmou no Worker `ostnt-validation`: `enabled: false`, `previews_enabled: false`; bindings `CACHE`, `GITHUB_TOKEN` e `TOKEN_GUARD`. UA_MODE/UA_NAVEGADOR preparados no arquivo de configuração ainda não estão instalados nesse Worker. Essa consulta não executou nenhuma fonte.
 
 O aceite permanece incompleto: Subdomain Center não respondeu com sucesso nos testes disponíveis, e não há execução comprovada do novo motor na saída do Worker. Remoção ou migração ao browser por 1010 não foi acionada, pois não se observou 1010 nos provedores alternativos.
+
+## 31/10/2026: crt.sh no navegador
+
+HEAD e GET locais em crt.sh retornaram HTTP 200, JSON e `access-control-allow-origin: *`. HackerTarget hostsearch retornou HTTP 200, texto host,ip e o mesmo CORS. Consulta primária no browser, reserva HackerTarget apenas em falha; sem Cache API no cliente. Resultados preservam proveniência, timestamp e tentativas para exportação. Isso não constitui validação de navegador concluída.

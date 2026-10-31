@@ -85,7 +85,7 @@ EmailRep|reputação pública de e-mail · API opcional|https://emailrep.io/`}
 const AUTOMATIC = new Set(['XposedOrNot','Hudson Rock','Gravatar','GitHub Search','Keybase','Shodan','MXToolbox','SecurityTrails','EmailRep']);
 const TOOLS = CATEGORIES.flatMap((cat,ci)=>cat.items.trim().split('\n').map(row=>{const [name,desc,url]=row.split('|');return {name,desc,url,category:ci,auto:AUTOMATIC.has(name)&&!(ci===3&&name==='GitHub Search'),apiKeyRequired:false};}));
 document.getElementById('stat-total').textContent=24;
-document.getElementById('stat-auto').textContent=12;
+document.getElementById('stat-auto').textContent=10;
 document.getElementById('stat-cats').textContent=6;
 document.getElementById('stat-keys').textContent=0;
 const $=id=>document.getElementById(id);
@@ -276,7 +276,7 @@ function reportFilename(ext){return 'osint-report-'+current.email.replace(/[^a-z
 function downloadReport(content,type,ext){if(!current)return;const url=URL.createObjectURL(new Blob([content],{type}));const a=document.createElement('a');a.href=url;a.download=reportFilename(ext);document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function csvCell(value){let v=String(value??'');if(/^\s*[=+@-]|^[\t\r\n]/.test(v))v="'"+v;return '"'+v.replace(/"/g,'""')+'"';}
 function countFindings(report){
- const counts={xon:d=>d.total,gravatar:d=>Number(d.existe),pgp:d=>Number(d.existe),gitlab:d=>d.total,npm:d=>d.total,bluesky:d=>d.total,github:d=>d.total,hudsonrock:d=>d.maquinas,crtsh:d=>d.total,wayback:d=>d.total,internetdb:d=>(d.portas||[]).length+(d.vulns||[]).length,cnpj_br:d=>Number(d.existe),ceis:d=>d.total,telegram:d=>Number(d.existe),wikidata:d=>d.total,datajud:d=>d.total};
+ const counts={xon:d=>d.total,gravatar:d=>Number(d.existe),pgp:d=>Number(d.existe),npm:d=>d.total,bluesky:d=>d.total,github:d=>d.total,hudsonrock:d=>d.maquinas,crtsh:d=>d.total,wayback:d=>d.total,internetdb:d=>(d.portas||[]).length+(d.vulns||[]).length,cnpj_br:d=>Number(d.existe),telegram:d=>Number(d.existe),wikidata:d=>d.total,datajud:d=>d.total};
  return (report.fontes||[]).reduce((n,s)=>{const value=s.status==='ok'&&counts[s.id]?Number(counts[s.id](s.dados||{})):0;return n+(Number.isFinite(value)?Math.max(0,value):0);},0);
 }
 function reportRows(){

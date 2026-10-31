@@ -9,6 +9,51 @@ const lista=v=>Array.isArray(v)?v:[];
 const so=d=>String(d??'').replace(/\D/g,'');
 
 export const REGISTRY=[
+ {id:'emailval',tipos:['email'],custo:2,ttl:43200,provenance:'disify-kickbox-v1',
+  async run(a,c){
+   const erros=[],dados={descartavel:null,valido:null,dominioExiste:null};
+   for(const provider of ['disify','kickbox']){try{
+    const url=provider==='disify'?`https://disify.com/api/email/${encodeURIComponent(a.valor)}`:`https://open.kickbox.com/v1/disposable/${encodeURIComponent(a.valor)}`;
+    const r=await c.get(url,{timeout:6000});if(!r.ok)throw falhar(r);const j=await J(r);
+    if(typeof j?.disposable!=='boolean')throw Error('Formato de validação inesperado');
+    dados.descartavel=dados.descartavel===true||j.disposable;
+    if(provider==='disify'){if(typeof j?.format!=='boolean'||typeof j?.dns!=='boolean')throw Error('Formato DISIFY inesperado');dados.valido=j.format;dados.dominioExiste=j.dns;}
+   }catch(e){erros.push({provedor:provider,erro:String(e?.message||e).slice(0,220)});}}
+   if(erros.length===2)throw Error(erros.map(x=>x.provedor+': '+x.erro).join(' | '));
+   return {dados:{...dados,parcial:erros.length>0,erros,criterio:'Validade de formato e domínio; não confirma existência da caixa postal.'}};
+  }},
+ {id:'nomeperfil',tipos:['nome'],custo:3,ttl:604800,provenance:'agify-genderize-nationalize-v1',
+  async run(a,c){
+   const n=a.valor.trim().split(/\s+/)[0],dados={idadeProvavel:null,generoProvavel:null,nacionalidadeProvavel:null},erros=[];
+   for(const provider of ['agify','genderize','nationalize']){try{
+    const r=await c.get(`https://api.${provider}.io?name=${encodeURIComponent(n)}`,{timeout:6000});if(!r.ok)throw falhar(r);const j=await J(r);
+    if(j?.error||typeof j?.name!=='string')throw Error('Formato de perfil provável inesperado');
+    if(provider==='agify')dados.idadeProvavel=typeof j.age==='number'?j.age:null;
+    if(provider==='genderize')dados.generoProvavel=j?.gender==null?null:{valor:j.gender,probabilidade:j.probability??null};
+    if(provider==='nationalize')dados.nacionalidadeProvavel=lista(j?.country).map(x=>({pais:x?.country_id??null,probabilidade:x?.probability??null}));
+   }catch(e){erros.push({provedor:provider,erro:String(e?.message||e).slice(0,220)});}}
+   if(erros.length===3)throw Error(erros.map(x=>x.provedor+': '+x.erro).join(' | '));
+   return {dados:{...dados,parcial:erros.length>0,erros,criterio:'Estimativa estatística provável do primeiro nome; não descreve nem identifica uma pessoa.'}};
+  }},
+ {id:'ipreputacao',tipos:['ip'],custo:1,ttl:21600,provenance:'ipguardian-v1',
+  async run(a,c){
+   const r=await c.get('https://ipguardian.net/api/check',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ip:a.valor}),timeout:7000});
+   if(!r.ok)throw falhar(r);const j=await J(r),v=j?.results;
+   if(j?.success!==true||typeof v?.found!=='boolean'||!Array.isArray(v?.sources))throw Error('Formato IPGuardian inesperado');
+   return {dados:{listado:v.found,total:v.sources.length,criterio:'Listas públicas retornadas (máximo 10); presença não comprova atividade maliciosa.'}};
+  }},
+ {id:'ipcontexto',tipos:['ip'],custo:2,ttl:21600,provenance:'iplogs-vpndetection-v1',
+  async run(a,c){
+   const erros=[];
+   for(const provider of ['iplogs','vpndetection']){try{
+    const r=await c.get(provider==='iplogs'?'https://iplogs.com/v1/check':`https://api.vpndetection.io/${encodeURIComponent(a.valor)}`,provider==='iplogs'?{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ip:a.valor,mode:'fast'}),timeout:7000}:{timeout:7000});
+    if(!r.ok)throw falhar(r);const j=await J(r);if(typeof j?.is_vpn!=='boolean')throw Error('Formato IP contexto inesperado');
+    const bool=v=>typeof v==='boolean'?v:null;
+    return {dados:{vpn:j.is_vpn,proxy:bool(j?.is_proxy),tor:bool(j?.is_tor),datacenter:bool(j?.is_hosting),provedor:provider,parcial:provider==='vpndetection',erros,criterio:'Classificação provável da infraestrutura; não caracteriza o usuário.'}};
+   }catch(e){erros.push({provedor:provider,erro:String(e?.message||e).slice(0,220)});}}
+   throw Error(erros.map(x=>x.provedor+': '+x.erro).join(' | '));
+  }},
+
  {id:'gravatar',tipos:['email'],custo:1,ttl:86400,provenance:'gravatar-public-profile',
   async run(a,c){
     const h=md5(a.valor);

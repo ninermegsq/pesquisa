@@ -3,6 +3,7 @@ export function pontuar(res){
   for(const r of res){
     if(r.status!=='ok'){parcial=true;continue;}
     const d=r.dados||{};
+    if(d.parcial)parcial=true;
     if(r.id==='dns'&&d.dmarc==null)parcial=true;
     if(r.id==='xon'&&d.senhas?.disponivel===false)parcial=true;
     if(r.id==='xon'){

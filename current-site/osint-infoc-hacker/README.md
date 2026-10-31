@@ -1,189 +1,102 @@
 # OSINT // infoc.hacker
 
-![deploy na Cloudflare](https://img.shields.io/badge/deploy-Cloudflare%20Workers-f38020?style=flat-square)
+Site `https://ostnt.online/`. A produção é servida por `cloudflare-worker.mjs`; ele é a fonte de verdade dos headers. `public/_headers` vale somente para desenvolvimento Netlify. O código Netlify antigo é mantido por compatibilidade.
 
-**Autor:** [@infoc.hacker no Instagram](https://instagram.com/infoc.hacker) · **Apoie:** [MANTER O SITE NO AR — Cakto](https://pay.cakto.com.br/o9xx8id_1257625)
+## Estado desta revisão
 
-Scanner OSINT de exposição de e-mails. A interface usa **HTML/CSS/JavaScript nativos** e a publicação de produção usa **Cloudflare Workers**; as funções Netlify permanecem como alternativa. Sem framework ou SDK de terceiros no navegador (exceto Cloudflare Turnstile).
+Código candidato, sem promoção em produção. A opção escolhida é validação remota antes do deploy. Consulte `verification/current-review.md` para resultados e limites da comprovação; documentos anteriores em `verification/` são históricos. O conector GitHub está conectado ao repositório `ninermegsq/pesquisa`; o projeto está na pasta `current-site/osint-infoc-hacker`.
 
-## Versão 1.2 — Morph Orb
+## Fluxo e proteção
 
-- A busca segue o modelo anexado: o campo se desloca e se transforma em esfera durante a consulta; no fim, a esfera abre um cartão com o resumo.
-- A animação acompanha as etapas reais do scanner, respeita a preferência por movimento reduzido e mantém o relatório detalhado abaixo da área principal.
-- As consultas, o Turnstile, o rate limit e o cache continuam no backend. O site publicado usa `cloudflare-worker.mjs`, com os mesmos endpoints de scan.
-- O pacote mantém as Netlify Functions para hospedagem alternativa. Elas não devem ser publicadas diretamente no Cloudflare sem a adaptação do Worker.
+1. O browser busca a sitekey em `GET /.netlify/functions/token`, com cache público de 24h.
+2. O visitante resolve Turnstile. `POST /.netlify/functions/token` valida Siteverify e emite token HMAC de 60s, vinculado ao alvo normalizado e ao IP.
+3. `POST /api/scan` recebe `{alvo, token}` e exige Origin permitido. Token inválido, expirado ou repetido retorna 429. Não há bypass `x-validation`.
+4. Durable Object SQLite coordena uso único e as cotas de 10 scans/hora e 60/dia por IP, inclusive concorrentes. O namespace é separado por hash do IP. KV guarda somente dois contadores espelhados por scan aceito; se o espelho falha, o limite persistente do Durable Object continua obrigatório.
+5. Respostas excedendo cota têm 429 e Retry-After. Fonte indisponível não derruba o relatório: há status/proveniência por fonte e score parcial. Se nenhuma fonte responde, o nível é INCONCLUSIVO.
 
-### Publicação atual
+Cache de resultados em `caches.default`, usando `<origin>/__cache/<id>/<alvo-codificado>`. O prefixo HTTP é bloqueado com 404. Sucesso usa TTL da fonte; erro/timeout usa 120s. Mudanças de proveniência invalidam entradas anteriores. Cache é local ao datacenter, best-effort; teste local não comprova comportamento na borda. DDD local não acessa fetch nem Cache API.
 
-O domínio `ostnt.online` é servido pelo Cloudflare Worker `ostnt-migration`. Para atualizar a produção, publique `cloudflare-worker.mjs` no Worker existente, preservando os bindings e segredos já configurados. O ZIP contém o projeto editável e esse Worker. O repositório GitHub não publica automaticamente no Cloudflare.
+O orçamento contabiliza custo externo declarado e reserva operações de cache, KV e autorização para não selecionar mais que o limite estimado de 50 subrequests. Fontes excluídas aparecem em `meta.omitidas` e tornam o resultado parcial. E-mail: 12 fontes, custo externo declarado 16; isso não é uma contagem medida da rede.
 
-Para hospedar pela Netlify, use `public/` e `netlify/functions/` e configure as variáveis listadas abaixo na conta Netlify correspondente. Essa é uma rota de hospedagem alternativa, não a publicação atual do domínio.
+## Desenvolvimento e verificação
 
-## Arquivos
+Use Node 24 para a suíte de verificação e instale as dependências de desenvolvimento:
 
-```text
-/
-├─ public/
-│  ├─ index.html
-│  ├─ obrigado.html
-│  ├─ favicon.svg
-│  └─ _headers
-├─ netlify/functions/
-│  ├─ token.js
-│  └─ scan.js
-├─ netlify.toml
-├─ package.json
-├─ .gitignore
-└─ README.md
-```
-
-## Variáveis de ambiente
-
-| Variável | Obrigatória | Finalidade |
-| --- | --- | --- |
-| `HMAC_SECRET` | Sim | Segredo HMAC-SHA256, aleatório e forte, usado para assinar tokens de scan. |
-| `TURNSTILE_SECRET` | Sim | Chave **secreta** do Cloudflare Turnstile, verificada no servidor. |
-| `TURNSTILE_SITE_KEY` | Sim | Chave **pública** do widget do Turnstile. Obtida por GET na Function `/token`; **não** é segredo. |
-| `ALLOWED_ORIGINS` | Sim | Origens HTTP(S) exatas, separadas por vírgula. Ex.: `https://site.netlify.app,https://seudominio.com`. |
-| `EMAILREP_KEY` | Não | API key opcional da EmailRep. Sem ela a checagem EmailRep aparece como indisponível. |
-| `GITHUB_TOKEN` | Não | Token opcional de leitura da API GitHub; configure com `wrangler secret put GITHUB_TOKEN`. Sem ele, GitHub aparece indisponível. A resposta é cacheada por e-mail durante 24 horas. |
-| `AWS_LAMBDA_JS_RUNTIME` | Conforme plano/ambiente | Caso necessário na Netlify, valor `nodejs20.x` para selecionar explicitamente runtime das Functions. |
-
-**Nenhum segredo aparece no HTML.** A site key do Turnstile foi criada para divulgação pública; é impossível validar o Turnstile usando apenas o segredo no servidor sem configurar um widget no cliente.
-
-## Publicação e deploy
-
-1. Instale Node.js 20 e Netlify CLI (a CLI pode ser instalada globalmente em sua máquina; **não** é dependência do projeto).
-2. No diretório do projeto execute `npm install` e `npm run check`.
-3. Entre na conta com `netlify login` e vincule/crie o site com `netlify init` ou `netlify link`. Se criar via Netlify, associe seu repositório Git.
-4. Crie um widget Turnstile no painel da Cloudflare e autorize os domínios de produção, incluindo o `*.netlify.app` selecionado. Guarde a site key e a secret key.
-5. Execute os comandos abaixo, substituindo as credenciais e os domínios. O `ALLOWED_ORIGINS` precisa **incluir exatamente** a origem onde o navegador acessa o site.
-
-```bash
-npm install
-npm run check
-# Opcional conforme a especificação; não é necessário para deploy e não faz parte das dependências:
-# npm i -D esbuild
-# npx esbuild public/index.html --minify --outfile=/tmp/x.html
-netlify env:set HMAC_SECRET "$(openssl rand -hex 32)"
-netlify env:set TURNSTILE_SECRET "<secret>"
-netlify env:set TURNSTILE_SITE_KEY "<site-key-publica>"
-netlify env:set ALLOWED_ORIGINS "https://SEUDOMINIO.com,https://www.SEUDOMINIO.com"
-# Opcional:
-# netlify env:set EMAILREP_KEY "<chave>"
-netlify deploy --prod
-```
-
-**Sobre esbuild:** o comando de exemplo `npx esbuild public/index.html` não é compatível com a minificação direta de HTML pelo esbuild. Como este projeto funciona sem build do HTML, ignore-o; instalar esbuild acrescentaria dependências não exigidas. A Netlify empacota as Functions automaticamente.
-
-Para **git push**, dentro da raiz do projeto:
-
-```bash
-git init
-git add .
-git commit -m "feat: OSINT static app with Netlify Functions"
-git branch -M main
-git remote add origin https://github.com/SEU-USUARIO/SEU-REPOSITORIO.git
-git push -u origin main
-```
-
-Para desenvolvimento local com Functions e Blobs isolados:
-
-```bash
-netlify dev
-```
-
-**Importante:** abrir `public/index.html` em `file://` exibe a interface, mas **não** torna o scan funcional: as duas Functions, os segredos, o Turnstile e o Netlify Blobs exigem `netlify dev` ou deploy real.
-
-## Funcionamento e privacidade
-
-- `token.js` / rota Worker `/token`: checa Turnstile, assina token HMAC de uso único com TTL de 60 segundos e o vincula ao IP e ao SHA-256 do e-mail. O nonce consumido fica em Durable Object SQLite no Worker; `GET` expõe apenas a site key pública com cache de 24 horas.
-- `scan.js` / rota Worker `/scan`: exige `Origin` autorizada e token de uso único. Limita cada IP a 10 scans por hora e 60 por dia, respondendo `429` com `Retry-After`; faz consultas externas no servidor com timeout e fallback.
-- O cache usa uma chave SHA-256 do e-mail e guarda os resultados por **até 24h**. O Netlify Blobs **não fornece expiração automática nativa**: o código valida timestamps ao ler, e dados antigos podem permanecer fisicamente armazenados até uma rotina de limpeza. Configure uma política de retenção e exclusão para produção de grande escala.
-- O limitador de IP no Netlify Blobs tem consistência forte, mas **não é atômico** sob concorrência elevada. Para cotas rígidas, configure também limitação por WAF/Edge.
-- A verificação da senha é independente: SHA-1 feito em WebCrypto localmente, envio só dos cinco primeiros caracteres do hash para `api.pwnedpasswords.com`, comparação local do sufixo. **A senha em texto puro não é enviada.**
-- O aplicativo não executa analytics nem instala cookies. Entretanto **não é correto prometer ausência absoluta de registros ou retenção**: Netlify, Cloudflare e fornecedores externos podem manter logs. O texto de interface `zero log` é um slogan fornecido na especificação, **não uma garantia técnica auditada**; revise a comunicação pública antes de lançar.
-- O scanner permite a consulta de informações públicas; utilize somente endereços próprios ou com autorização. Não armazena ou apresenta credenciais em texto puro.
-
-## Limites conhecidos
-
-- **XposedOrNot:** cerca de **100 chamadas/dia por IP** para os endpoints usados (além de limites por hora), conforme a [documentação oficial](https://xposedornot.com/api_doc).
-- **GitHub:** a consulta só é feita quando `GITHUB_TOKEN` está configurado; sem ele, `availability.github` fica `false`. No Worker, o resumo é cacheado por e-mail na Cache API durante 24 horas para reduzir chamadas compartilhadas.
-- **"não encontrado" ≠ seguro**. Uma ausência de resultados não elimina risco, e falhas de APIs devem ser tratadas como resultados inconclusivos.
-- APIs de terceiros podem mudar formatos, preços, restrições de CORS, políticas de consulta ou disponibilidade. As chamadas externas de investigação são feitas pela Function (com exceção do teste anônimo de senha diretamente do navegador).
-- A CSP inclui `frame-src https://challenges.cloudflare.com`, ajuste necessário além do cabeçalho original para permitir o iframe do Turnstile, conforme a documentação oficial da Cloudflare.
-- `TXT` e o serviço inferido do registro **não provam** o uso atual de um produto. A pontuação é heurística e não é avaliação de vulnerabilidade comprovada.
-- Os dados de InternetDB são associados ao **IP do registro A**; serviços podem estar em CDN ou hospedagem compartilhada. Vulnerabilidades do IP podem não pertencer ao domínio investigado.
-- A lista entregue no enunciado contém **77** itens (15 + 19 + 20 + **23**, não 24). Para cumprir **78 / 9 / 4 / 0** sem inventar uma URL, foi incluído **EmailRep** na categoria 4, ferramenta cuja URL e deep link já aparecem no próprio enunciado.
-- O enunciado descreve **nove** checagens e exige prefixo `[n/8]`, duas instruções incompatíveis. O log utiliza `[n/9]` para refletir honestamente as nove etapas. As consultas são paralelizadas em uma única Function; o log atualiza quando chegam os resultados, sem fingir chamadas individuais inexistentes.
-- O requisito de `0 CHAVES` refere-se à experiência do **visitante** (não fornece chave). O operador precisa de duas credenciais de segurança do servidor e uma site key pública; EmailRep é opcional.
-- O selo/badge acima é apenas visual; não confirma que o projeto já foi publicado.
-
-## Verificação recomendada antes da produção
-
-1. Cheque o site em telas de 375 px, 768 px e desktop. Os acordeões devem começar fechados.
-2. Envie um e-mail inválido: a Function não deve ser chamada.
-3. Verifique as duas etapas do Turnstile; erros 401, 403, 429 devem ser tratados sem quebrar a página.
-4. Faça duas consultas iguais e confirme `cached: true` na segunda, pelo DevTools.
-5. No painel do navegador confirme ausência de chaves privadas, cookies próprios e requisições indevidas fora da CSP.
-6. Verifique que a falta de uma API mostra **indisponível**, não "0 vazamentos" como resultado comprovado.
-
-Projeto está pronto para ser versionado e implantado **após configurar a Netlify e Cloudflare**. Não há deploy automático nem acesso prévio às suas contas.
-
-## Motor de fontes
-
-`POST /api/scan` recebe `alvo` e token assinado de uso único emitido após Turnstile. Resultados em `caches.default`, com prefixo `https://ostnt.online/__cache/<id>/<alvo>` (componentes codificados); a rota pública desse prefixo responde 404. Sucesso usa o TTL da fonte; erros e timeouts usam 120 segundos. Cache é local ao datacenter e best-effort. KV (OSINT_KV, fallback CACHE) guarda somente limites: duas escritas por scan aceito. Tokens usam Durable Object SQLite para rejeitar replay atomicamente, sem escritas no KV. O orçamento é de 38 subrequests externos declarados; e-mail seleciona 12 fontes e custo 16. Telegram consulta somente telefone e extrai o título e a descrição do HTML. A migração `token-guard-v1` precisa acompanhar o deploy; conteúdo sem o binding TOKEN_GUARD falha de forma fechada.
-
-Chaves opcionais, somente no servidor:
 ```sh
-wrangler secret put GITHUB_TOKEN
-wrangler secret put EMAILREP_KEY
-wrangler secret put TRANSPARENCIA_KEY
+npm install --include=dev
+npm run build:worker
+npm run check:worker
+npm run test:unit
+npm run test:runtime
 ```
 
-Sem essas chaves, as fontes correspondentes informam erro e o relatório permanece parcial. CPF está fora do escopo. Nomes são consultas públicas não conclusivas; o nome informado não confirma identidade. JSON e CSV incluem proveniência e timestamp.
+`test:runtime` usa Miniflare/workerd local, Durable Objects SQLite e Cache API local, com todas as respostas externas simuladas e sem consultas públicas. Executa seis tipos, replay sequencial/concorrente, rajada de 11 tokens distintos, 11º scan e espera real de 121 segundos para erro em cache. Não é aceite de edge ou prova de disponibilidade de fontes.
 
-## Estado da verificação em 2026-10-30
+Autenticação do CLI é independente dos conectores ChatGPT:
 
-Consulte `verification/status.md`. Testes locais não comprovam disponibilidade das fontes nem cache de edge. A versão candidata ainda não substituiu o Worker de produção.
+```sh
+npx wrangler whoami
+npx wrangler login --device --browser=false
+npm run dev:validation
+```
 
-### Worker de validação isolado
+`wrangler.validation.toml` aponta para `ostnt-validation`. O comando dev:validation usa wrangler.remote-client.toml, um cliente local ligado ao componente remoto por service binding autenticado, padrão oficial para testar Durable Objects SQLite implantados. O Worker de validação mantém workers.dev e previews públicos desligados. É uma verificação do componente e da saída das fontes; não testa nem remove a restrição WAF da entrada pública. Não confundir esse resultado com acesso público aprovado. `--remote` executa na Cloudflare e pode usar recursos remotos; não é teste puramente local. Durable Objects SQLite não são suportados diretamente pelo modo remoto legado: a validação completa exige um ambiente isolado implantado e autenticado apropriado, não enfraquecer a proteção para fazê-lo caber em dev --remote. Qualquer bloqueio real deve ser registrado e respeitado, sem alternar clientes ou redes para evitá-lo.
 
-`wrangler.validation.toml` define um worker separado e usa a sitekey de teste, que aceita qualquer visitante. Instale o secret de teste **somente** nesse worker por ambiente; nunca copie a `TURNSTILE_SITEKEY` de teste nem o secret correspondente para `ostnt-migration`. A chave pública real segue no binding `TURNSTILE_SITE_KEY` do Worker de produção. O endpoint `/token` usa `TURNSTILE_SITEKEY` quando definido, registra `TURNSTILE_SITEKEY de teste em uso` para chaves iniciadas em `1x0000` e exige que o hostname retornado pelo siteverify corresponda ao hostname da requisição.
+## Segredos e ambientes
 
-### Evidência HTTP e identificação por endpoint
+Produção: APP_ENV=production e sitekey real em TURNSTILE_SITE_KEY ou TURNSTILE_SITEKEY. Configure TURNSTILE_SECRET e HMAC_SECRET como secrets. TOKEN_GUARD e sua migração SQLite devem acompanhar o código. Chaves dummy são rejeitadas em produção, inclusive se APP_ENV for configurado incorretamente no hostname ostnt.online.
 
-Respostas HTTP não bem-sucedidas têm os primeiros 200 caracteres do corpo copiados por `clone()`, sem consumir a resposta original. `falhar` preserva status e corpo na exceção; a mensagem do relatório comporta 220 caracteres. Logs privados incluem a exceção associada ao id da fonte. A captura não classifica automaticamente respostas como bloqueio 1010.
+Validação: APP_ENV=validation, sitekey dummy e secret dummy correspondente da documentação oficial da Cloudflare, HMAC_SECRET próprio, Origins explicitamente permitidos. A resposta dummy de Siteverify pode ter hostname localhost; essa exceção só vale com par de chaves de teste no ambiente de validação. Cada emissão registra `TURNSTILE_SITEKEY de teste em uso`.
 
-`crtsh`, `cnpj_br` e `ddd` devem ser classificados individualmente, usando resposta e corpo observados em cada endpoint. Compartilhar o host BrasilAPI não comprova compartilhar uma regra de bloqueio. Os logs disponíveis não comprovam execução dessas três fontes.
+A TURNSTILE_SITEKEY de teste nunca pode ir para produção porque aceita qualquer visitante. `.dev.vars*` e `.env.*` estão ignorados no Git. Não coloque credenciais em HTML, logs, comandos literais ou no repositório. Para segredos, use o prompt seguro do Wrangler com o arquivo de configuração do ambiente correto.
 
-Trocar de biblioteca ou runtime (por exemplo, curl para Playwright) é troca de cliente. Alterar somente User-Agent no mesmo fetch do Worker é alteração de header e pode alterar sua assinatura declarada. Essa distinção técnica não elimina restrições de acesso ou rejeições de revisão automática. O experimento A/B solicitado permanece pendente devido à rejeição anterior de tentativas de contornar o 1010; nenhum resultado A/B é declarado.
-
-### Seleção de User-Agent
-
-| Modo | Header enviado por ctx | Configuração |
+| Segredo opcional | Uso | Cadastro/documentação |
 | --- | --- | --- |
-| `identificado` | `env.UA` (identificação do scanner como fallback) | Padrão quando UA_MODE está ausente; configuração de produção |
-| `navegador` | `env.UA_NAVEGADOR` | Somente configuração de validação |
+| GITHUB_TOKEN | Busca de perfis públicos, cache de sucesso 24h | https://docs.github.com/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens |
+| EMAILREP_KEY | Reputação de e-mail | https://emailrep.io/ |
+| TRANSPARENCIA_KEY | Consulta CEIS | https://portaldatransparencia.gov.br/api-de-dados |
+
+sem a chave a fonte aparece indisponível e score.parcial vira true; o restante do relatório não é afetado
+
+O operador informou que o token do GitHub pertence a conta de teste e expira em aproximadamente 90 dias; a validade não foi confirmada por API. A chave da Transparência é pessoal do titular; revogá-la interrompe essa fonte. Nenhuma dessas chaves é solicitada ao visitante.
+
+## User-Agent
+
+| UA_MODE | Header User-Agent | Uso |
+| --- | --- | --- |
+| identificado | env.UA; fallback de identificação do scanner | Padrão e produção |
+| navegador | env.UA_NAVEGADOR | Apenas configuração de validação, ainda sem A/B comprovado no Worker |
 
 alterar o modo muda apenas o header User-Agent; o cliente HTTP permanece fetch do runtime
 
-A produção permanece em `identificado` até decisão explícita. A configuração de validação contém `UA_MODE = "navegador"`; sua ativação e chamadas reais continuam pendentes da restrição registrada para o 1010. O modo inválido e a ausência de UA_NAVEGADOR no modo navegador geram erro explícito.
+UA_MODE desconhecido ou UA_NAVEGADOR ausente no modo navegador resulta em erro explícito. O modo não é tratado como solução comprovada para 1010.
 
-### Limitações dos provedores e 1010
+## Fontes e limitações
 
-O operador relatou: "1010 é reputação de IP de saída do Worker; a mitigação é troca de provedor, não ajuste de UA". Essa atribuição causal ainda não foi comprovada pelos registros disponíveis neste ambiente. UA_MODE permanece configurado como identificado em produção; a mudança de UA não é tratada como solução comprovada.
+- DDD: snapshot Anatel com 67 DDDs em `src/data/ddd.mjs`, custo 0. Preserva UFs múltiplas onde existentes; não infere localização atual de telefone. Fonte e SHA-256 do CSV estão no arquivo.
+- CNPJ: `cnpj_br` usa Minha Receita, mantendo formato do relatório. O endpoint respondeu 200/JSON no teste direto local; ainda depende de validação na borda. O fallback CNPJ.ws só será adotado se houver falha real que o justifique.
+- Subdomínios: id `crtsh` preservado, provedor Subdomain Center. Testes diretos locais receberam 503 e timeout, sem sucesso comprovado. A API anônima fornece amostra; o relatório limita a 60 nomes. Não é enumeração completa.
+- Observatory: endpoint atualizado conforme MDN para `POST https://observatory-api.mdn.mozilla.net/api/v2/scan`; a API resumida v2 não fornece a lista detalhada de falhas, então o relatório mostra os contadores disponíveis.
+- Telegram: somente telefone, com parse do título/descrição. Erros HTTP de serviço são erros; não viram falsamente conta inexistente. Uma correspondência pública não comprova identidade.
+- As consultas de perfis e nomes são buscas públicas, não provas de titularidade. CPF está fora do escopo. Sem confirmação de dados, não apresente ausência de resultado como garantia de segurança.
+- Senhas do teste anônimo são SHA-1 no cliente: somente prefixo de cinco caracteres é enviado a Pwned Passwords, com Add-Padding. Fragmentos de Hudson Rock são mascarados antes de cache/exportação.
 
-| ID | Mudança | Motivo e evidência |
-| --- | --- | --- |
-| `ddd` | BrasilAPI DDD substituída por snapshot local Anatel (67 DDDs) | Elimina chamadas de rede; não depende de provar bloqueio do antigo endpoint |
-| `cnpj_br` | BrasilAPI CNPJ substituída por Minha Receita | Troca solicitada pelo operador; novo endpoint retornou 200/JSON no teste local, pendente no Worker |
-| `crtsh` | crt.sh substituído por Subdomain Center | Troca solicitada pelo operador; novo endpoint retornou 503/server busy no teste local, pendente de sucesso e teste no Worker |
+O operador atribuiu o 1010 ao IP de saída do Worker. Essa causa ainda não foi comprovada neste ambiente; a evidência disponível do 1010 inicial é de acesso ao próprio Worker de validação, antes de executar fontes. Troca de provedor é uma decisão de disponibilidade, não uma confirmação causal. Cada endpoint é classificado pelo próprio status e corpo; BrasilAPI CNPJ e DDD não são agrupados por host. Não há fontes movidas ao browser ou removidas nesta revisão.
 
-Nenhuma fonte foi movida ao browser nem removida nesta etapa. Cada endpoint é classificado pelo próprio resultado. CORS do BrasilAPI CNPJ foi observado como `*`; o HEAD de crt.sh retornou 502 sem header CORS, portanto seu suporte permanece inconclusivo. Resultados completos e limites da comprovação estão em `verification/provider-switch.md`.
+## Relatório e exportação
 
-O snapshot de DDD foi obtido de https://www.anatel.gov.br/dadosabertos/PDA/Codigo_Nacional/PGCN.csv em 2026-10-30; o hash SHA-256 está em `src/data/ddd.mjs`. O arquivo conserva cidades de UFs distintas para DDDs compartilhados. É uma versão estática que precisa de atualização deliberada; não promete dados mais novos que o arquivo obtido.
+JSON completo e CSV são gerados no navegador. Não existe `/api/export`. JSON schemaVersion=2 mantém alvo tipado, fontes, status, proveniência, timestamps, cache, score, pivôs e metadados. CSV contém fonte/campo/valor/severidade/proveniência/timestamp, com proteção de fórmulas de planilha. Severidade `informativa` descreve dados de consulta, não uma classificação de vulnerabilidade; fontes que falharam usam `indisponivel`.
 
-Referências dos novos adaptadores: https://docs.minhareceita.org/como-usar/ e https://github.com/ARPSyndicate/docs . Subdomain Center retorna amostra anônima, não inventário completo; o adaptador limita o resultado a 60 subdomínios.
+Os oito dorks para e-mail continuam disponíveis. Acessibilidade anuncia uma contagem de achados tipada por fonte, não a quantidade de campos exportados. Não há cookies próprios; fornecedores e infraestrutura podem manter registros. Não há garantia de ausência total de logs.
 
-Rechecagem do Subdomain Center com o mesmo curl/UA: timeout após 20 segundos e zero bytes, sem resposta HTTP do destino. Somado ao 503 anterior, o provedor continua sem sucesso comprovado; não está classificado como 1010. O Worker de validação permanece com rota pública e previews desligados; sua configuração de UA no repositório ainda não foi aplicada no serviço. O aceite pela saída do Worker permanece pendente.
+## Headers e conteúdo público
+
+CSP sem unsafe-inline em script-src; script do scanner externo com defer. HSTS HTML `max-age=31536000`, sem includeSubDomains/preload; COOP same-origin, COEP credentialless e CORP same-origin. Inclua subdomínios em HSTS somente após verificar HTTPS em todos eles. A submissão a preload é etapa manual posterior.
+
+Robots/sitemap/canonical apontam para ostnt.online. `public/og.html` contém o card aprovado por especificação; `og.jpg` foi renderizado em 1200x630, qualidade 88, abaixo de 300 KB, com metadata alinhada. O caminho antigo /og.png redireciona para /og.jpg. security.txt tem contato existente, idiomas e expiração anual a revisar antes de vencer.
+
+A CSP permite o beacon, mas sua injeção observada vem de fora do HTML do repositório. Ainda falta comprovar `/cdn-cgi/rum` 200 no Network ou remover a injeção na origem correta. Lighthouse mobile >=95 e ausência de violações em produção continuam pendentes de medição real.
+
+## Promoção
+
+Nenhum teste local substitui o aceite remoto. Antes de promover: confirmar fontes por endpoint, cache de edge, token, cotas, exportações, arquivos públicos e console. Produção usa chaves reais, APP_ENV=production e UA_MODE=identificado. Faça smoke tests com rollback disponível; falhas bloqueiam a conclusão. A versão candidata desta revisão não foi publicada em produção.

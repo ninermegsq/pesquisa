@@ -91,10 +91,25 @@ assert.equal(cert.dados.total,2);assert.ok(cert.dados.subdominios.includes('a.ex
 assert.ok(!cert.dados.subdominios.includes('b.outro.com'),'host de outro dominio deve ser descartado');
 console.log('Certspotter CT: wildcard expanded and scope enforced: passed');
 
-// Rota: RIPEstat devolve asn como objeto; a fonte tem de extrair o numero.
+// Rota: RIPEstat chama o prefixo de "resource"; "prefix" nao existe no payload.
 const rota=await source('rota').run({tipo:'ip',valor:'8.8.8.8'},context(async url=>url.includes('abuse')
  ?Response.json({data:{abuse_contacts:['abuse@example.invalid']}})
- :Response.json({data:{prefix:'8.8.8.0/24',asns:[{asn:15169,holder:'GOOGLE'}],description:'Google',country:'US',rir:'ARIN',rpki_validation:{statuses:[{status:'valid'}]}}})));
+ :url.includes('routing-status')
+ ?Response.json({data:{routes:[{rpki_validation:{statuses:[{status:'valid'}]}}]}})
+ :Response.json({data:{resource:'8.8.8.0/24',announced:'8.8.8.0/24',type:'IPv4',is_less_specific:false,asns:[{asn:15169,holder:'GOOGLE',country:'US'}]}})));
 assert.equal(rota.dados.prefixo,'8.8.8.0/24');assert.equal(rota.dados.asn,15169);assert.equal(rota.dados.rpki,'valid');
 assert.deepEqual(rota.dados.abuse,['abuse@example.invalid']);
 console.log('RIPEstat routing + RPKI + abuse contact: passed');
+
+// Nome: as tres APIs publicas tem limite por IP, entao a fonte precisa ter
+// fallback local para nao cair por completo no Worker.
+const {perfilNome}=await import('../src/data/nomes.mjs');
+assert.equal(perfilNome('Maria da Silva').sexoProvavel,'feminino');
+assert.equal(perfilNome('José Carlos').sexoProvavel,'masculino');
+assert.equal(perfilNome('José Carlos').nacionalidadeProvavel,'br');
+assert.equal(perfilNome('Zé').sexoProvavel,null,'"Ze" existe nos dois sexos e nao pode ser atribuido');
+assert.equal(perfilNome('NomeInexistente'),null);
+const perfil=await source('nomeperfil').run({tipo:'nome',valor:'Maria da Silva'},context(async()=>new Response('',{status:429})));
+assert.equal(perfil.dados.baseLocal,true);assert.equal(perfil.dados.generoProvavel.valor,'feminino');
+assert.equal(perfil.dados.parcial,true);
+console.log('Nome: local census table covers the IP-rate-limited providers: passed');

@@ -11,7 +11,18 @@ export function ctx(env,origem){
     for(let attempt=0;attempt<2;attempt++){
       if(c.requests>=Math.min(38,Number(env.BUDGET_SUBREQ)||38))throw Error('Orçamento de subrequests esgotado');
       c.requests++;
-      res=await fetch(url,{method,body,signal,redirect:'follow',headers:cabecalhos});
+      try{
+        res=await fetch(url,{method,body,signal,redirect:'follow',headers:cabecalhos});
+      }catch(e){
+        // Timeout aborta a requisicao inteira. Como o orcamento ja conta uma
+        // repeticao por fonte (custo*2), um timeout isolado deve ser repetido
+        // uma vez em vez de derrubar a fonte.
+        if(attempt===0&&(e?.name==='AbortError'||e?.name==='TimeoutError')){
+          await new Promise(r=>setTimeout(r,800));
+          continue;
+        }
+        throw e;
+      }
       if(attempt||![429,503].includes(res.status))break;
       const retryAfter=res.headers.get('retry-after');
       const delay=retryAfter?(Number.isFinite(Number(retryAfter))?Number(retryAfter)*1000:Date.parse(retryAfter)-Date.now()):2000;

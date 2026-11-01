@@ -1,4 +1,5 @@
 ﻿import {DDD} from '../data/ddd.mjs';
+import {perfilNome} from '../data/nomes.mjs';
 import {falhar} from '../lib/http.mjs';
 import {md5} from '../lib/md5.mjs';
 const J = async r => {
@@ -22,7 +23,7 @@ export const REGISTRY=[
    if(erros.length===2)throw Error(erros.map(x=>x.provedor+': '+x.erro).join(' | '));
    return {dados:{...dados,parcial:erros.length>0,erros,criterio:'Validade de formato e domínio; não confirma existência da caixa postal.'}};
   }},
- {id:'nomeperfil',tipos:['nome'],custo:3,ttl:604800,provenance:'agify-genderize-nationalize-v1',
+ {id:'nomeperfil',tipos:['nome'],custo:3,ttl:604800,provenance:'agify-genderize-nationalize-tabela-local-v2',
   async run(a,c){
    const n=a.valor.trim().split(/\s+/)[0],dados={idadeProvavel:null,generoProvavel:null,nacionalidadeProvavel:null},erros=[];
    for(const provider of ['agify','genderize','nationalize']){try{
@@ -32,8 +33,18 @@ export const REGISTRY=[
     if(provider==='genderize')dados.generoProvavel=j?.gender==null?null:{valor:j.gender,probabilidade:j.probability??null};
     if(provider==='nationalize')dados.nacionalidadeProvavel=lista(j?.country).map(x=>({pais:x?.country_id??null,probabilidade:x?.probability??null}));
    }catch(e){erros.push({provedor:provider,erro:String(e?.message||e).slice(0,220)});}}
-   if(erros.length===3)throw Error(erros.map(x=>x.provedor+': '+x.erro).join(' | '));
-   return {dados:{...dados,parcial:erros.length>0,erros,criterio:'Estimativa estatística provável do primeiro nome; não descreve nem identifica uma pessoa.'}};
+   // As tres APIs publicas de nome tem limite por IP e responderam 429 de forma
+   // consistente; sem a tabela local a fonte inteira cairia no Worker. A tabela
+   // cobre os nomes mais frequentes do Censo do IBGE e completa o que falta.
+   const local=perfilNome(n);
+   if(local){
+    if(dados.generoProvavel===null&&local.sexoProvavel)dados.generoProvavel={valor:local.sexoProvavel,probabilidade:local.probabilidade};
+    if(dados.nacionalidadeProvavel===null&&local.nacionalidadeProvavel)dados.nacionalidadeProvavel=[{pais:local.nacionalidadeProvavel,probabilidade:null}];
+    if(dados.idadeProvavel===null&&local.faixaEtariaProvavel)dados.idadeProvavel=local.faixaEtariaProvavel;
+   }
+   if(erros.length===3&&!local)throw Error(erros.map(x=>x.provedor+': '+x.erro).join(' | '));
+   return {dados:{...dados,parcial:erros.length>0,erros,baseLocal:Boolean(local),
+    criterio:'Estimativa estatística provável do primeiro nome; não descreve nem identifica uma pessoa.'}};
   }},
  {id:'ipreputacao',tipos:['ip'],custo:1,ttl:21600,provenance:'ipguardian-v1',
   async run(a,c){
@@ -191,11 +202,16 @@ export const REGISTRY=[
     const params=[...new Set(urls.flatMap(u=>{try{return [...new URL(u).searchParams.keys()]}catch{return[]}}))].slice(0,20);
     return {dados:{total:urls.length,parametros:params,amostra:urls.slice(0,15)}};
   }},
- {id:'rdap',tipos:['dominio'],custo:1,ttl:86400,provenance:'rdap-org-agregador-v3',
+ {id:'rdap',tipos:['dominio'],custo:1,ttl:86400,provenance:'rdap-org-agregador-v4',
   async run(a,c){
     // rdap.org agrega o RDAP de qualquer TLD delegando ao registro correto.
     // A versao anterior so cobria .br/.com/.net e devolvia 404 nos demais.
-    const r=await c.get(`https://rdap.org/domain/${encodeURIComponent(a.valor)}`,{timeout:8000});
+    //
+    // O agregador responde 403 para User-Agent de navegador (challenge do
+    // Cloudflare) e 200 para o UA identificavel do projeto. Por isso a fonte
+    // envia o UA de contato explicito, em vez de herdar o UA do modo.
+    const r=await c.get(`https://rdap.org/domain/${encodeURIComponent(a.valor)}`,{timeout:8000,accept:'application/rdap+json, application/json',
+      headers:{'user-agent':c.env.UA_CONTATO||'ostnt.online/1.0 (+https://ostnt.online)'}});
     if(r.status===404) return {dados:{registrado:false,handle:null,status:[],eventos:[],ns:[],entidades:[]}};
     if(!r.ok) throw falhar(r);
     const j=await J(r);
@@ -396,7 +412,10 @@ export const REGISTRY=[
     const primeiro=partes[0],ultimo=partes[partes.length-1];
     let openalex=null;
     try{
-      const r=await c.get(`https://api.openalex.org/authors?search=${encodeURIComponent(a.valor)}&per-page=3`,{timeout:8000});
+      // O OpenAlex comeca a recusar User-Agent de navegador com HTTP 429
+      // ("Insufficient budget") e aceita o UA identificavel do projeto.
+      const r=await c.get(`https://api.openalex.org/authors?search=${encodeURIComponent(a.valor)}&per-page=3`,{timeout:8000,
+        headers:{'user-agent':c.env.UA_CONTATO||'ostnt.online/1.0 (+https://ostnt.online)'}});
       if(!r.ok)throw falhar(r);const j=await J(r);
       const res=lista(j?.results).map(x=>({id:x?.id??null,nome:x?.display_name??null,
         obras:x?.works_count??null,citacoes:x?.cited_by_count??null,
@@ -441,11 +460,19 @@ export const REGISTRY=[
       if(!r.ok)throw falhar(r);const j=await J(r);
       const d=j?.data;if(!d)throw Error('Formato RIPEstat inesperado');
       const asn=d?.asns?.[0];
-      rota={prefixo:d?.prefix??null,asn:typeof asn==='object'?(asn?.asn??null):(asn??null),
+      // O endpoint chama o prefixo de "resource" e traz "announced" com o AS
+      // que o anuncia; "prefix" nao existe neste payload.
+      rota={prefixo:d?.resource??null,anunciado:d?.announced??null,
+        asn:typeof asn==='object'?(asn?.asn??null):(asn??null),
         asnNome:typeof asn==='object'?(asn?.holder??null):null,
-        descricao:d?.description??null,pais:d?.country??null,rir:d?.rir??null};
-      rpki=lista(d?.rpki_validation?.statuses)[0]?.status??null;
+        pais:typeof asn==='object'?(asn?.country??null):null,
+        tipo:d?.type??null,menosEspecifico:Boolean(d?.is_less_specific)};
     }catch(e){erros.push({provedor:'prefix-overview',erro:String(e?.message||e).slice(0,220)});}
+    try{
+      // RPKI vive no endpoint separado "routing-status".
+      const r=await c.get(`https://stat.ripe.net/data/routing-status/data.json?resource=${encodeURIComponent(a.valor)}`,{timeout:9000});
+      if(r.ok){const j=await J(r);rpki=j?.data?.routes?.[0]?.rpki_validation?.statuses?.[0]?.status??null;}
+    }catch(e){erros.push({provedor:'routing-status',erro:String(e?.message||e).slice(0,220)});}
     try{
       const r=await c.get(`https://stat.ripe.net/data/abuse-contact-finder/data.json?resource=${encodeURIComponent(a.valor)}`,{timeout:9000});
       if(r.ok){const j=await J(r);abuse=lista(j?.data?.abuse_contacts);}

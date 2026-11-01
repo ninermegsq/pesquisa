@@ -16,6 +16,7 @@
     "test:cache": "node verification/cache-check.mjs",
     "test:closure": "node verification/closure-check.mjs",
     "test:frontend": "node verification/frontend-check.cjs",
+    "test:live": "node verification/scan-live.mjs",
     "test:runtime": "node verification/runtime-check.cjs",
     "probe:sources": "node verification/probe-sources.mjs",
     "dev:validation": "wrangler dev --config wrangler.remote-client.toml --ip 127.0.0.1 --port 8787",

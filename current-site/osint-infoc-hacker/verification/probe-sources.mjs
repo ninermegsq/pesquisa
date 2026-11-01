@@ -6,8 +6,9 @@ import { ctx, ehAbort } from '../src/lib/http.mjs';
 import { detectar } from '../src/lib/alvo.mjs';
 
 const env = {
-  UA_MODE: 'identificado',
+  UA_MODE: process.env.PROBE_UA_MODE || 'identificado',
   UA: 'ostnt.online scanner (+https://ostnt.online)',
+  UA_CONTATO: 'ostnt.online/1.0 (+https://ostnt.online)',
   UA_NAVEGADOR: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
   BUDGET_SUBREQ: '38',
   GITHUB_TOKEN: process.env.GH_PROBE_TOKEN || '',

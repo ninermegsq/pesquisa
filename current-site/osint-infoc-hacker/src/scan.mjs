@@ -65,7 +65,12 @@ export async function handleScan(request,env,ip){
   const origem=new URL(request.url).origin;
   const c=ctx(env,origem);let gasto=0,estimativa=3;
   const candidatas=REGISTRY.filter(s=>s.tipos.includes(alvo.tipo)).sort((x,y)=>x.custo-y.custo);
-  const fila=candidatas.filter(s=>{
+  // Fonte que depende de uma credencial ausente nao e falha de consulta: e fonte
+  // nao configurada. Ela nao entra na fila e aparece em "omitidas" com o motivo,
+  // em vez de virar um erro vermelho no relatorio.
+  const semCredencial=candidatas.filter(s=>s.requerChave&&!env[s.requerChave]);
+  const ativas=candidatas.filter(s=>!(s.requerChave&&!env[s.requerChave]));
+  const fila=ativas.filter(s=>{
     // custo e o numero de requisicoes que a fonte faz; cada uma pode ser repetida
     // uma vez pelo retry de 429/503, entao o pior caso e custo*2. A estimativa nao
     // pode passar de 50 porque esse e o teto de subrequests por invocacao no plano
@@ -75,7 +80,10 @@ export async function handleScan(request,env,ip){
     if(gasto+s.custo*2>Math.min(BUDGET,Number(env.BUDGET_SUBREQ)||BUDGET)||estimativa+custoTotal>50)return false;
     gasto+=s.custo*2;estimativa+=custoTotal;return true;
   });
-  const omitidas=candidatas.filter(s=>!fila.includes(s)).map(s=>({id:s.id,motivo:'Orçamento de subrequests'}));
+  const omitidas=[
+    ...semCredencial.map(s=>({id:s.id,motivo:`Credencial ausente (${s.requerChave})`})),
+    ...ativas.filter(s=>!fila.includes(s)).map(s=>({id:s.id,motivo:'Orçamento de subrequests'})),
+  ];
   const res=await Promise.all(fila.map(s=>rodar(s,alvo,c)));
   const browserFontes=['email','dominio'].includes(alvo.tipo)?[{id:'crtsh',provenance:'crtsh',reserva:'hackertarget'}]:[];
   const pivos=pivosDe(res);

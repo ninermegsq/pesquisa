@@ -302,7 +302,7 @@ export const REGISTRY=[
     if(!r.ok)throw falhar(r);const j=await J(r);if(!Array.isArray(j?.search))throw Error('Formato Wikidata inesperado');
     return {dados:{total:j.search.length,entidades:j.search.map(x=>({id:x?.id??null,nome:x?.label??null,desc:x?.description??null})),criterio:'Correspondências de nome; não confirmam identidade.'}};
   }},
- {id:'datajud',tipos:['nome'],custo:2,ttl:86400,provenance:'cnj-datajud-timeout-v2',
+ {id:'datajud',tipos:['nome'],custo:2,ttl:86400,provenance:'cnj-datajud-timeout-v2',requerChave:'DATAJUD_API_KEY',
   async run(a,c){
     const key=c.env.DATAJUD_API_KEY;
     if(!key)throw Error('Chave DataJud ausente');

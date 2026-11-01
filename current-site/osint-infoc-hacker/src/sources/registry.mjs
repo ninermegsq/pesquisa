@@ -164,15 +164,19 @@ export const REGISTRY=[
     return {dados:{dominio:d,ips:ra.map(x=>x.data).slice(0,5),mx:mx.map(x=>x.data).slice(0,5),
       txt:t.slice(0,8),hasSPF:t.some(x=>/^v=spf1/i.test(x)),dmarc}};
   }},
- {id:'wayback',tipos:['dominio'],custo:1,ttl:43200,provenance:'wayback-cdx-60-v2',
+ {id:'wayback',tipos:['dominio'],custo:1,ttl:43200,provenance:'wayback-cdx-host-v3',
   async run(a,c){
     const d=a.tipo==='email'?a.valor.split('@')[1]:a.valor;
-    const r=await c.get(`https://web.archive.org/cdx/search/cdx?url=${encodeURIComponent(d)}/*&output=json&fl=original&collapse=urlkey&limit=60&filter=statuscode:200`,{timeout:7000});
+    // A consulta por prefixo (url=host/*) satura o indice do Internet Archive e devolve
+    // 503 "Temporarily Offline" ou estoura o timeout. A consulta por host exato responde
+    // em segundos; a deduplicacao e feita localmente. Subdominios seguem cobertos por crtsh.
+    const r=await c.get(`https://web.archive.org/cdx/search/cdx?url=${encodeURIComponent(d)}&output=json&fl=original&limit=60&filter=statuscode:200`,{timeout:9000});
+    if(r.status===503)throw Error('Arquivo Wayback temporariamente indisponivel');
     if(!r.ok) throw falhar(r);
     const arr=await J(r);
     if(!Array.isArray(arr))throw Error('Formato Wayback inesperado');
     if(arr.length<2)return {dados:{total:0,parametros:[],amostra:[]}};
-    const urls=arr.slice(1).map(x=>x?.[0]).filter(Boolean);
+    const urls=[...new Set(arr.slice(1).map(x=>x?.[0]).filter(Boolean))];
     const params=[...new Set(urls.flatMap(u=>{try{return [...new URL(u).searchParams.keys()]}catch{return[]}}))].slice(0,20);
     return {dados:{total:urls.length,parametros:params,amostra:urls.slice(0,15)}};
   }},
@@ -261,16 +265,20 @@ export const REGISTRY=[
     if(!r.ok)throw falhar(r);const j=await J(r);if(!Array.isArray(j?.search))throw Error('Formato Wikidata inesperado');
     return {dados:{total:j.search.length,entidades:j.search.map(x=>({id:x?.id??null,nome:x?.label??null,desc:x?.description??null})),criterio:'Correspondências de nome; não confirmam identidade.'}};
   }},
- {id:'datajud',tipos:['nome'],custo:2,ttl:86400,provenance:'cnj-datajud',
+ {id:'datajud',tipos:['nome'],custo:2,ttl:86400,provenance:'cnj-datajud-timeout-v2',
   async run(a,c){
-    const key='APIKey cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==';
+    const key=c.env.DATAJUD_API_KEY;
+    if(!key)throw Error('Chave DataJud ausente');
     const limpo=a.valor.replace(/[:"“”()\[\]{}^~*?\\!]/g,' ').replace(/\s+/g,' ').trim();
     const url='https://api-publica.datajud.cnj.jus.br/api_publica_stj/_search';
     const headers={authorization:key,'content-type':'application/json'};
+    // O timeout do Elasticsearch precisa ficar abaixo do timeout HTTP: sem ele a busca
+    // por "partes.nome" roda 10-17s e a chamada morre por timeout do cliente.
+    const corpo=q=>JSON.stringify({size:10,timeout:'6s',query:q});
     let r=await c.get(url,{method:'POST',timeout:9000,headers,
-      body:JSON.stringify({size:10,query:{query_string:{query:limpo,default_field:'partes.nome'}}})});
+      body:corpo({query_string:{query:limpo,default_field:'partes.nome'}})});
     if(r.status===400)r=await c.get(url,{method:'POST',timeout:9000,headers,
-      body:JSON.stringify({size:10,query:{match:{'partes.nome':{query:limpo,operator:'and'}}}})});
+      body:corpo({match:{'partes.nome':{query:limpo,operator:'and'}}})});
     if(!r.ok) throw falhar(r);
     const j=await J(r);
     const hits=lista(j?.hits?.hits);

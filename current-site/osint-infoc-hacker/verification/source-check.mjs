@@ -10,7 +10,9 @@ assert.equal((await source('xon').run({valor:'fixture@example.invalid'},context(
 assert.deepEqual((await source('internetdb').run({valor:'203.0.113.10'},context(async()=>new Response('',{status:404})))).dados.portas,[]);
 await assert.rejects(()=>source('ipgeo').run({valor:'203.0.113.10'},context(async()=>Response.json({success:false}))),/geolocalização inválido/);
 let requests=0;
-await assert.rejects(()=>source('datajud').run({valor:'Nome de Teste'},context(async(url,options)=>{const q=JSON.parse(options.body).query;requests++;if(requests===1)assert.equal(q.query_string.default_field,'partes.nome');else assert.equal(q.match['partes.nome'].operator,'and');const r=new Response('mapping fixture',{status:400});r.corpo='mapping fixture';return r;})),/HTTP 400.*mapping fixture/);assert.equal(requests,2);
+// A chave do CNJ passou a vir de env (secret), entao o fixture precisa fornecê-la.
+await assert.rejects(()=>source('datajud').run({valor:'Nome de Teste'},context(async(url,options)=>{const q=JSON.parse(options.body).query;requests++;if(requests===1)assert.equal(q.query_string.default_field,'partes.nome');else assert.equal(q.match['partes.nome'].operator,'and');const r=new Response('mapping fixture',{status:400});r.corpo='mapping fixture';return r;},{DATAJUD_API_KEY:'fixture'})),/HTTP 400.*mapping fixture/);assert.equal(requests,2);
+await assert.rejects(()=>source('datajud').run({valor:'Nome de Teste'},context(async()=>new Response('{}',{status:200}),{})),/Chave DataJud ausente/);
 for(const status of [401,403,429])await assert.rejects(()=>source('github').run({valor:'fixture@example.invalid'},context(async()=>new Response('fixture',{status,headers:status===403?{'x-ratelimit-remaining':'0'}:{}}),{GITHUB_TOKEN:'fixture'})),status===401?/Token do GitHub inválido/:/Limite do GitHub/);
 await assert.rejects(()=>source('npm').run({valor:'fixture@example.invalid'},context(async()=>new Response('<html>fixture</html>'))),/resposta não-JSON/);
 let ua;globalThis.fetch=async(url,options)=>{ua=options.headers.get('user-agent');return new Response('error code: 1010\n'+'x'.repeat(240),{status:403});};
@@ -53,3 +55,46 @@ const xonEmpty=await source('xon').run({tipo:'email',valor:'fixture@example.inva
 assert.equal(xonEmpty.dados.total,0);assert.equal(xonEmpty.dados.senhas.disponivel,false);
 await assert.rejects(()=>source('xon').run({tipo:'email',valor:'fixture@example.invalid'},context(async()=>Response.json({Error:'Rate limit exceeded'}))),/Formato XposedOrNot inesperado/);
 console.log('Documented XON no-breach response accepted; other error envelopes rejected: passed');
+
+// --- Fontes substitutas e novas ---
+// DJEN: o JSON vem embutido no HTML da busca; o parser tem de extrai-lo e contar
+// apenas as citacoes, sem prometer numero de processo que a pagina nao traz.
+const djenHtml='<script id="_br_com_seatecnologia_in_buscadou_BuscaDouPortlet_params" type="application/json">{"jsonArray":[{"pubName":"DO3","urlTitle":"edital-de-citacao-1","numberPage":"10","title":"EDITAL DE CITAÇÃO","pubDate":"29/10/2026","artType":"Edital de Citação","content":"cientifica <span>FULANO</span> de souza"},{"pubName":"DO3","urlTitle":"aviso-2","title":"AVISO","pubDate":"01/10/2026","artType":"Aviso","content":"licitacao"}]}</script>';
+const djen=await source('djen').run({tipo:'nome',valor:'fulano de souza'},context(async()=>new Response(djenHtml,{status:200})));
+assert.equal(djen.dados.total,2);assert.equal(djen.dados.citacoes,1);
+assert.equal(djen.dados.itens[0].tipo,'Edital de Citação');assert.ok(djen.dados.itens[0].url.includes('edital-de-citacao-1'));
+assert.ok(!djen.dados.itens[0].trecho.includes('<span>'),'HTML do trecho deve ser removido');
+await assert.rejects(()=>source('djen').run({tipo:'nome',valor:'ab'},context(async()=>new Response('{}',{status:200}))),/curto demais/);
+await assert.rejects(()=>source('djen').run({tipo:'nome',valor:'fulano de souza'},context(async()=>new Response('<html>sem json</html>',{status:200}))),/Estrutura da busca do DJEN mudou/);
+console.log('DJEN name search: JSON extracted, citations counted, HTML stripped: passed');
+
+// Vazamento: o LeakCheck devolve os NOMES dos campos expostos, nunca o conteudo.
+const vaz=await source('vazamento').run({tipo:'email',valor:'fixture@example.invalid'},context(async()=>Response.json({success:true,found:12,fields:['id','password','dob','address'],sources:[{name:'Fixture',date:'2026-01'}]})));
+assert.equal(vaz.dados.encontrado,true);assert.equal(vaz.dados.total,12);assert.equal(vaz.dados.temSenha,true);
+assert.deepEqual(vaz.dados.fontes,[{nome:'Fixture',data:'2026-01'}]);
+assert.ok(!JSON.stringify(vaz.dados).includes('fixture@example.invalid'),'nao deve ecoar o valor consultado');
+const vaz404=await source('vazamento').run({tipo:'email',valor:'fixture@example.invalid'},context(async()=>Response.json({success:false,error:'Not found'})));
+assert.equal(vaz404.dados.encontrado,false);assert.equal(vaz404.dados.total,0);
+console.log('LeakCheck: found/not-found envelopes accepted, field names only: passed');
+
+// Identidade: OpenAlex e ORCID sao independentes; um falhando nao derruba a fonte.
+const ident=await source('identidade').run({tipo:'nome',valor:'fulano de souza'},context(async url=>url.includes('openalex')
+ ?Response.json({results:[{id:'https://openalex.org/A1',display_name:'Fulano',works_count:10,cited_by_count:2,ids:{orcid:'https://orcid.org/0000-1'},last_known_institutions:[{display_name:'USP'}]}]})
+ :Response.json({'expanded-result':[{'orcid-id':'0000-0002-5630-5589','credit-name':'Fulano de Souza','institution-name':['USP']}]})));
+assert.equal(ident.dados.academico.length,1);assert.equal(ident.dados.academico[0].obras,10);assert.equal(ident.dados.academico[0].instituicao,'USP');
+assert.equal(ident.dados.orcid.length,1);assert.equal(ident.dados.orcid[0].id,'0000-0002-5630-5589');
+console.log('OpenAlex + ORCID identity mapping: passed');
+
+// Certificados: Certspotter devolve dns_names; o filtro precisa manter o escopo do dominio.
+const cert=await source('certificados').run({tipo:'dominio',valor:'example.com'},context(async()=>Response.json([{dns_names:['*.example.com','a.example.com','b.outro.com'],issuer_name:'R3'},{dns_names:['example.com']}])));
+assert.equal(cert.dados.total,2);assert.ok(cert.dados.subdominios.includes('a.example.com'));
+assert.ok(!cert.dados.subdominios.includes('b.outro.com'),'host de outro dominio deve ser descartado');
+console.log('Certspotter CT: wildcard expanded and scope enforced: passed');
+
+// Rota: RIPEstat devolve asn como objeto; a fonte tem de extrair o numero.
+const rota=await source('rota').run({tipo:'ip',valor:'8.8.8.8'},context(async url=>url.includes('abuse')
+ ?Response.json({data:{abuse_contacts:['abuse@example.invalid']}})
+ :Response.json({data:{prefix:'8.8.8.0/24',asns:[{asn:15169,holder:'GOOGLE'}],description:'Google',country:'US',rir:'ARIN',rpki_validation:{statuses:[{status:'valid'}]}}})));
+assert.equal(rota.dados.prefixo,'8.8.8.0/24');assert.equal(rota.dados.asn,15169);assert.equal(rota.dados.rpki,'valid');
+assert.deepEqual(rota.dados.abuse,['abuse@example.invalid']);
+console.log('RIPEstat routing + RPKI + abuse contact: passed');

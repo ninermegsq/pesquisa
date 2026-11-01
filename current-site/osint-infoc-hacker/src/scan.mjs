@@ -66,7 +66,12 @@ export async function handleScan(request,env,ip){
   const c=ctx(env,origem);let gasto=0,estimativa=3;
   const candidatas=REGISTRY.filter(s=>s.tipos.includes(alvo.tipo)).sort((x,y)=>x.custo-y.custo);
   const fila=candidatas.filter(s=>{
-    const custoTotal=s.custo*2+(s.custo>0?2:0);
+    // custo e o numero de requisicoes que a fonte faz; cada uma pode ser repetida
+    // uma vez pelo retry de 429/503, entao o pior caso e custo*2. A estimativa nao
+    // pode passar de 50 porque esse e o teto de subrequests por invocacao no plano
+    // Free do Cloudflare. Contar o retry duas vezes descartava a fonte "dns" (SPF,
+    // DMARC e MX) de toda consulta de e-mail.
+    const custoTotal=s.custo*2;
     if(gasto+s.custo*2>Math.min(BUDGET,Number(env.BUDGET_SUBREQ)||BUDGET)||estimativa+custoTotal>50)return false;
     gasto+=s.custo*2;estimativa+=custoTotal;return true;
   });

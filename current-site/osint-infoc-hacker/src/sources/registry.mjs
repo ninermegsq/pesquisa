@@ -1,4 +1,4 @@
-import {DDD} from '../data/ddd.mjs';
+﻿import {DDD} from '../data/ddd.mjs';
 import {falhar} from '../lib/http.mjs';
 import {md5} from '../lib/md5.mjs';
 const J = async r => {
@@ -42,14 +42,25 @@ export const REGISTRY=[
    if(j?.success!==true||typeof v?.found!=='boolean'||!Array.isArray(v?.sources))throw Error('Formato IPGuardian inesperado');
    return {dados:{listado:v.found,total:v.sources.length,criterio:'Listas públicas retornadas (máximo 10); presença não comprova atividade maliciosa.'}};
   }},
- {id:'ipcontexto',tipos:['ip'],custo:2,ttl:21600,provenance:'iplogs-vpndetection-v1',
+ {id:'ipcontexto',tipos:['ip'],custo:2,ttl:21600,provenance:'ipquery-vpndetection-v2',
   async run(a,c){
    const erros=[];
-   for(const provider of ['iplogs','vpndetection']){try{
-    const r=await c.get(provider==='iplogs'?'https://iplogs.com/v1/check':`https://api.vpndetection.io/${encodeURIComponent(a.valor)}`,provider==='iplogs'?{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ip:a.valor,mode:'fast'}),timeout:7000}:{timeout:7000});
-    if(!r.ok)throw falhar(r);const j=await J(r);if(typeof j?.is_vpn!=='boolean')throw Error('Formato IP contexto inesperado');
+   // ipquery.io devolve os quatro booleanos de uma vez e responde em ~500ms.
+   // O iplogs anterior devolvia HTTP 400 e degradava a fonte inteira.
+   for(const provider of ['ipquery','vpndetection']){try{
+    const r=await c.get(provider==='ipquery'?`https://api.ipquery.io/${encodeURIComponent(a.valor)}`:`https://api.vpndetection.io/${encodeURIComponent(a.valor)}`,{timeout:7000});
+    if(!r.ok)throw falhar(r);const j=await J(r);
+    if(provider==='ipquery'){
+     if(typeof j?.risk?.is_vpn!=='boolean')throw Error('Formato IP contexto inesperado');
+     const bool=v=>typeof v==='boolean'?v:null;
+     return {dados:{vpn:j.risk.is_vpn,proxy:bool(j?.risk?.is_proxy),tor:bool(j?.risk?.is_tor),datacenter:bool(j?.risk?.is_datacenter),
+      isMobile:bool(j?.risk?.is_mobile),provedor:provider,parcial:false,erros,
+      criterio:'Classificação provável da infraestrutura; não caracteriza o usuário.'}};
+    }
+    if(typeof j?.is_vpn!=='boolean')throw Error('Formato IP contexto inesperado');
     const bool=v=>typeof v==='boolean'?v:null;
-    return {dados:{vpn:j.is_vpn,proxy:bool(j?.is_proxy),tor:bool(j?.is_tor),datacenter:bool(j?.is_hosting),provedor:provider,parcial:provider==='vpndetection',erros,criterio:'Classificação provável da infraestrutura; não caracteriza o usuário.'}};
+    return {dados:{vpn:j.is_vpn,proxy:bool(j?.is_proxy),tor:bool(j?.is_tor),datacenter:bool(j?.is_hosting),provedor:provider,parcial:true,erros,
+      criterio:'Classificação provável da infraestrutura; não caracteriza o usuário.'}};
    }catch(e){erros.push({provedor:provider,erro:String(e?.message||e).slice(0,220)});}}
    throw Error(erros.map(x=>x.provedor+': '+x.erro).join(' | '));
   }},
@@ -180,15 +191,20 @@ export const REGISTRY=[
     const params=[...new Set(urls.flatMap(u=>{try{return [...new URL(u).searchParams.keys()]}catch{return[]}}))].slice(0,20);
     return {dados:{total:urls.length,parametros:params,amostra:urls.slice(0,15)}};
   }},
- {id:'rdap',tipos:['dominio'],custo:1,ttl:86400,provenance:'rdap-registry-direct-v2',
+ {id:'rdap',tipos:['dominio'],custo:1,ttl:86400,provenance:'rdap-org-agregador-v3',
   async run(a,c){
-    const base=a.valor.endsWith('.br')?'https://rdap.registro.br/domain/':a.valor.endsWith('.com')?'https://rdap.verisign.com/com/v1/domain/':a.valor.endsWith('.net')?'https://rdap.verisign.com/net/v1/domain/':null;
-    if(!base)throw Error('tld sem rdap');
-    const r=await c.get(base+encodeURIComponent(a.valor),{timeout:7000});
+    // rdap.org agrega o RDAP de qualquer TLD delegando ao registro correto.
+    // A versao anterior so cobria .br/.com/.net e devolvia 404 nos demais.
+    const r=await c.get(`https://rdap.org/domain/${encodeURIComponent(a.valor)}`,{timeout:8000});
+    if(r.status===404) return {dados:{registrado:false,handle:null,status:[],eventos:[],ns:[],entidades:[]}};
     if(!r.ok) throw falhar(r);
     const j=await J(r);
-    return {dados:{handle:j.handle,status:j.status||[],eventos:lista(j?.events).map(e=>({acao:e.eventAction,data:e.eventDate})),
-      ns:lista(j?.nameservers).map(n=>n.ldhName),entidades:lista(j?.entities).map(e=>e.handle).filter(Boolean)}};
+    const eventos=lista(j?.events).map(e=>({acao:e?.eventAction,data:e?.eventDate}));
+    const ns=lista(j?.nameservers).map(n=>({nome:n?.ldhName??null,ipv4:lista(n?.ipAddresses?.v4)}));
+    return {dados:{registrado:true,handle:j?.handle??null,status:lista(j?.status).length?lista(j?.status):[j?.status].filter(Boolean),
+      eventos,ns,entidades:lista(j?.entities).map(e=>e?.handle).filter(Boolean),
+      registro:j?.ldhName??null,
+      criterio:'Dados publicos de registro do dominio. Nao identifica o titular.'}};
   }},
  {id:'observatory',tipos:['dominio'],custo:1,ttl:3600,provenance:'mdn-observatory-v2',
   async run(a,c){
@@ -213,15 +229,23 @@ export const REGISTRY=[
     const j=await J(r);
     return {dados:{portas:j.ports||[],vulns:j.vulns||[],hostnames:j.hostnames||[],cpes:j.cpes||[]}};
   }},
- {id:'ipgeo',tipos:['ip'],custo:2,ttl:86400,provenance:'ipapi-geojs-v2',
+ {id:'ipgeo',tipos:['ip'],custo:2,ttl:86400,provenance:'ipquery-geojs-v3',
   async run(a,c){
     const tentativas=[];
-    for(const provider of ['ipapi','geojs']){
+    // ipapi.co passou a devolver 404 em varias regioes; ipquery responde em ~500ms.
+    for(const provider of ['ipquery','geojs']){
       try{
-        const url=provider==='ipapi'?`https://ipapi.co/${encodeURIComponent(a.valor)}/json/`:`https://get.geojs.io/v1/ip/geo/${encodeURIComponent(a.valor)}.json`;
+        const url=provider==='ipquery'?`https://api.ipquery.io/${encodeURIComponent(a.valor)}`:`https://get.geojs.io/v1/ip/geo/${encodeURIComponent(a.valor)}.json`;
         const r=await c.get(url,{timeout:6000});if(!r.ok)throw falhar(r);const j=await J(r);
+        if(provider==='ipquery'){
+         if(typeof j?.location?.country!=='string')throw Error('Formato de geolocalização inválido');
+         return {dados:{pais:j.location.country,cidade:j?.location?.city??null,estado:j?.location?.state??null,
+          asn:j?.isp?.asn??null,org:j?.isp?.org??null,isp:j?.isp?.isp??null,
+          lat:j?.location?.latitude??null,lon:j?.location?.longitude??null,
+          provedor:provider,criterio:'Localização de rede provável; não indica localização de uma pessoa.',tentativas}};
+        }
         if(j?.error||typeof j?.country!=='string')throw Error('Formato de geolocalização inválido');
-        return {dados:{pais:provider==='ipapi'?(j?.country_name??j.country):j.country,cidade:j?.city??null,
+        return {dados:{pais:j.country,cidade:j?.city??null,
           asn:j?.asn??j?.organization_asn??null,org:j?.org??j?.organization_name??j?.organization??null,isp:null,
           provedor:provider,criterio:'Localização de rede provável; não indica localização de uma pessoa.',tentativas}};
       }catch(e){tentativas.push({provedor:provider,erro:String(e?.message||e).slice(0,220)});}
@@ -238,19 +262,32 @@ export const REGISTRY=[
     const [asn,prefixo,pais,registro]=raw.split('|').map(x=>x.trim());
     return {dados:{asn:asn||null,prefixo:prefixo||null,pais:pais||null,registro:registro||null}};
   }},
- {id:'cnpj_br',tipos:['cnpj'],custo:1,ttl:86400,provenance:'minha-receita-cnpj',
+ {id:'cnpj_br',tipos:['cnpj'],custo:1,ttl:86400,provenance:'minha-receita-receitaws-v2',
   async run(a,c){
-    const r=await c.get(`https://minhareceita.org/${encodeURIComponent(a.valor)}`,{timeout:8000});
-    if(r.status===404) return {dados:{existe:false}};
-    if(!r.ok) throw falhar(r);
-    const j=await J(r);
-    if(!j||typeof j!=='object'||Array.isArray(j)||String(j.cnpj)!==a.valor)throw Error('formato inesperado de CNPJ');
-    const socios=lista(j?.qsa).map(s=>({nome:s.nome_socio,qual:s.qualificacao_socio}));
-    return {dados:{existe:true,razao:j.razao_social,fantasia:j.nome_fantasia,
-      situacao:j.descricao_situacao_cadastral,cnae:j.cnae_fiscal_descricao,capital:j.capital_social,
-      uf:j.uf,municipio:j.municipio,socios,
-      endereco:[j.logradouro,j.numero,j.bairro,j.cep].filter(Boolean).join(', ')},
-      pivos:socios.map(s=>({tipo:'nome',valor:s.nome}))};
+    // A ReceitaWS devolve email e telefone corporativos que a minhareceita e a
+    // BrasilAPI deixam como null. Isso abre o encadeamento CNPJ -> e-mail -> vazamento.
+    const tentativas=[];
+    for(const provider of ['minhareceita','receitaws']){
+      try{
+        const url=provider==='minhareceita'?`https://minhareceita.org/${encodeURIComponent(a.valor)}`:`https://www.receitaws.com.br/v1/cnpj/${encodeURIComponent(a.valor)}`;
+        const r=await c.get(url,{timeout:8000});
+        if(r.status===404){if(provider==='minhareceita')continue;return {dados:{existe:false,tentativas}};}
+        if(!r.ok)throw falhar(r);
+        const j=await J(r);
+        if(!j||typeof j!=='object'||Array.isArray(j))throw Error('formato inesperado de CNPJ');
+        if(provider==='minhareceita'&&String(j.cnpj)!==a.valor)throw Error('formato inesperado de CNPJ');
+        const socios=lista(j?.qsa).map(s=>({nome:s.nome_socio,qual:s.qualificacao_socio}));
+        const email=provider==='receitaws'?(j.email??null):(j.email??null);
+        const telefone=provider==='receitaws'?(j.telefone??null):(j.telefone??null);
+        return {dados:{existe:true,razao:j.razao_social??j.nome_fantasia??null,fantasia:j.nome_fantasia??null,
+          situacao:j.descricao_situacao_cadastral??j.situacao??null,cnae:j.cnae_fiscal_descricao??null,capital:j.capital_social??null,
+          uf:j.uf,municipio:j.municipio,socios,email,telefone,
+          endereco:[j.logradouro,j.numero,j.bairro,j.cep].filter(Boolean).join(', ')},
+          pivos:[...socios.map(s=>({tipo:'nome',valor:s.nome})),...(email?[{tipo:'email',valor:String(email).split('@')[1]}]:[])],
+          tentativas};
+      }catch(e){tentativas.push({provedor:provider,erro:String(e?.message||e).slice(0,220)});}
+    }
+    throw Error(tentativas.map(x=>x.provedor+': '+x.erro).join(' | '));
   }},
  {id:'ddd',tipos:['telefone'],custo:0,ttl:0,provenance:'anatel-pgcn-snapshot-2026-10-30',
   async run(a,c){
@@ -282,6 +319,139 @@ export const REGISTRY=[
     if(!r.ok) throw falhar(r);
     const j=await J(r);
     const hits=lista(j?.hits?.hits);
-    return {dados:{total:j?.hits?.total?.value||0,processos:hits.map(h=>({numero:h?._source?.numeroProcesso??null,classe:h?._source?.classe?.nome??null}))}};
+    // O indice publico do CNJ nao expoe nome de parte: o documento tem
+    // id/tribunal/numeroProcesso/classe/orgaoJulgador/movimentos/assuntos e nada
+    // de "partes". Por isso "partes.nome" devolve zero sempre, mesmo com chave
+    // valida (match_all devolve 10000 hits no mesmo indice). A fonte so entrega
+    // resultado util se o indice ganhar o campo de partes ou se a consulta passar
+    // a usar um campo de nome que exista.
+    const total=j?.hits?.total?.value||0;
+    if(total===0&&hits.length===0){
+      return {dados:{total:0,processos:[],observacao:'O indice publico do CNJ nao expoe nome de parte; a busca por nome nao pode confirmar processos. Use a fonte "identidade" ou "vazamento" para o mesmo alvo.'}};
+    }
+    return {dados:{total,processos:hits.map(h=>({numero:h?._source?.numeroProcesso??null,classe:h?._source?.classe?.nome??null}))}};
+  }},
+ {id:'djen',tipos:['nome'],custo:1,ttl:43200,provenance:'dou-djen-busca-nome-v1',
+  async run(a,c){
+    // Substituto do DataJud para busca judicial por nome.
+    //
+    // Por que o DataJud nao serve: o indice publico do CNJ nao expoe nome de parte.
+    // O documento tem id/tribunal/numeroProcesso/classe/orgaoJulgador/movimentos/
+    // assuntos e nada de "partes" (Portaria CNJ 160/2020, sigilo). Uma query
+    // nested sobre "partes" devolve HTTP 400 "failed to find nested object under
+    // path [partes]", e match/query_string sobre partes.nome devolve 0 hits
+    // mesmo com chave valida. Nao ha chave que resolva isso.
+    //
+    // A busca do DJEN (Diario Eletratico Nacional, secao 3 do DOU) devolve os
+    // editais de citacao e notificacao com o nome da parte citado no proprio
+    // texto, sem chave e sem sessão. O resultado vem embutido em JSON no HTML.
+    const nome=a.valor.trim();
+    if(nome.length<4)throw Error('Nome curto demais para busca no DJEN');
+    const url=`https://www.in.gov.br/consulta/-/buscar/dou?q=${encodeURIComponent('"'+nome+'"')}&s=do3&exactDate=all&sortType=0`;
+    const r=await c.get(url,{accept:'text/html,application/xhtml+xml',timeout:12000,headers:{'user-agent':'Cloudflare-Worker'}});
+    if(!r.ok) throw falhar(r);
+    const html=await r.text();
+    const m=html.match(/<script[^>]*id="_br_com_seatecnologia_in_buscadou_BuscaDouPortlet_params"[^>]*>([\s\S]*?)<\/script>/);
+    if(!m) throw Error('Estrutura da busca do DJEN mudou');
+    let j;try{j=JSON.parse(m[1]);}catch{throw Error('JSON da busca do DJEN inválido');}
+    const itens=lista(j?.jsonArray);
+    const texto=x=>String(x??'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim();
+    const itensDjen=lista(itens);
+    const dados=itensDjen.map(it=>({
+      tipo:it?.artType??null,
+      titulo:it?.title??null,
+      publicacao:it?.pubDate??null,
+      secao:it?.pubName??null,
+      pagina:it?.numberPage??null,
+      url:`https://www.in.gov.br/web/dou/-/${encodeURIComponent(String(it?.urlTitle??''))}`,
+      trecho:texto(it?.content).slice(0,320),
+    }));
+    const citacoes=dados.filter(x=>/cita|notifica/i.test(String(x.tipo||''))).length;
+    return {dados:{total:dados.length,citacoes:citacoes,itens:dados.slice(0,15),
+      criterio:'Editais publicados no DJEN que citam o nome. Presenca indica publicacao processual, nao confere nem numeracao do processo nem identidade.'}};
+  }},
+ {id:'vazamento',tipos:['email','telefone'],custo:1,ttl:86400,provenance:'leakcheck-public-v1',
+  async run(a,c){
+    // LeakCheck publico: aceita e-mail ou telefone e devolve as fontes de vazamento
+    // e os TIPOS de dado expostos (senha, data de nascimento, endereço, IP).
+    // Nao devolve o conteudo dos campos, apenas os nomes, e nao prova titularidade.
+    const r=await c.get(`https://leakcheck.io/api/public?check=${encodeURIComponent(a.valor)}`,{timeout:8000});
+    if(!r.ok) throw falhar(r);
+    const j=await J(r);
+    if(j?.success===false) return {dados:{encontrado:false,total:0,fontes:[],camposExpostos:[],
+      criterio:'Nenhum registro publico encontrado para este identificador.'}};
+    if(typeof j?.found!=='number')throw Error('Formato LeakCheck inesperado');
+    const fontes=lista(j?.sources).map(s=>({nome:s?.name??null,data:s?.date||null}));
+    const campos=lista(j?.fields).map(f=>String(f).toLowerCase());
+    return {dados:{encontrado:true,total:j.found,fontes:fontes.slice(0,20),camposExpostos:campos,
+      temSenha:campos.includes('password'),
+      criterio:'Tipos de dado que aparecem em registros públicos de vazamento. Não confirma identidade nem titularidade e não expõe o conteúdo dos campos.'}};
+  }},
+ {id:'identidade',tipos:['nome'],custo:2,ttl:604800,provenance:'openalex-orcid-v1',
+  async run(a,c){
+    // Nome -> identidade academica e registro dePesquisa. Preenche um espaco
+    // vazio: as 24 fontes anteriores so associations nomes a entidades wikidata.
+    const erros=[];
+    const partes=a.valor.trim().split(/\s+/);
+    const primeiro=partes[0],ultimo=partes[partes.length-1];
+    let openalex=null;
+    try{
+      const r=await c.get(`https://api.openalex.org/authors?search=${encodeURIComponent(a.valor)}&per-page=3`,{timeout:8000});
+      if(!r.ok)throw falhar(r);const j=await J(r);
+      const res=lista(j?.results).map(x=>({id:x?.id??null,nome:x?.display_name??null,
+        obras:x?.works_count??null,citacoes:x?.cited_by_count??null,
+        orcid:(lista(x?.ids).find(i=>String(i).includes('orcid'))??null),
+        instituicao:(lista(x?.last_known_institutions).map(i=>i?.display_name).filter(Boolean)[0]??null)}));
+      openalex=res;
+    }catch(e){erros.push({provedor:'openalex',erro:String(e?.message||e).slice(0,220)});}
+    let orcid=null;
+    try{
+      const q=`given-names:${primeiro} AND family-name:${ultimo}`;
+      const r=await c.get(`https://pub.orcid.org/v3.0/expanded-search/?q=${encodeURIComponent(q)}`,{timeout:8000,headers:{accept:'application/json'}});
+      if(!r.ok)throw falhar(r);const j=await J(r);
+      orcid=lista(j?.['expanded-result']).map(x=>({id:x?.['orcid-id']??null,nome:x?.['credit-name']??null,
+        instituicoes:lista(x?.['institution-name'])}));
+    }catch(e){erros.push({provedor:'orcid',erro:String(e?.message||e).slice(0,220)});}
+    if(!openalex&&!orcid)throw Error(erros.map(x=>x.provedor+': '+x.erro).join(' | '));
+    return {dados:{academico:openalex,orcid,parcial:erros.length>0,erros,
+      criterio:'Correspondência de nome com registro público de pesquisa. Nomes homônimos são frequentes e não confirmam identidade.'}};
+  }},
+ {id:'certificados',tipos:['dominio'],custo:1,ttl:86400,provenance:'certspotter-ct-v1',
+  async run(a,c){
+    // Certspotter (SSLMate) como fonte server-side de Certificate Transparency.
+    // O crt.sh oscila entre 502 e timeout de 45s e hoje so roda no navegador.
+    const r=await c.get(`https://api.certspotter.com/v1/issuances?domain=${encodeURIComponent(a.valor)}&include_subdomains=true&expand=dns_names`,{timeout:9000});
+    if(!r.ok) throw falhar(r);
+    const j=await J(r);
+    if(!Array.isArray(j))throw Error('Formato Certspotter inesperado');
+    const hosts=[...new Set(j.flatMap(x=>lista(x?.dns_names)).map(s=>String(s).toLowerCase().replace(/^\*\./,'')))].filter(Boolean);
+    const validos=hosts.filter(h=>h===a.valor||h.endsWith('.'+a.valor));
+    return {dados:{total:validos.length,subdominios:validos.slice(0,60),
+      emissores:[...new Set(j.map(x=>x?.issuer_name).filter(Boolean))].slice(0,5),
+      criterio:'Nomes publicados em Certificate Transparency. Indica hosts emitidos; não prova controle atual do domínio.'}};
+  }},
+ {id:'rota',tipos:['ip'],custo:1,ttl:21600,provenance:'ripestat-routing-v1',
+  async run(a,c){
+    // RIPEstat: rota anunciada, RPKI e contato de abuso. Sem chave, mas a resposta
+    // pode demorar alguns segundos, entao o timeout e maior que o das outras fontes.
+    const erros=[];
+    let rota=null,rpki=null,abuse=null;
+    try{
+      const r=await c.get(`https://stat.ripe.net/data/prefix-overview/data.json?resource=${encodeURIComponent(a.valor)}`,{timeout:9000});
+      if(!r.ok)throw falhar(r);const j=await J(r);
+      const d=j?.data;if(!d)throw Error('Formato RIPEstat inesperado');
+      const asn=d?.asns?.[0];
+      rota={prefixo:d?.prefix??null,asn:typeof asn==='object'?(asn?.asn??null):(asn??null),
+        asnNome:typeof asn==='object'?(asn?.holder??null):null,
+        descricao:d?.description??null,pais:d?.country??null,rir:d?.rir??null};
+      rpki=lista(d?.rpki_validation?.statuses)[0]?.status??null;
+    }catch(e){erros.push({provedor:'prefix-overview',erro:String(e?.message||e).slice(0,220)});}
+    try{
+      const r=await c.get(`https://stat.ripe.net/data/abuse-contact-finder/data.json?resource=${encodeURIComponent(a.valor)}`,{timeout:9000});
+      if(r.ok){const j=await J(r);abuse=lista(j?.data?.abuse_contacts);}
+    }catch(e){erros.push({provedor:'abuse-contact-finder',erro:String(e?.message||e).slice(0,220)});}
+    if(!rota)throw Error(erros.map(x=>x.provedor+': '+x.erro).join(' | '));
+    return {dados:{...rota,rpki,abuse,parcial:erros.length>0,erros,
+      criterio:'Rota anunciada e validação RPKI do prefixo. Descreve a infraestrutura, não o usuário.'}};
   }}
 ];

@@ -165,13 +165,22 @@ export const REGISTRY=[
   }},
  {id:'github',tipos:['email'],custo:1,ttl:86400,provenance:'github-users-api',
   async run(a,c){
-    if(!c.env.GITHUB_TOKEN) throw Error('sem token');
-    const r=await c.get(`https://api.github.com/search/users?q=${encodeURIComponent(a.valor)}+in:email&per_page=5`,{timeout:7000,
-      headers:{authorization:`Bearer ${c.env.GITHUB_TOKEN}`,accept:'application/vnd.github+json'}});
-    if(!r.ok){const e=falhar(r);if(r.status===401)e.message='Token do GitHub inválido. '+e.message;else if(r.status===429||r.status===403)e.message='Limite do GitHub atingido. '+e.message;throw e;}
+    // A busca de usuarios do GitHub responde sem token (limite de 10/min por IP),
+    // entao o token e um acelerador e nao um requisito. Com token o limite sobe
+    // para 30/min. Sem nenhum dos dois a fonte fica indisponivel, nunca zero.
+    const token=c.env.GITHUB_TOKEN;
+    const headers={accept:'application/vnd.github+json',...(token?{authorization:`Bearer ${token}`}:{})};
+    const r=await c.get(`https://api.github.com/search/users?q=${encodeURIComponent(a.valor)}+in:email&per_page=5`,{timeout:7000,headers});
+    if(!r.ok){const e=falhar(r);
+     if(r.status===401)e.message='Token do GitHub inválido. '+e.message;
+     else if(r.status===403)e.message='Limite do GitHub atingido. '+e.message;
+     else if(r.status===429)e.message='Limite do GitHub atingido. '+e.message;
+     throw e;}
     const j=await J(r);
     if(!Array.isArray(j?.items)||typeof j?.total_count!=='number')throw Error('Formato GitHub inesperado');
-    return {dados:{total:j.total_count||0,contas:lista(j?.items).map(u=>({login:u.login,url:u.html_url}))}};
+    return {dados:{total:j.total_count||0,contas:lista(j?.items).map(u=>({login:u.login,url:u.html_url})),
+      autenticado:Boolean(token),
+      criterio:'Contas com o e-mail no campo publico do perfil. Não prova titularidade.'}};
   }},
  {id:'dns',tipos:['email','dominio'],custo:4,ttl:300,provenance:'google-doh',
   async run(a,c){

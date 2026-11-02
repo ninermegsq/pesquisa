@@ -272,14 +272,14 @@ export default {
     if(url.pathname==='/api/scan'){
       if(req.method!=='POST')return reply({error:'Método não permitido.'},405);
       if(!allowed(env).has(req.headers.get('origin')||''))return reply({error:'Origem não permitida.'},403);
-      let body,alvo;try{body=await req.clone().json();alvo=detectar(body?.alvo);}catch{return reply({error:'Alvo inválido.'},400);}
+      let body,alvo;try{body=await req.json();alvo=detectar(body?.alvo);}catch{return reply({error:'Alvo inválido.'},400);}
       let authorization;
       try{
         authorization=await consumeToken(body?.token,alvo.valor,ip,env);
         if(!authorization?.valid)return reply({error:'Token ausente, expirado, reutilizado ou vinculado a outro alvo.'},429);
         if(authorization.retryAfter)return reply({error:'Limite atingido (10 scans por hora ou 60 por dia).'},429,{'retry-after':String(authorization.retryAfter)});
       }catch{return reply({error:'Verificação indisponível.'},503);}
-      return handleScan(req,{...env,OSINT_KV:env.OSINT_KV||env.CACHE,SCAN_RATE_AUTHORIZATION:authorization},ip);
+      return handleScan(req,{...env,OSINT_KV:env.OSINT_KV||env.CACHE,SCAN_RATE_AUTHORIZATION:authorization},ip,body);
     }
     if (url.pathname === '/.netlify/functions/token') return token(req, env, ip);
     if (url.pathname === '/.netlify/functions/scan') return scan(req, env, { ip });

@@ -14,6 +14,13 @@ let requests=0;
 await assert.rejects(()=>source('datajud').run({valor:'Nome de Teste'},context(async(url,options)=>{const q=JSON.parse(options.body).query;requests++;if(requests===1)assert.equal(q.query_string.default_field,'partes.nome');else assert.equal(q.match['partes.nome'].operator,'and');const r=new Response('mapping fixture',{status:400});r.corpo='mapping fixture';return r;},{DATAJUD_API_KEY:'fixture'})),/HTTP 400.*mapping fixture/);assert.equal(requests,2);
 await assert.rejects(()=>source('datajud').run({valor:'Nome de Teste'},context(async()=>new Response('{}',{status:200}),{})),/Chave DataJud ausente/);
 for(const status of [401,403,429])await assert.rejects(()=>source('github').run({valor:'fixture@example.invalid'},context(async()=>new Response('fixture',{status,headers:status===403?{'x-ratelimit-remaining':'0'}:{}}),{GITHUB_TOKEN:'fixture'})),status===401?/Token do GitHub inválido/:/Limite do GitHub/);
+// O GitHub responde a busca de usuarios sem token (limite de 10/min por IP).
+// A fonte usa o token quando existe e cai para anonimo quando nao.
+const ghAnon=await source('github').run({valor:'fixture@example.invalid'},context(async()=>Response.json({total_count:2,items:[{login:'a',html_url:'https://github.com/a'},{login:'b',html_url:'https://github.com/b'}]}),{}));
+assert.equal(ghAnon.dados.total,2);assert.equal(ghAnon.dados.autenticado,false);
+assert.equal(ghAnon.dados.contas.length,2);
+const ghCom=await source('github').run({valor:'fixture@example.invalid'},context(async()=>Response.json({total_count:1,items:[]}),{GITHUB_TOKEN:'fixture'}));
+assert.equal(ghCom.dados.autenticado,true);
 await assert.rejects(()=>source('npm').run({valor:'fixture@example.invalid'},context(async()=>new Response('<html>fixture</html>'))),/resposta não-JSON/);
 let ua;globalThis.fetch=async(url,options)=>{ua=options.headers.get('user-agent');return new Response('error code: 1010\n'+'x'.repeat(240),{status:403});};
 const c=ctx({UA:'scanner-fixture'},'https://fixture.invalid');const res=await c.get('https://fixture.invalid');assert.equal(ua,'scanner-fixture');assert.equal(res.corpo.length,200);assert.ok((await res.text()).length>200);

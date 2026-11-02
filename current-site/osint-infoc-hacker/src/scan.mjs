@@ -56,8 +56,12 @@ export function pivosDe(res){
  }}
  return [...new Set(valores)].slice(0,12).map(x=>({tipo:x.split(':')[0],valor:x.slice(x.indexOf(':')+1)}));
 }
-export async function handleScan(request,env,ip){
-  const body=await request.json().catch(()=>null);const bruto=body?.alvo;
+export async function handleScan(request,env,ip,bodyLido){
+  // O corpo pode ja ter sido lido pelo worker. Ler o stream duas vezes
+  // (clone + json) trava quando o corpo chega em streaming, como acontece
+  // com HTTP/3 no navegador; por isso o parsed body travels junto.
+  const body=bodyLido??await request.json().catch(()=>null);
+  const bruto=body?.alvo;
   let alvo;try{alvo=detectar(bruto);}catch(e){return json({erro:e.message},400);}
   if(alvo.tipo==='cpf')return json({erro:'Consulta de CPF fora do escopo.'},400);
   let rl;try{rl=await limite(env,ip);}catch{return json({erro:'Cache obrigatório indisponível.'},503);}

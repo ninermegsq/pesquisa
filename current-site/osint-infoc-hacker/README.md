@@ -4,7 +4,10 @@ Site `https://ostnt.online/`. A produção é servida por `cloudflare-worker.mjs
 
 ## Estado desta revisão
 
-Código candidato, sem promoção em produção. A opção escolhida é validação remota antes do deploy. Consulte `verification/current-review.md` para resultados e limites da comprovação; documentos anteriores em `verification/` são históricos. O conector GitHub está conectado ao repositório `ninermegsq/pesquisa`; o projeto está na pasta `current-site/osint-infoc-hacker`.
+**Promovido em produção (02/11/2026).** O Worker `ostnt-migration` serve `ostnt.online` na versão `6566d273`, com 29 fontes. A comprovação foi feita no navegador real contra `https://ostnt.online`, com Turnstile de produção resolvido: os 6 tipos de alvo respondem HTTP 200 com dados reais das fontes (nome 4/4, e-mail 10/10, domínio 6/6, IP 6/6, CNPJ 1/1, telefone 3/3). O conector GitHub está ligado ao repositório `ninermegsq/pesquisa`; o projeto está na pasta `current-site/osint-infoc-hacker`, branch `codex/ostnt-hardening-20261031`.
+
+Correção aplicada na promoção: `/api/scan` lia o corpo da requisição **duas vezes** (`req.clone().json()` no worker e `request.json()` dentro de `handleScan`). Com corpo em streaming — como chega do navegador via HTTP/3 — a segunda leitura nunca resolvia e a requisição ficava pendurada sem resposta. Agora o corpo é lido uma vez só e o objeto já parseado viaja até `handleScan`.
+
 
 ## Fluxo e proteção
 
@@ -97,7 +100,9 @@ A CSP permite o beacon, mas sua injeção observada vem de fora do HTML do repos
 
 ## Promoção
 
-Nenhum teste local substitui o aceite remoto. Antes de promover: confirmar fontes por endpoint, cache de edge, token, cotas, exportações, arquivos públicos e console. Produção usa chaves reais, APP_ENV=production e UA_MODE=identificado. Faça smoke tests com rollback disponível; falhas bloqueiam a conclusão. A versão candidata desta revisão não foi publicada em produção.
+Nenhum teste local substitui o aceite remoto. Antes de promover: confirmar fontes por endpoint, cache de edge, token, cotas, exportações, arquivos públicos e console. Produção usa chaves reais, APP_ENV=production e UA_MODE=identificado. Faça smoke tests com rollback disponível; falhas bloqueiam a conclusão.
+
+**Promoção executada em 02/11/2026.** O Worker `ostnt-migration` (o mesmo nome e as mesmas configurações de produção, sem tocar em `APP_ENV`, chaves ou KV) recebeu a versão candidata com a correção de leitura do corpo. Rollback disponível: a versão anterior `6989f9b9-84df-490a-aad9-63a95a299daf` continua registrada como deployment e basta reverter o deployment ID `599b1953-2842-4b1f-81a5-907ac04949b0`. A verificação foi feita no navegador real, com o Turnstile de produção, porque o defeito só aparecia no caminho do browser.
 
 ## Validação real da candidata — 31/10/2026
 
@@ -110,6 +115,49 @@ Scans reais dos seis tipos exercitaram as 24 fontes. GitHub autenticado responde
 CEIS removida. OpenSanctions não foi ativada: a API hospedada exige chave; teste sem chave retornou `{"detail":"No API key provided."}`. Ausência de acesso não significa ausência de sanções. A seção SANÇÕES só poderá ser habilitada após uma fonte operacional ser validada. Documentação: https://www.opensanctions.org/docs/api/authentication/ .
 
 IPGEO: ipapi.co principal, GeoJS reserva. 17NAS não integrado: a documentação atual só descreve IP do chamador, exige chave no endpoint comercial e não documenta `/api/{ip}`. Usá-lo atribuiria o IP do Worker ao alvo. Custo considera ambas as chamadas; campo ausente permanece nulo.
+
+## Substituto do DataJud e 5 fontes novas — 01/11/2026
+
+### Por que o DataJud não pode buscar por nome de pessoa
+
+O índice público do CNJ **não expõe nome de parte**. Isso não é falta de chave: é ausência de campo. Medido com chave válida em `api_publica_stj`, `api_publica_tjba`, `api_publica_tjdft`, `api_publica_tjpe` e `api_publica_tjal`:
+
+| Consulta | Resultado |
+|---|---|
+| `match_all` | 10000 hits — o índice tem dados |
+| documento de `match_all` | `id, tribunal, grau, numeroProcesso, dataAjuizamento, nivelSigilo, orgaoJulgador, classe, sistema, formato, dataHoraUltimaAtualizacao, @timestamp, movimentos, assuntos` |
+| `partes.nome` | 0 hits para "maria da silva", "silva", "maria", "jose" |
+| `nested` sobre `partes` | HTTP 400 `failed to find nested object under path [partes]` |
+
+O único campo chamado "nome" no documento é `movimentos.nome`, que é o nome do movimento, não da parte. O motivo é o sigilo processual: a Portaria CNJ 160/2020 restringe a publicação de dados de partes. **Nenhuma chave resolve isso** — a fonte agora explica o motivo no resultado, em vez de devolver zero silencioso.
+
+### Substituto: `djen` (Diário Eletrônico Nacional)
+
+A busca do DJEN, seção 3 do DOU (Imprensa Nacional), devolve os editais de citação e notificação que citam o nome da parte — sem chave e sem sessão. O resultado vem embutido em JSON no HTML, no bloco `BuscaDouPortlet_params`. A rota correta é `/buscar/dou` com `s=do3`; `/buscar/djen` devolve sempre zero e `/consulta/djen` é 404.
+
+Validação com nome real: 13 hits, 7 citações, incluindo `EDITAL DE CITAÇÃO` com o nome destacado no texto e o número do processo (`CRCMG n.º 2026/000531`). Presença de citação indica publicação processual; **não** confere nem o número do processo nem a identidade da pessoa.
+
+### Cinco fontes novas, todas sem chave e verificadas com requisição real
+
+| Fonte | Endpoint | Traz |
+|---|---|---|
+| `djen` | `in.gov.br/consulta/-/buscar/dou?s=do3` | citações e notificações que citam o nome |
+| `vazamento` | `leakcheck.io/api/public` | fontes de vazamento e **tipos** de dado expostos (senha, nascimento, endereço, IP) para e-mail e telefone — nunca o conteúdo |
+| `identidade` | OpenAlex + ORCID | nome → registro acadêmico, ORCID, instituição |
+| `certificados` | `api.certspotter.com/v1/issuances` | Certificate Transparency **server-side**; o crt.sh oscila entre 502 e timeout de 45s e só rodava no navegador |
+| `rota` | `stat.ripe.net/data/*` | prefixo anunciado, validação RPKI e contato de abuso |
+
+### Correções em fontes existentes
+
+| Fonte | Antes | Agora |
+|---|---|---|
+| `rdap` | Registro.br/Verisign, só .br/.com/.net, 404 nos demais | agregador `rdap.org`, qualquer TLD, IP dos nameservers |
+| `ipcontexto` | IPLogs devolvia HTTP 400 e degradava a fonte | `ipquery.io` (≈500 ms), VPNDetection como reserva |
+| `ipgeo` | `ipapi.co` passou a devolver 404 | `ipquery.io` com lat/long do bloco de rede |
+| `cnpj_br` | Minha Receita, sem e-mail nem telefone | ReceitaWS como alternativa: e-mail e telefone corporativos, pivô CNPJ → e-mail → vazamento |
+| `scan` | a estimativa contava o retry duas vezes e descartava `dns` (SPF/DMARC/MX) de toda consulta de e-mail | estimativa corrigida; `dns` volta a toda consulta de e-mail |
+
+Estado: **29 fontes**, 6 tipos de alvo, 0 chaves exigidas do visitante. Verificação local com requisição real a cada fonte: 27 de 28 respondendo nesta rodada. As suítes `test:unit`, `test:runtime` (workerd), `test:source`, `test:cache`, `test:closure` e `test:frontend` passam.
 
 ## Estado do fechamento do motor (candidata, 31/10/2026)
 
@@ -131,20 +179,25 @@ As evidências anteriores pertencem à revisão anterior. Testes locais não com
 | emailval | DISIFY e Kickbox | Presend no navegador | formato/domínio, não existência de caixa |
 | crtsh | crt.sh no navegador | HackerTarget no navegador | CORS `*` comprovado nos dois; reserva só em falha |
 | wayback | CDX | principal, só domínio | 60 URLs HTTP 200, prazo total de 7s |
-| rdap | Registro.br / Verisign | Presend em falha transitória | .org não suportado; 401/403 não encaminhados à reserva |
+| rdap | rdap.org agregador | principal | qualquer TLD; devolve IP dos nameservers |
 | observatory | MDN Observatory v2 | principal | análise de headers |
 | urlscan | busca pública urlscan | principal | consulta a resultados existentes |
 | internetdb | Shodan InternetDB | principal | 404 válido; sem sondagem ativa |
-| ipgeo | ipapi.co | GeoJS | 17NAS fora: endpoint documentado retorna IP do chamador |
+| ipgeo | ipquery.io | GeoJS | lat/long do bloco de rede; não é a pessoa |
 | asn | Team Cymru via DNS | principal | IPv4 |
 | ipreputacao | IPGuardian | principal | máximo 10 listas retornadas; não é prova de abuso |
-| ipcontexto | IPLogs modo fast | VPNDetection | reserva sem chave só fornece VPN; demais campos nulos |
-| cnpj_br | Minha Receita | principal | CNPJ e shape preservados |
+| ipcontexto | ipquery.io | VPNDetection | booleanos de VPN/proxy/Tor/datacenter/móvel |
+| cnpj_br | Minha Receita | ReceitaWS | ReceitaWS devolve e-mail e telefone corporativos; pivô CNPJ → e-mail |
 | ddd | mapa Anatel local | principal | zero chamadas externas |
 | telegram | t.me embed | principal | apenas telefone, presença não confirma titularidade |
 | wikidata | wbsearchentities | principal | nome correspondente não confirma identidade |
 | nomeperfil | Agify, Genderize, Nationalize | principal | 3 chamadas; estatística provável do primeiro nome |
-| datajud | CNJ STJ | principal | query_string sanitizado, um fallback match em 400 |
+| djen | DJEN (DOU s=do3) | principal | **substitui o DataJud**; citações com o nome no texto |
+| datajud | CNJ STJ | principal | **limitada**: o índice público não expõe nome de parte |
+| vazamento | LeakCheck público | principal | tipos de dado expostos, nunca o conteúdo |
+| identidade | OpenAlex + ORCID | principal | nome → registro acadêmico; homônimos são frequentes |
+| certificados | Certspotter CT | principal | server-side; crt.sh oscila entre 502 e timeout de 45s |
+| rota | RIPEstat | principal | prefixo anunciado, RPKI e contato de abuso |
 | gitlab | removida | — | endpoint de usuários negou acesso |
 | emailrep | removida | — | dependência de chave e ausência de acesso |
 | ceis | removida | — | substituição solicitada |

@@ -84,8 +84,8 @@ EmailRep|reputação pública de e-mail · API opcional|https://emailrep.io/`}
 ];
 const AUTOMATIC = new Set(['XposedOrNot','Hudson Rock','Gravatar','GitHub Search','Keybase','Shodan','MXToolbox','SecurityTrails','EmailRep']);
 const TOOLS = CATEGORIES.flatMap((cat,ci)=>cat.items.trim().split('\n').map(row=>{const [name,desc,url]=row.split('|');return {name,desc,url,category:ci,auto:AUTOMATIC.has(name)&&!(ci===3&&name==='GitHub Search'),apiKeyRequired:false};}));
-document.getElementById('stat-total').textContent=24;
-document.getElementById('stat-auto').textContent=12;
+document.getElementById('stat-total').textContent=29;
+document.getElementById('stat-auto').textContent=10;
 document.getElementById('stat-cats').textContent=6;
 document.getElementById('stat-keys').textContent=0;
 const $=id=>document.getElementById(id);
@@ -212,7 +212,7 @@ const form=$('scan-form');
 function pushLog(index,message,type='neutral'){
  const log=$('scan-log');if(!log)return;const el=document.createElement('div');el.className=type;el.textContent=`[${index}/9] ${message}`;log.append(el);log.scrollTop=log.scrollHeight;
 }
-async function getJson(url,options){const res=await fetch(url,{cache:'no-store',...options});let data;try{data=await res.json();}catch{throw Error(`Resposta inválida do servidor (${res.status}).`);}if(!res.ok)throw Error(data.error||`HTTP ${res.status}`);return data;}
+async function getJson(url,options){const res=await fetch(url,{cache:'no-store',...options});let data;try{data=await res.json();}catch{throw Error(`Resposta inválida do servidor (${res.status}).`);}if(!res.ok)throw Error(data.error||data.erro||`HTTP ${res.status}`);return data;}
 function loadTurnstile(){return new Promise((resolve,reject)=>{if(window.turnstile){resolve(window.turnstile);return;}const script=document.createElement('script');script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';script.async=true;script.onload=()=>resolve(window.turnstile);script.onerror=()=>reject(Error('Cloudflare Turnstile indisponível.'));document.head.append(script);});}
 async function challenge(){
  const slot=$('security-slot');slot.classList.add('active');slot.textContent='';
@@ -229,6 +229,60 @@ function renderPivos(pivos){
  for(const p of pivos||[]){const btn=document.createElement('button');btn.type='button';btn.className='chip';btn.textContent=p.valor||'';btn.addEventListener('click',()=>{if(scanning)return;$('email').value=p.valor;form.requestSubmit();});box.append(btn);}
  $('stage').append(box);
 }
+async function consultaBrowser(url,timeout){
+ const signal=AbortSignal.timeout(timeout);
+ let r=await fetch(url,{signal,credentials:'omit'});
+ const ra=r.headers.get('retry-after'),delay=ra?(Number.isFinite(Number(ra))?Number(ra)*1000:Date.parse(ra)-Date.now()):2000;
+ if([429,503].includes(r.status)&&delay<=2000){await r.body?.cancel();await new Promise(resolve=>setTimeout(resolve,2000));signal.throwIfAborted();r=await fetch(url,{signal,credentials:'omit'});}
+ return r;
+}
+async function subdominiosBrowser(j){
+ if(!j.browserFontes?.some(s=>s.id==='crtsh'))return;
+ const d=j.alvo.tipo==='email'?j.alvo.valor.split('@')[1]:j.alvo.valor;
+ const started=Date.now(),tentativas=[];let result;
+ for(const provider of ['crtsh','hackertarget']){
+  const url=provider==='crtsh'?`https://crt.sh/?q=%25.${encodeURIComponent(d)}&output=json`:`https://api.hackertarget.com/hostsearch/?q=${encodeURIComponent(d)}`;
+  try{
+   const r=await consultaBrowser(url,9000),body=await r.text();
+   if(!r.ok)throw Error(`HTTP ${r.status} | ${body.slice(0,200).replace(/\s+/g,' ')}`);
+   let hosts;if(provider==='crtsh'){let arr;try{arr=JSON.parse(body);}catch{throw Error('resposta não-JSON');}if(!Array.isArray(arr))throw Error('formato inesperado');hosts=arr.flatMap(x=>String(x?.name_value||'').split('\n'));}
+   else {if(/error|limit|invalid/i.test(body))throw Error(body.slice(0,200));hosts=body.split('\n').filter(x=>x.includes(',')).map(x=>x.split(',')[0]);}
+   const subs=[...new Set(hosts.map(x=>x.trim().toLowerCase()).filter(x=>(x===d||x.endsWith('.'+d))&&!x.startsWith('*')&&/^[a-z0-9.-]+$/.test(x)))].slice(0,provider==='crtsh'?60:40);
+   result={id:'crtsh',status:'ok',provenance:provider,cache:'miss',timestamp:new Date().toISOString(),dados:{total:subs.length,subdominios:subs},tentativas};break;
+  }catch(e){tentativas.push({provenance:provider,erro:String(e?.message||e).slice(0,220)});}
+ }
+ result||={id:'crtsh',status:'erro',provenance:'crtsh',cache:'miss',timestamp:new Date().toISOString(),erro:tentativas.map(t=>t.provenance+': '+t.erro).join(' | ').slice(0,440),dados:null,tentativas};
+ result.ms=Date.now()-started;j.fontes.push(result);j.disponibilidade.crtsh=result.status==='ok';if(result.status!=='ok')j.score.parcial=true;
+ j.meta.executadas++;j.meta.planejadas++;
+ const body=result.status==='ok'?`<p>${result.dados.total} subdomínios · ${escapeHTML(result.provenance)}</p><ul>${result.dados.subdominios.map(x=>`<li>${escapeHTML(x)}</li>`).join('')}</ul>`:`<p>${escapeHTML(result.erro)}</p>`;
+ j.html+=makeAccordion('SUBDOMÍNIOS',result.dados?.total??0,body,true);
+}
+async function reservasPresend(j){
+ for(const id of ['rdap','emailval']){
+  const index=j.fontes.findIndex(s=>s.id===id),s=j.fontes[index];
+  if(!s||(s.status==='ok'&&!s.dados?.parcial))continue;
+  // Do not relay explicit access denials or unsupported TLDs through another service.
+  if(id==='rdap'&&/HTTP 40[134]|tld sem rdap/.test(s.erro||''))continue;
+  const path=id==='rdap'?`whois-lookup?domain=${encodeURIComponent(j.alvo.valor)}`:`email-validate?email=${encodeURIComponent(j.alvo.valor)}`;
+  try{
+   const r=await consultaBrowser('https://presend.pages.dev/api/'+path,7000),t=await r.text();
+   if(!r.ok)throw Error(`HTTP ${r.status} | ${t.slice(0,200)}`);
+   let data;try{data=JSON.parse(t);}catch{throw Error('resposta não-JSON');}
+   let dados;
+   if(id==='rdap'){
+    if(typeof data.registered!=='boolean')throw Error('Formato RDAP reserva inesperado');
+    dados={handle:null,status:Array.isArray(data.status)?data.status:[],eventos:[{acao:'registration',data:data.created??null},{acao:'expiration',data:data.expires??null}],ns:Array.isArray(data.nameservers)?data.nameservers:[],entidades:[],registrado:data.registered};
+   }else{
+    if(typeof data.syntax_valid!=='boolean'||typeof data.has_mx!=='boolean')throw Error('Formato de validação reserva inesperado');
+    dados={descartavel:s.dados?.descartavel??null,valido:data.syntax_valid,dominioExiste:data.has_mx,parcial:true,criterio:'Sintaxe e MX; não confirma caixa postal. Detecção de descartável pode estar indisponível.'};
+   }
+   const result={...s,status:'ok',erro:null,dados,provenance:'presend-'+id,cache:'miss',timestamp:new Date().toISOString(),tentativas:[{provenance:s.provenance,erro:s.erro??s.dados?.erros}]};
+   j.fontes[index]=result;j.disponibilidade[id]=true;
+   j.html+=makeAccordion(id==='rdap'?'RDAP — RESERVA':'E-MAIL — RESERVA',0,`<p>Presend · ${escapeHTML(dados.criterio||'Dados do registro')}</p><pre>${escapeHTML(JSON.stringify(dados,null,2))}</pre>`,true);
+  }catch(e){s.reserva={provenance:'presend-'+id,erro:String(e?.message||e).slice(0,220)};}
+ }
+}
+
 async function scan(event){
  event.preventDefault();if(scanning)return;
  const alvo=$('email').value.trim();$('form-error').textContent='';if(!alvo){$('form-error').textContent='Informe um alvo.';return;}
@@ -237,28 +291,35 @@ async function scan(event){
  const cfToken=await challenge();
  const signed=await getJson('/.netlify/functions/token',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({cfToken,alvo})});
  const j=await getJson('/api/scan',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({alvo,token:signed.token})});
+ await subdominiosBrowser(j);
+ await reservasPresend(j);
  const card=document.createElement('section');card.className='scorecard';
- card.innerHTML=`<div class="eyebrow">RISCO DE EXPOSIÇÃO</div><span class="score-num">${escapeHTML(j.score?.valor??0)}</span><span class="score-suffix">/100 · ${escapeHTML(j.score?.nivel||'BAIXO')}${j.score?.parcial?' · PARCIAL':''}</span><p class="public-note">${escapeHTML((j.score?.motivos||[]).join(' · ')||'sem sinais relevantes')}</p>`;
+ card.innerHTML=`<div class="eyebrow">RISCO DE EXPOSIÇÃO</div><span class="score-num">${escapeHTML(j.score?.valor??0)}</span><span class="score-suffix">/100 · ${escapeHTML(j.score?.nivel||'BAIXO')}${j.score?.parcial?' · PARCIAL':''}</span><p class="public-note">${escapeHTML((j.score?.motivos||[]).join(' · ')||(j.score?.nivel==='INCONCLUSIVO'?'Fontes indisponíveis; análise inconclusiva.':'Nenhum sinal de exposição confirmado nas fontes disponíveis.'))}</p><p class="public-note">Índice heurístico de exposição; não é probabilidade de invasão. Correspondências públicas não confirmam identidade.</p>`;
  $('stage').append(card);const wrapper=document.createElement('div');wrapper.innerHTML=j.html||'';$('stage').append(...wrapper.childNodes);
- const meta=document.createElement('p');meta.className='muted';meta.textContent=`${j.meta?.executadas??0}/${j.meta?.planejadas??0} fontes · custo declarado: ${j.meta?.subrequests??0} subrequests`;$('stage').append(meta);renderPivos(j.pivos);
- current={email:j.alvo?.valor||alvo,data:j};$('actions').hidden=false;setOrbPhase('done',{breaches:[]});$('answer-content').textContent=`${j.meta?.executadas??0} fontes processadas. ${j.score?.parcial?'Resultado parcial.':'Análise concluída.'}`;
- $('scan-announcement').textContent=`Análise concluída. ${Math.max(0,reportRows().length-1)} achados.`;
+ const meta=document.createElement('p');meta.className='muted';meta.textContent=`${j.meta?.executadas??0}/${j.meta?.planejadas??0} fontes consultadas`;$('stage').append(meta);renderPivos(j.pivos);
+ current={email:j.alvo?.valor||alvo,data:j};
+ if(j.alvo?.tipo==='email'){const dorks=document.createElement('div');dorks.innerHTML=makeAccordion('DORKS PRONTOS',8,getDorks(current.email).map(q=>`<div class="dork"><code>${escapeHTML(q)}</code><div class="dork-actions"><button type="button" class="bt mini copy-dork" data-dork="${escapeHTML(q)}">COPIAR</button>${link('https://www.google.com/search?q='+encodeURIComponent(q),'GOOGLE')}</div></div>`).join(''),true);$('stage').append(...dorks.childNodes);}$('actions').hidden=false;setOrbPhase('done',{breaches:[]});$('answer-content').textContent=`${j.meta?.executadas??0} fontes processadas. ${j.score?.parcial?'Resultado parcial.':'Análise concluída.'}`;
+ $('scan-announcement').textContent=`Análise concluída. ${countFindings(j)} achados.`;
  }catch(err){const message=err?.message||'Falha na análise.';setOrbPhase('error',message);$('form-error').textContent=message;$('scan-announcement').textContent='Verificação interrompida';}
  finally{scanning=false;$('scan-btn').disabled=false;$('security-slot').classList.remove('active');$('security-slot').replaceChildren();try{if(widgetId!==null)window.turnstile?.remove(widgetId);}catch{}widgetId=null;}
 }
 form.addEventListener('submit',scan);
 $('stage').addEventListener('click',event=>{const btn=event.target.closest('.copy-dork');if(!btn)return;const value=btn.dataset.dork||'';const old=btn.textContent;navigator.clipboard.writeText(value).then(()=>{btn.textContent='COPIADO';setTimeout(()=>btn.textContent=old,1300);}).catch(()=>{btn.textContent='ERRO';});});
 $('clear-btn').addEventListener('click',()=>{if(scanning)return;setOrbPhase('idle');current=null;$('stage').replaceChildren();$('scan-announcement').textContent='';$('actions').hidden=true;$('email').value='';$('form-error').textContent='';$('pass-panel').hidden=true;$('password').value='';$('password-result').textContent='';$('password-toggle').setAttribute('aria-expanded','false');$('scan-btn').removeAttribute('data-ready');positionIdlePill();$('email').focus();});
-function reportFilename(ext){return 'osint-report-'+current.email.replace(/[^a-z0-9.-]/gi,'_')+'.'+ext;}
+function reportFilename(ext){return 'osint-report-'+current.email.replace(/[^a-z0-9.-]/gi,'_').slice(0,120)+'.'+ext;}
 function downloadReport(content,type,ext){if(!current)return;const url=URL.createObjectURL(new Blob([content],{type}));const a=document.createElement('a');a.href=url;a.download=reportFilename(ext);document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-function csvCell(value){let v=String(value??'');if(/^[=+@\-\t\r]/.test(v))v="'"+v;return '"'+v.replace(/"/g,'""')+'"';}
+function csvCell(value){let v=String(value??'');if(/^\s*[=+@-]|^[\t\r\n]/.test(v))v="'"+v;return '"'+v.replace(/"/g,'""')+'"';}
+function countFindings(report){
+ const counts={xon:d=>d.total,gravatar:d=>Number(d.existe),pgp:d=>Number(d.existe),npm:d=>d.total,bluesky:d=>d.total,github:d=>d.total,hudsonrock:d=>d.maquinas,crtsh:d=>d.total,wayback:d=>d.total,internetdb:d=>(d.portas||[]).length+(d.vulns||[]).length,cnpj_br:d=>Number(d.existe),telegram:d=>Number(d.existe),wikidata:d=>d.total,datajud:d=>d.total,djen:d=>d.citacoes,vazamento:d=>d.total,identidade:d=>(d.academico||[]).length+(d.orcid||[]).length,certificados:d=>d.total,rota:d=>Number(Boolean(d.prefixo||d.asn))};
+ return (report.fontes||[]).reduce((n,s)=>{const value=s.status==='ok'&&counts[s.id]?Number(counts[s.id](s.dados||{})):0;return n+(Number.isFinite(value)?Math.max(0,value):0);},0);
+}
 function reportRows(){
- const rows=[['fonte','campo','valor','provenance','timestamp']];
- const flatten=(source,path,value)=>{if(value==null)return;if(typeof value==='object'){for(const [k,v]of Object.entries(value))flatten(source,path?path+'.'+k:k,v);return;}rows.push([source.id,path,String(value),source.provenance||'',source.timestamp||current.data.gerado_em||'']);};
- for(const source of current.data.fontes||[]){if(source.status==='ok')flatten(source,'',source.dados);else rows.push([source.id,'status',source.erro||source.status,source.provenance||'',source.timestamp||current.data.gerado_em||'']);}
+ const rows=[['fonte','campo','valor','severidade','provenance','timestamp']];
+ const flatten=(source,path,value)=>{if(value==null)return;if(typeof value==='object'){for(const [k,v]of Object.entries(value))flatten(source,path?path+'.'+k:k,v);return;}rows.push([source.id,path,String(value),'informativa',source.provenance||'',source.timestamp||current.data.gerado_em||'']);};
+ for(const source of current.data.fontes||[]){if(source.status==='ok')flatten(source,'',source.dados);else rows.push([source.id,'status',source.erro||source.status,'indisponivel',source.provenance||'',source.timestamp||current.data.gerado_em||'']);}
  return rows;
 }
-$('export-json').addEventListener('click',()=>{if(!current)return;const report={schemaVersion:1,generatedAt:new Date().toISOString(),email:current.email,data:current.data,sources:current.data.sources||{}};downloadReport(JSON.stringify(report,null,2),'application/json;charset=utf-8','json');});
+$('export-json').addEventListener('click',()=>{if(!current)return;const report={...current.data,schemaVersion:2,exportado_em:new Date().toISOString()};downloadReport(JSON.stringify(report,null,2),'application/json;charset=utf-8','json');});
 $('export-csv').addEventListener('click',()=>{if(!current)return;const csv='\uFEFF'+reportRows().map(row=>row.map(csvCell).join(',')).join('\r\n');downloadReport(csv,'text/csv;charset=utf-8','csv');});
 $('password-toggle').addEventListener('click',()=>{const show=$('pass-panel').hidden;$('pass-panel').hidden=!show;$('password-toggle').setAttribute('aria-expanded',String(show));if(show)$('password').focus();});
 $('password-run').addEventListener('click',async()=>{const p=$('password').value;if(!p){$('password-result').textContent='Digite uma senha.';return;}const btn=$('password-run');btn.disabled=true;try{const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-1',new TextEncoder().encode(p)))).map(v=>v.toString(16).padStart(2,'0')).join('').toUpperCase();const prefix=hash.slice(0,5),suffix=hash.slice(5);const response=await fetch(`https://api.pwnedpasswords.com/range/${prefix}`,{cache:'no-store',headers:{'Add-Padding':'true'}});if(!response.ok)throw Error(`HTTP ${response.status}`);const body=await response.text();const match=body.split(/\r?\n/).find(line=>line.split(':')[0]===suffix);const hits=match?Number(match.split(':')[1]||0):0;$('password-result').textContent=hits?`Senha encontrada ${fmt(hits)} vezes em coleções de vazamentos. Não a reutilize.`:'não encontrada — isso não garante que a senha seja segura.';}catch(err){$('password-result').textContent='Não foi possível consultar a base de senhas: '+err.message;}finally{btn.disabled=false;}});

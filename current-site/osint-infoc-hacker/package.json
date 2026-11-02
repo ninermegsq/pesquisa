@@ -1,0 +1,32 @@
+{
+  "name": "osint-infoc-hacker",
+  "version": "1.2.0",
+  "private": true,
+  "type": "module",
+  "description": "OSINT // infoc.hacker — análise de exposição de e-mail",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "check": "node --check netlify/functions/token.js && node --check netlify/functions/scan.js",
+    "build:worker": "node scripts/build-worker.mjs",
+    "check:worker": "node --check cloudflare-worker.mjs && node --check public/app.js && node --check src/scan.mjs && node --check src/sources/registry.mjs",
+    "test:unit": "node verification/worker-regression.mjs && node verification/cache-check.mjs && node verification/frontend-check.cjs && node verification/quota-check.mjs && node verification/source-check.mjs && node verification/closure-check.mjs",
+    "test:source": "node verification/source-check.mjs",
+    "test:cache": "node verification/cache-check.mjs",
+    "test:closure": "node verification/closure-check.mjs",
+    "test:frontend": "node verification/frontend-check.cjs",
+    "test:live": "node verification/scan-live.mjs",
+    "test:runtime": "node verification/runtime-check.cjs",
+    "probe:sources": "node verification/probe-sources.mjs",
+    "dev:validation": "wrangler dev --config wrangler.remote-client.toml --ip 127.0.0.1 --port 8787",
+    "verify:remote": "node verification/remote-check.mjs",
+    "dev:remote:legacy": "wrangler dev --remote --config wrangler.validation.toml"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^10.0.0"
+  },
+  "devDependencies": {
+    "wrangler": "4.156.0"
+  }
+}

@@ -14,8 +14,6 @@
     "test": "npm --prefix current-site/osint-infoc-hacker run test",
     "dev": "npm --prefix current-site/osint-infoc-hacker run dev",
     "check:netlify": "npm --prefix osint-infoc-hacker run check",
-    "git:probe": "git --version && git rev-parse --is-inside-work-tree && git remote -v && git status --short && git branch --show-current",
-    "git:log": "git log --oneline -n 10 && git rev-list --count HEAD && git ls-remote --heads origin",
     "git": "git"
   },
   "dependencies": {},

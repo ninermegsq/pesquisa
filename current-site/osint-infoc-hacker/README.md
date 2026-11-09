@@ -95,6 +95,27 @@ netlify dev
 
 **Importante:** abrir `public/index.html` em `file://` exibe a interface, mas **não** torna o scan funcional: as duas Functions, os segredos, o Turnstile e o Netlify Blobs exigem `netlify dev` ou deploy real.
 
+## Desenvolvimento local (prévia sem Wrangler)
+
+`npm run dev` **não** depende do Wrangler nem de conta da Cloudflare. Ele sobe um servidor Node puro (`scripts/dev-server.mjs`, sem dependências) que reaproveita o motor real de produção (`src/scan.mjs` + `src/sources/registry.mjs`) e serve `public/`.
+
+```bash
+npm run dev            # http://localhost:3000 (ou 5173/8080/4173/5000 se ocupado)
+PORT=4000 npm run dev  # porta fixa
+npm run check          # sintaxe de todos os arquivos
+npm run test           # cache-check, worker-regression, dev-server-check, dev-process-check
+```
+
+O que é **local e simulado** (rótulo `LOCAL ONLY` nos testes e banner `AMBIENTE LOCAL` na página):
+
+- Turnstile: shim no navegador, token fake aceito pelo servidor. Sem segredos reais.
+- `caches.default`, KV, Durable Object e `HTMLRewriter` em memória. Nada persiste entre reinícios.
+- Token HMAC assinado com segredo efêmero por execução; `ALLOWED_ORIGINS` fica restrito a `localhost`/`127.0.0.1`/`[::1]`.
+- Rate limit por sessão, para não queimar a cota real do IP.
+- Fontes externas dependem da rede da sua máquina; em teste offline o resultado volta parcial.
+
+O que **não** muda: `cloudflare-worker.mjs`, `wrangler.toml`, `public/` e as Netlify Functions continuam intactos. O Worker real é executado só com `npm run dev:worker` / `npm run dev:validation`, que exigem Wrangler instalado (`npm i -D wrangler`), `npx wrangler login` e os secrets do Worker.
+
 ## Funcionamento e privacidade
 
 - `token.js` / rota Worker `/token`: checa Turnstile, assina token HMAC de uso único com TTL de 60 segundos e o vincula ao IP e ao SHA-256 do e-mail. O nonce consumido fica em Durable Object SQLite no Worker; `GET` expõe apenas a site key pública com cache de 24 horas.

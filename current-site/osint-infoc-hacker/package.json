@@ -1,0 +1,21 @@
+{
+  "name": "osint-infoc-hacker-worker",
+  "version": "1.2.0",
+  "private": true,
+  "type": "module",
+  "description": "OSINT // infoc.hacker — scanner de exposicao de e-mail publicado em Cloudflare Workers",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "check": "node --check cloudflare-worker.mjs && node --check public/app.js && node --check src/render.mjs && node --check src/scan.mjs && node --check src/data/ddd.mjs && node --check src/lib/alvo.mjs && node --check src/lib/cache.mjs && node --check src/lib/http.mjs && node --check src/lib/md5.mjs && node --check src/lib/score.mjs && node --check src/lib/token-guard.mjs && node --check src/sources/registry.mjs && node --check scripts/build-worker.mjs && node --check scripts/dev-server.mjs && node --check verification/cache-check.mjs && node --check verification/worker-regression.mjs && node --check verification/dev-server-check.mjs && node --check verification/dev-process-check.mjs",
+    "build": "node scripts/build-worker.mjs",
+    "test": "node verification/cache-check.mjs && node verification/worker-regression.mjs && node verification/dev-server-check.mjs && node verification/dev-process-check.mjs",
+    "dev": "node scripts/dev-server.mjs",
+    "dev:worker": "wrangler dev --config wrangler.toml",
+    "dev:validation": "wrangler dev --config wrangler.validation.toml"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

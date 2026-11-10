@@ -1,7 +1,14 @@
+import {ehConfiguracao} from '../contract.mjs';
+
 export function pontuar(res){
   let s=0;const motivos=[];let parcial=false;
   for(const r of res){
-    if(r.status!=='ok'){parcial=true;continue;}
+    if(r.status!=='ok'){
+      // Falha de configuracao do operador (sem chave/sem token) nao e falha do
+      // relatorio: a fonte nao rodou, o restante das consultas segue valendo.
+      if(!ehConfiguracao(r.erro_codigo))parcial=true;
+      continue;
+    }
     const d=r.dados||{};
     if(r.id==='xon'){
       if(d.total>0){s+=Math.min(d.total*9,45);motivos.push(`${d.total} breaches`);}

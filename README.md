@@ -7,3 +7,46 @@ Versão do site com a interface Morph Orb e animação de pesquisa. O domínio `
 - Worker publicado no Cloudflare: [`cloudflare-worker.mjs`](./osint-infoc-hacker/cloudflare-worker.mjs)
 
 O ZIP inclui o HTML/CSS/JavaScript e as funções para hospedagem alternativa na Netlify. Para a produção atual, use o Worker do Cloudflare; ele mantém Turnstile, consultas e cache no servidor. O GitHub ainda não publica automaticamente no Cloudflare.
+
+## Estrutura do repositório
+
+```text
+/
+├─ .github/workflows/     # CI (verificação local) e deploy manual
+├─ current-site/
+│  └─ osint-infoc-hacker/ # Worker em produção: src/, public/, migrations/, verification/
+├─ osint-infoc-hacker/     # variante Netlify (Functions) e o Worker empacotado
+└─ package.json            # comandos do repositório (delegam para current-site/)
+```
+
+## Comandos
+
+Todos os comandos rodam na raiz e não precisam de instalação: o projeto não
+tem dependências de runtime (só Node 20+).
+
+```bash
+npm run dev                # servidor local de desenvolvimento (prévia)
+npm run dev -- --port 4000 # porta fixa
+npm run start              # alias de dev (usado por prévias automáticas)
+npm run preview            # alias de dev
+npm run check              # node --check no Worker e na variante Netlify
+npm test                   # verificações offline (contrato, cache, dev-server, CI)
+npm run build              # gera registro e migrações e injeta public/ no Worker
+npm run warm-token -- --escopo operador   # emite um token de operação
+```
+
+O build é idempotente: rodá-lo duas vezes não altera nenhum arquivo, e a CI
+falha se o `git diff` não estiver limpo depois do build.
+
+Se a porta pedida para a prévia já estiver ocupada, o servidor local não
+termina: ele cai para outra porta livre e imprime a URL real
+(`NEXUS_PREVIEW_URL=`). Para exigir a porta pedida, use
+`npm run dev -- --port 4000 --sem-fallback`.
+
+## Verificação contínua
+
+- `.github/workflows/ci.yml` roda `check`, `test`, `build` e confere a
+  idempotência do build a cada push ou pull request.
+- `.github/workflows/deploy.yml` publica o Worker **somente** por despacho
+  manual e exige confirmação digitada mais os segredos
+  `CLOUDFLARE_API_TOKEN` e `CLOUDFLARE_ACCOUNT_ID`.

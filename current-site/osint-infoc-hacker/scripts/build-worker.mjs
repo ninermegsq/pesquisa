@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { aplicarStats } from './stats.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = name => readFile(path.join(root, name), 'utf8');
@@ -15,6 +16,7 @@ for (const [name, file] of SOURCES) {
   if (!pattern.test(worker)) throw new Error('Worker constant missing: ' + name);
   let content;
   try { content = await read(file); } catch { console.warn('fonte ausente, constante preservada: ' + file); continue; }
+  if (name === 'HTML') content = aplicarStats(content);
   worker = worker.replace(pattern, 'const ' + name + ' = ' + JSON.stringify(content) + ';');
   injected++;
 }

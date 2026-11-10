@@ -1,12 +1,55 @@
 import {DDD} from '../data/ddd.mjs';
 import {falhar} from '../lib/http.mjs';
 import {md5} from '../lib/md5.mjs';
+import {REGISTRY_META} from './registry.meta.mjs';
+import {FaltaChaveError,FaltaTokenError} from '../contract.mjs';
 const J = async r => {
  const t=await r.text();
  try{return JSON.parse(t);}catch{throw Error(`resposta não-JSON (HTTP ${r.status})`);}
 };
 const lista=v=>Array.isArray(v)?v:[];
 const so=d=>String(d??'').replace(/\D/g,'');
+// Telefone no formato internacional. O projeto e brasileiro (a fonte DDD le o
+// prefixo 55): numero nacional de 10 ou 11 digitos recebe o codigo do pais.
+// Com 12 ou mais digitos o valor ja vem com codigo e e preservado.
+const telefoneE164=v=>{
+  const d=so(v);
+  return d.length>=12?d:'55'+d;
+};
+// Notas do SSL Labs, da melhor para a pior. A nota do host e a pior entre os
+// endpoints avaliados (mesma regra do provedor); nota fora da escala conta
+// como a pior, porque nao e uma nota confiavel.
+const ORDEM_NOTA=['A+','A','A-','B+','B','B-','C+','C','C-','D+','D','D-','E','F','T'];
+const piorNota=notas=>{
+  let pior=null,rank=-1;
+  for(const n of notas){
+    const i=ORDEM_NOTA.indexOf(String(n??'').toUpperCase());
+    const r=i<0?ORDEM_NOTA.length:i;
+    if(r>rank){rank=r;pior=n??null;}
+  }
+  return pior;
+};
+// O SSL Labs devolve os tempos em epoch (ms). O relatorio mostra ISO.
+const isoTempo=v=>{
+  if(v==null)return null;
+  const d=typeof v==='number'?new Date(v):new Date(String(v));
+  return Number.isNaN(d.getTime())?null:d.toISOString();
+};
+
+// Metadados vem do manifesto (src/sources/registry.json -> registry.meta.mjs).
+const metaDe=id=>REGISTRY_META.fontes[id];
+
+// Credencial opcional do operador, sempre declarada no manifesto.
+// Ausencia da credencial vira erro de configuracao (sem_chave/sem_token):
+// a fonte nao rodou, mas o restante do relatorio continua valendo.
+function exigirCredencial(env,id){
+  const requer=metaDe(id)?.requer;
+  if(!requer)return;
+  if(env&&env[requer.env])return;
+  throw requer.tipo==='token'
+    ?new FaltaTokenError(`sem token: ${requer.env}`)
+    :new FaltaChaveError(requer.env);
+}
 
 export const REGISTRY=[
  {id:'gravatar',tipos:['email'],custo:1,ttl:86400,provenance:'gravatar-public-profile',
@@ -51,15 +94,28 @@ export const REGISTRY=[
   }},
  {id:'telegram',tipos:['telefone'],custo:1,ttl:3600,provenance:'telegram-tme',
   async run(a,c){
-    const numero=so(a.valor);
-    const r=await c.get(`https://t.me/+${numero}?embed=1`,{accept:'text/html',timeout:5000});
+    const numero=telefoneE164(a.valor);
+    // Sem ?embed=1: o Telegram devolve a pagina renderizada no servidor, com
+    // tgme_page_title e tgme_page_additional. Com ?embed=1 a resposta e um
+    // widget em JavaScript, sem os campos que a fonte extrai.
+    const r=await c.get(`https://t.me/+${numero}`,{accept:'text/html',timeout:5000});
     const campos={titulo:'',descricao:''};
     const parser=new HTMLRewriter()
       .on('.tgme_page_title',{text(t){campos.titulo+=t.text;}})
-      .on('.tgme_page_description',{text(t){campos.descricao+=t.text;}});
-    await parser.transform(r).text();
+      .on('.tgme_page_description',{text(t){campos.descricao+=t.text;}})
+      .on('.tgme_page_additional',{text(t){campos.descricao+=t.text;}});
+    // No runtime do Cloudflare, transform() devolve a Response na hora e os
+    // handlers disparam na leitura do corpo. O shim local pode devolver uma
+    // Promise: normaliza os dois formatos antes de ler o corpo, senao a fonte
+    // quebra o scan com "parser.transform(...).text is not a function".
+    const saida=await Promise.resolve(parser.transform(r));
+    if(typeof saida?.text==='function')await saida.text();
     const titulo=campos.titulo.trim(),descricao=campos.descricao.trim();
-    return {dados:{existe:Boolean(titulo),usuario:'+'+numero,titulo:titulo||null,descricao:descricao||null}};
+    // O Telegram serve a mesma pagina de contato para qualquer numero: a
+    // pagina existir nao prova que exista conta. A fonte nao afirma o que o
+    // provedor nao informa.
+    return {dados:{paginaPublica:Boolean(titulo),usuario:'+'+numero,titulo:titulo||null,descricao:descricao||null,
+      observacao:'O Telegram entrega a mesma pagina de contato para qualquer numero; a existencia da conta so e resolvida no aplicativo.'}};
   }},
  {id:'xon',tipos:['email'],custo:2,ttl:43200,provenance:'xposedornot',
   async run(a,c){
@@ -87,7 +143,7 @@ export const REGISTRY=[
   }},
  {id:'github',tipos:['email'],custo:1,ttl:86400,provenance:'github-users-api',
   async run(a,c){
-    if(!c.env.GITHUB_TOKEN) throw Error('sem token');
+    exigirCredencial(c.env,'github');
     const r=await c.get(`https://api.github.com/search/users?q=${encodeURIComponent(a.valor)}+in:email&per_page=5`,{timeout:7000,
       headers:{authorization:`Bearer ${c.env.GITHUB_TOKEN}`,accept:'application/vnd.github+json'}});
     if(!r.ok) throw falhar(r);
@@ -96,7 +152,7 @@ export const REGISTRY=[
   }},
  {id:'emailrep',tipos:['email'],custo:1,ttl:43200,provenance:'emailrep',
   async run(a,c){
-    if(!c.env.EMAILREP_KEY) throw Error('sem chave');
+    exigirCredencial(c.env,'emailrep');
     const r=await c.get(`https://emailrep.io/${encodeURIComponent(a.valor)}`,{timeout:7000,headers:{key:c.env.EMAILREP_KEY}});
     if(!r.ok) throw falhar(r);
     const j=await J(r);
@@ -146,13 +202,34 @@ export const REGISTRY=[
     return {dados:{handle:j.handle,status:j.status||[],eventos:lista(j?.events).map(e=>({acao:e.eventAction,data:e.eventDate})),
       ns:lista(j?.nameservers).map(n=>n.ldhName),entidades:lista(j?.entities).map(e=>e.handle).filter(Boolean)}};
   }},
- {id:'observatory',tipos:['dominio'],custo:1,ttl:3600,provenance:'mozilla-observatory',
+ // A API publica do Mozilla Observatory foi descontinuada: todas as rotas
+ // /api/* respondem 404 e a SPA nao entrega mais os dados de seguranca do
+ // host. A avaliacao TLS do dominio passou para o Qualys SSL Labs: a API
+ // publica responde 200 com a nota em cache (ate 24h) e, quando o host ainda
+ // nao foi avaliado, devolve status IN_PROGRESS sem nota. Isso nao e erro:
+ // a fonte devolve o estado "em andamento" e o observacao explica.
+ //
+ // O formato real da resposta (v3) nao traz nota nem pontuacao no nivel do
+ // host: a nota vem por endpoint, em `endpoints[].grade`. A fonte publica a
+ // pior nota entre os servidores avaliados, que e a regra do proprio SSL Labs.
+ {id:'ssllabs',tipos:['dominio'],custo:1,ttl:3600,provenance:'qualys-ssllabs',
   async run(a,c){
-    const r=await c.get(`https://observatory.mozilla.org/api/v2/analyze?host=${encodeURIComponent(a.valor)}`,{timeout:9000});
+    const host=String(a.valor??'').trim().toLowerCase();
+    const r=await c.get(`https://api.ssllabs.com/api/v3/analyze?host=${encodeURIComponent(host)}&fromCache=on&maxAge=24`,{timeout:9000});
     if(!r.ok) throw falhar(r);
     const j=await J(r);
-    return {dados:{nota:j.grade??null,score:j.score??null,
-      falhas:Object.entries(j.tests||{}).filter(([,v])=>v.pass===false).map(([k])=>k)}};
+    const situacao=String(j.status??'').toUpperCase();
+    if(situacao==='ERROR') throw Error(String(j.statusMessage||'erro na analise TLS'));
+    if(situacao==='RATE_LIMIT') throw Error('limite de requisicoes do SSL Labs');
+    if(situacao==='DNS') return {dados:{situacao:'dns',nota:null,
+      observacao:'O SSL Labs nao conseguiu resolver este dominio, portanto nao ha avaliacao TLS para ele.'}};
+    if(situacao!=='READY') return {ttl:300,dados:{situacao:'em_andamento',nota:null,
+      observacao:'O SSL Labs iniciou a analise TLS deste dominio e ainda nao publicou a nota; a proxima consulta encontra a avaliacao em cache.'}};
+    const endpoints=lista(j.endpoints);
+    return {dados:{situacao:'pronta',nota:piorNota(endpoints.map(e=>e?.grade)),
+      servidores:endpoints.length,avaliadoEm:isoTempo(j.testTime),avaliacaoIniciadaEm:isoTempo(j.startTime),
+      avisos:endpoints.filter(e=>e?.hasWarnings).map(e=>({ip:e.ipAddress??null,mensagem:e.statusMessage??null})),
+      observacao:'Nota TLS (cifra e configuracao do HTTPS) medida pelo Qualys SSL Labs; a nota exibida e a pior entre os servidores avaliados.'}};
   }},
  {id:'urlscan',tipos:['dominio'],custo:1,ttl:21600,provenance:'urlscan-public',
   async run(a,c){
@@ -203,7 +280,7 @@ export const REGISTRY=[
   }},
  {id:'ceis',tipos:['cnpj'],custo:1,ttl:86400,provenance:'portal-transparencia-ceis',
   async run(a,c){
-    if(!c.env.TRANSPARENCIA_KEY) throw Error('sem chave');
+    exigirCredencial(c.env,'ceis');
     const r=await c.get(`https://api.portaldatransparencia.gov.br/api-de-dados/ceis?cnpjSancionado=${a.valor}`,{timeout:8000,
       headers:{'chave-api-dados':c.env.TRANSPARENCIA_KEY}});
     if(!r.ok) throw falhar(r);
@@ -241,3 +318,23 @@ export const REGISTRY=[
     return {dados:{total:j?.hits?.total?.value||0,processos:hits.map(h=>({numero:h?._source?.numeroProcesso??null,classe:h?._source?.classe?.nome??null}))}};
   }}
 ];
+
+// ---------------------------------------------------------------------------
+// O manifesto e a fonte da verdade dos metadados. Qualquer divergencia entre
+// src/sources/registry.json e a implementacao interrompe o carregamento do
+// modulo: erro em tempo de build e nao em tempo de consulta.
+// ---------------------------------------------------------------------------
+for(const fonte of REGISTRY){
+  const meta=metaDe(fonte.id);
+  if(!meta)throw new Error(`fonte sem manifesto: ${fonte.id}`);
+  if(String(fonte.tipos)!==String(meta.tipos))throw new Error(`tipos divergentes do manifesto: ${fonte.id}`);
+  if(fonte.custo!==meta.custo)throw new Error(`custo divergente do manifesto: ${fonte.id}`);
+  if(fonte.ttl!==meta.ttl)throw new Error(`ttl divergente do manifesto: ${fonte.id}`);
+  if(fonte.provenance!==meta.provenance)throw new Error(`provenance divergente do manifesto: ${fonte.id}`);
+  const usaCredencial=String(fonte.run).includes('exigirCredencial');
+  if(usaCredencial!==Boolean(meta.requer))throw new Error(`credencial divergente do manifesto: ${fonte.id}`);
+  Object.assign(fonte,{titulo:meta.titulo,chave:meta.chave,requer:meta.requer});
+}
+const idsManifesto=Object.keys(REGISTRY_META.fontes);
+if(idsManifesto.length!==REGISTRY.length)throw new Error(`contagem de fontes divergente: manifesto ${idsManifesto.length}, implementacao ${REGISTRY.length}`);
+for(const id of idsManifesto)if(!REGISTRY.some(f=>f.id===id))throw new Error(`fonte do manifesto sem implementacao: ${id}`);

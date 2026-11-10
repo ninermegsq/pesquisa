@@ -84,10 +84,6 @@ EmailRep|reputação pública de e-mail · API opcional|https://emailrep.io/`}
 ];
 const AUTOMATIC = new Set(['XposedOrNot','Hudson Rock','Gravatar','GitHub Search','Keybase','Shodan','MXToolbox','SecurityTrails','EmailRep']);
 const TOOLS = CATEGORIES.flatMap((cat,ci)=>cat.items.trim().split('\n').map(row=>{const [name,desc,url]=row.split('|');return {name,desc,url,category:ci,auto:AUTOMATIC.has(name)&&!(ci===3&&name==='GitHub Search'),apiKeyRequired:false};}));
-document.getElementById('stat-total').textContent=24;
-document.getElementById('stat-auto').textContent=12;
-document.getElementById('stat-cats').textContent=6;
-document.getElementById('stat-keys').textContent=0;
 const $=id=>document.getElementById(id);
 const EMAIL_RE=/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
 const PROVIDERS=new Set('gmail.com hotmail.com outlook.com yahoo.com proton.me protonmail.com icloud.com bol.com.br uol.com.br live.com gmx.com yandex.com'.split(' '));
@@ -209,8 +205,10 @@ function renderResults(data,email){
 }
 let current=null,scanning=false,widgetId=null,siteKey=null;
 const form=$('scan-form');
-function pushLog(index,message,type='neutral'){
- const log=$('scan-log');if(!log)return;const el=document.createElement('div');el.className=type;el.textContent=`[${index}/9] ${message}`;log.append(el);log.scrollTop=log.scrollHeight;
+function applyStats(){const trust=document.querySelector('.trust-row[data-stats]');const fallback={total:24,email:12,categorias:6,keys:0};let s=fallback;if(trust){try{s=JSON.parse(trust.getAttribute('data-stats'))||fallback;}catch{s=fallback;}}const map={'stat-total':s.total,'stat-auto':s.email,'stat-cats':s.categorias,'stat-keys':s.keys};for(const[id,value]of Object.entries(map)){const el=document.getElementById(id);if(el)el.textContent=String(value);}}
+applyStats();
+function pushLog(passo,mensagem,nivel='neutral'){
+ const log=$('scan-log');if(!log)return;const el=document.createElement('div');el.className=nivel;el.textContent=`[${passo}/9] ${mensagem}`;log.append(el);log.scrollTop=log.scrollHeight;
 }
 async function getJson(url,options){const res=await fetch(url,{cache:'no-store',...options});let data;try{data=await res.json();}catch{throw Error(`Resposta inválida do servidor (${res.status}).`);}if(!res.ok)throw Error(data.error||`HTTP ${res.status}`);return data;}
 function loadTurnstile(){return new Promise((resolve,reject)=>{if(window.turnstile){resolve(window.turnstile);return;}const script=document.createElement('script');script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';script.async=true;script.onload=()=>resolve(window.turnstile);script.onerror=()=>reject(Error('Cloudflare Turnstile indisponível.'));document.head.append(script);});}
@@ -232,23 +230,33 @@ function renderPivos(pivos){
 async function scan(event){
  event.preventDefault();if(scanning)return;
  const alvo=$('email').value.trim();$('form-error').textContent='';if(!alvo){$('form-error').textContent='Informe um alvo.';return;}
- scanning=true;$('scan-announcement').textContent='';setOrbPhase('scanning');$('scan-btn').disabled=true;$('stage').replaceChildren();$('actions').hidden=true;current=null;
+ scanning=true;$('scan-announcement').textContent='';setOrbPhase('scanning');$('scan-btn').disabled=true;$('stage').replaceChildren();current=null;
+ const logEl=$('scan-log');if(logEl){logEl.replaceChildren();logEl.hidden=false;}
+ pushLog(1,'Desafio de segurança acionado.','info');
  try{
  const cfToken=await challenge();
+ pushLog(2,'Token de uso único emitido.','info');
  const signed=await getJson('/.netlify/functions/token',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({cfToken,alvo})});
+ pushLog(3,'Consulta autorizada.','info');
  const j=await getJson('/api/scan',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({alvo,token:signed.token})});
+ pushLog(4,'Fontes públicas consultadas.','success');
  const card=document.createElement('section');card.className='scorecard';
  card.innerHTML=`<div class="eyebrow">RISCO DE EXPOSIÇÃO</div><span class="score-num">${escapeHTML(j.score?.valor??0)}</span><span class="score-suffix">/100 · ${escapeHTML(j.score?.nivel||'BAIXO')}${j.score?.parcial?' · PARCIAL':''}</span><p class="public-note">${escapeHTML((j.score?.motivos||[]).join(' · ')||'sem sinais relevantes')}</p>`;
  $('stage').append(card);const wrapper=document.createElement('div');wrapper.innerHTML=j.html||'';$('stage').append(...wrapper.childNodes);
- const meta=document.createElement('p');meta.className='muted';meta.textContent=`${j.meta?.executadas??0}/${j.meta?.planejadas??0} fontes · custo declarado: ${j.meta?.subrequests??0} subrequests`;$('stage').append(meta);renderPivos(j.pivos);
+ const meta=document.createElement('p');meta.className='muted';meta.textContent=`${j.meta?.executadas??0}/${j.meta?.planejadas??0} fontes · custo declarado: ${j.meta?.subrequests??0} subrequests · job ${j.meta?.job_id||'sem id'}`;$('stage').append(meta);renderPivos(j.pivos);
  current={email:j.alvo?.valor||alvo,data:j};$('actions').hidden=false;setOrbPhase('done',{breaches:[]});$('answer-content').textContent=`${j.meta?.executadas??0} fontes processadas. ${j.score?.parcial?'Resultado parcial.':'Análise concluída.'}`;
+ pushLog(5,`${j.meta?.executadas??0} fontes processadas.`,'success');
+ pushLog(6,j.score?.parcial?'Resultado parcial.':'Análise concluída.','success');
+ pushLog(7,'Relatório renderizado.','success');
+ pushLog(8,'Exportação JSON disponível.','success');
+ pushLog(9,'Painel de ações liberado.','success');
  $('scan-announcement').textContent=`Análise concluída. ${Math.max(0,reportRows().length-1)} achados.`;
- }catch(err){const message=err?.message||'Falha na análise.';setOrbPhase('error',message);$('form-error').textContent=message;$('scan-announcement').textContent='Verificação interrompida';}
+ }catch(err){const message=err?.message||'Falha na análise.';setOrbPhase('error',message);$('form-error').textContent=message;$('scan-announcement').textContent='Verificação interrompida';pushLog(4,message,'bad');}
  finally{scanning=false;$('scan-btn').disabled=false;$('security-slot').classList.remove('active');$('security-slot').replaceChildren();try{if(widgetId!==null)window.turnstile?.remove(widgetId);}catch{}widgetId=null;}
 }
 form.addEventListener('submit',scan);
 $('stage').addEventListener('click',event=>{const btn=event.target.closest('.copy-dork');if(!btn)return;const value=btn.dataset.dork||'';const old=btn.textContent;navigator.clipboard.writeText(value).then(()=>{btn.textContent='COPIADO';setTimeout(()=>btn.textContent=old,1300);}).catch(()=>{btn.textContent='ERRO';});});
-$('clear-btn').addEventListener('click',()=>{if(scanning)return;setOrbPhase('idle');current=null;$('stage').replaceChildren();$('scan-announcement').textContent='';$('actions').hidden=true;$('email').value='';$('form-error').textContent='';$('pass-panel').hidden=true;$('password').value='';$('password-result').textContent='';$('password-toggle').setAttribute('aria-expanded','false');$('scan-btn').removeAttribute('data-ready');positionIdlePill();$('email').focus();});
+$('clear-btn').addEventListener('click',()=>{if(scanning)return;setOrbPhase('idle');current=null;$('stage').replaceChildren();const logEl=$('scan-log');if(logEl){logEl.replaceChildren();logEl.hidden=true;}$('scan-announcement').textContent='';$('actions').hidden=true;$('email').value='';$('form-error').textContent='';$('pass-panel').hidden=true;$('password').value='';$('password-result').textContent='';$('password-toggle').setAttribute('aria-expanded','false');$('scan-btn').removeAttribute('data-ready');positionIdlePill();$('email').focus();});
 function reportFilename(ext){return 'osint-report-'+current.email.replace(/[^a-z0-9.-]/gi,'_')+'.'+ext;}
 function downloadReport(content,type,ext){if(!current)return;const url=URL.createObjectURL(new Blob([content],{type}));const a=document.createElement('a');a.href=url;a.download=reportFilename(ext);document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function csvCell(value){let v=String(value??'');if(/^[=+@\-\t\r]/.test(v))v="'"+v;return '"'+v.replace(/"/g,'""')+'"';}
@@ -258,7 +266,7 @@ function reportRows(){
  for(const source of current.data.fontes||[]){if(source.status==='ok')flatten(source,'',source.dados);else rows.push([source.id,'status',source.erro||source.status,source.provenance||'',source.timestamp||current.data.gerado_em||'']);}
  return rows;
 }
-$('export-json').addEventListener('click',()=>{if(!current)return;const report={schemaVersion:1,generatedAt:new Date().toISOString(),email:current.email,data:current.data,sources:current.data.sources||{}};downloadReport(JSON.stringify(report,null,2),'application/json;charset=utf-8','json');});
+$('export-json').addEventListener('click',()=>{if(!current)return;const data={...current.data};delete data.fontes;delete data.sources;const report={schemaVersion:1,generatedAt:new Date().toISOString(),email:current.email,fontes:current.data.fontes||[],data};downloadReport(JSON.stringify(report,null,2),'application/json;charset=utf-8','json');});
 $('export-csv').addEventListener('click',()=>{if(!current)return;const csv='\uFEFF'+reportRows().map(row=>row.map(csvCell).join(',')).join('\r\n');downloadReport(csv,'text/csv;charset=utf-8','csv');});
 $('password-toggle').addEventListener('click',()=>{const show=$('pass-panel').hidden;$('pass-panel').hidden=!show;$('password-toggle').setAttribute('aria-expanded',String(show));if(show)$('password').focus();});
 $('password-run').addEventListener('click',async()=>{const p=$('password').value;if(!p){$('password-result').textContent='Digite uma senha.';return;}const btn=$('password-run');btn.disabled=true;try{const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-1',new TextEncoder().encode(p)))).map(v=>v.toString(16).padStart(2,'0')).join('').toUpperCase();const prefix=hash.slice(0,5),suffix=hash.slice(5);const response=await fetch(`https://api.pwnedpasswords.com/range/${prefix}`,{cache:'no-store',headers:{'Add-Padding':'true'}});if(!response.ok)throw Error(`HTTP ${response.status}`);const body=await response.text();const match=body.split(/\r?\n/).find(line=>line.split(':')[0]===suffix);const hits=match?Number(match.split(':')[1]||0):0;$('password-result').textContent=hits?`Senha encontrada ${fmt(hits)} vezes em coleções de vazamentos. Não a reutilize.`:'não encontrada — isso não garante que a senha seja segura.';}catch(err){$('password-result').textContent='Não foi possível consultar a base de senhas: '+err.message;}finally{btn.disabled=false;}});

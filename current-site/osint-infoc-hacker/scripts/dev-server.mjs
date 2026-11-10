@@ -25,10 +25,32 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { handleScan } from '../src/scan.mjs';
 import { detectar } from '../src/lib/alvo.mjs';
+import { aplicarStats } from './stats.mjs';
+import { REGISTRY } from '../src/sources/registry.mjs';
+import { verificarTokenCalor } from '../src/lib/warm.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 const publicDir = path.join(root, 'public');
+
+// Argumentos de linha de comando: --port <numero> e --host <endereco>.
+// O preview do editor abre a URL automaticamente, por isso a porta pode ser
+// fixada e o endereco pode ser restringido a uma interface.
+const argumentos = process.argv.slice(2);
+const opcaoCli = nome => {
+  for (let i = 0; i < argumentos.length; i++) {
+    const arg = argumentos[i];
+    if (arg === `--${nome}`) return argumentos[i + 1] ?? '';
+    if (arg.startsWith(`--${nome}=`)) return arg.slice(nome.length + 3);
+  }
+  return '';
+};
+const portaCli = Number(opcaoCli('port')) || null;
+const hostCli = opcaoCli('host').trim();
+// --sem-fallback: nao cair para outra porta quando a pedida esta ocupada.
+// Sem a flag, o servidor tenta outras portas livres para que a previa do
+// editor abra mesmo com a porta preferida ja em uso.
+const semFallback = argumentos.includes('--sem-fallback');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -67,31 +89,44 @@ globalThis.caches = {
   }
 };
 
-// HTMLRewriter minimo: suficiente para o seletor de classe usado pela fonte
-// telegram (registry.mjs). Qualquer seletor nao suportado e ignorado.
+// HTMLRewriter minimo: espelha a API do runtime Cloudflare, em que transform()
+// devolve a Response de imediato e os handlers disparam na leitura do corpo.
+// Suficiente para o seletor de classe usado pela fonte telegram (registry.mjs).
+// Qualquer seletor nao suportado e ignorado.
 class LocalHTMLRewriter {
   constructor() { this.handlers = []; }
   on(selector, handlers) { this.handlers.push({ selector, handlers }); return this; }
-  async transform(response) {
-    const type = response.headers.get('content-type') || '';
-    if (!type.includes('text/html')) return response;
-    let html = await response.text();
-    for (const { selector, handlers } of this.handlers) {
-      if (!selector.startsWith('.')) continue;
-      const cls = selector.slice(1);
-      const pattern = new RegExp(
-        `<([a-zA-Z][\\w-]*)\\b[^>]*class="[^"]*\\b${cls}\\b[^"]*"[^>]*>([\\s\\S]*?)<\\/\\1>`,
-        'g'
-      );
-      html = html.replace(pattern, (match, tag, inner) => {
-        const content = inner.replace(/<[^>]+>/g, '');
-        for (const [type_, fn] of Object.entries(handlers || {})) {
-          if (type_ === 'text' && typeof fn === 'function') fn({ text: content });
-        }
-        return match;
-      });
-    }
-    return new Response(html, { status: response.status, headers: response.headers });
+  transform(response) {
+    const registered = this.handlers;
+    const parse = async () => {
+      const type = response.headers.get('content-type') || '';
+      if (!type.includes('text/html')) return response.text();
+      let html = await response.text();
+      for (const { selector, handlers } of registered) {
+        if (!selector.startsWith('.')) continue;
+        const cls = selector.slice(1);
+        const pattern = new RegExp(
+          `<([a-zA-Z][\\w-]*)\\b[^>]*class="[^"]*\\b${cls}\\b[^"]*"[^>]*>([\\s\\S]*?)<\\/\\1>`,
+          'g'
+        );
+        html = html.replace(pattern, (match, tag, inner) => {
+          const content = inner.replace(/<[^>]+>/g, '');
+          for (const [type_, fn] of Object.entries(handlers || {})) {
+            if (type_ === 'text' && typeof fn === 'function') fn({ text: content });
+          }
+          return match;
+        });
+      }
+      return html;
+    };
+    // No Cloudflare, transform() e sincrono e devolve a Response; aqui o parse
+    // acontece em .text(), que e o unico metodo usado pela fonte.
+    return {
+      async text() { return parse(); },
+      get ok() { return response.ok; },
+      get status() { return response.status; },
+      get headers() { return response.headers; }
+    };
   }
 }
 if (!globalThis.HTMLRewriter) globalThis.HTMLRewriter = LocalHTMLRewriter;
@@ -114,6 +149,55 @@ const env = {
   BUDGET_SUBREQ: '38',
   TURNSTILE_SITEKEY: '1x00000000000000000000AA'
 };
+
+// Token de operacao no ambiente local: so funciona quando o operador define
+// WARM_SECRET (ou HMAC_SECRET) e usa o mesmo valor em scripts/warm-token.mjs.
+const WARM_ENV = {
+  WARM_SECRET: process.env.WARM_SECRET || process.env.HMAC_SECRET || '',
+  HMAC_SECRET: process.env.HMAC_SECRET || ''
+};
+
+// Historico local de scans (o Durable Object nao existe fora do Cloudflare).
+const historicoJobs = [];
+const CODES_DE_CONFIGURACAO = ['sem_chave', 'sem_token'];
+function registrarJobLocal(payload, escopo) {
+  const jobId = payload?.meta?.job_id;
+  if (!jobId) return;
+  const fontes = Array.isArray(payload?.fontes) ? payload.fontes : [];
+  historicoJobs.push({
+    job_id: jobId,
+    criado_em: Date.now(),
+    escopo: escopo || 'visitante',
+    total: fontes.length,
+    ok: fontes.filter(f => f.status === 'ok').length,
+    falhas: fontes.filter(f => f.status !== 'ok' && !CODES_DE_CONFIGURACAO.includes(f.erro_codigo)).length,
+    fontes: Array.isArray(payload?.fonte_saude) ? payload.fonte_saude : []
+  });
+  if (historicoJobs.length > 200) historicoJobs.shift();
+}
+function saudeLocal() {
+  const porFonte = {};
+  for (const job of historicoJobs) {
+    for (const fonte of job.fontes || []) {
+      const item = porFonte[fonte.id] || (porFonte[fonte.id] = { id: fonte.id, ok: 0, falhas: 0, codigos: {} });
+      if (fonte.status === 'ok') { item.ok++; continue; }
+      item.falhas++;
+      const codigo = fonte.erro_codigo || 'erro';
+      item.codigos[codigo] = (item.codigos[codigo] || 0) + 1;
+    }
+  }
+  const total = historicoJobs.length;
+  const parciais = historicoJobs.filter(j => j.falhas > 0).length;
+  return {
+    gerado_em: new Date().toISOString(),
+    escopo: 'local',
+    aviso: 'Saude local em memoria: reiniciar o servidor apaga o historico.',
+    schema: [],
+    versao_migracoes: null,
+    jobs: { total, parciais, completos: total - parciais },
+    fontes: Object.values(porFonte).sort((a, b) => a.id.localeCompare(b.id))
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Token de uso unico (HMAC local)
@@ -262,7 +346,7 @@ async function sendIndex(res) {
   let html;
   try { html = await readFile(path.join(publicDir, 'index.html'), 'utf8'); }
   catch { return sendJson(res, 500, { error: 'public/index.html nao encontrado.' }); }
-  sendBuffer(res, 200, injectShim(html), { 'content-type': MIME['.html'] });
+  sendBuffer(res, 200, injectShim(aplicarStats(html, REGISTRY)), { 'content-type': MIME['.html'] });
 }
 
 async function sendFile(res, file, type) {
@@ -285,7 +369,7 @@ async function devToken(req, res) {
     return sendJson(res, 200, { siteKey: '1x00000000000000000000AA', devMode: true });
   }
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Metodo nao permitido.' });
-  if (!originAllowed(req.headers.origin || '')) return sendJson(res, 403, { error: 'Origem nao permitida.' });
+  if (!originAllowed(req.headers.origin || '')) return sendJson(res, 403, { error: 'Origem nao permitida.', origem_recebida: req.headers.origin || null, origens_liberadas: ['localhost', '127.0.0.1', '[::1]'].concat([...allowedOrigins]) });
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); } catch { return sendJson(res, 400, { error: 'JSON invalido.' }); }
   let alvo;
@@ -299,14 +383,16 @@ async function devToken(req, res) {
 
 async function devScan(req, res) {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Metodo nao permitido.' });
-  if (!originAllowed(req.headers.origin || '')) return sendJson(res, 403, { error: 'Origem nao permitida.' });
+  if (!originAllowed(req.headers.origin || '')) return sendJson(res, 403, { error: 'Origem nao permitida.', origem_recebida: req.headers.origin || null, origens_liberadas: ['localhost', '127.0.0.1', '[::1]'].concat([...allowedOrigins]) });
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); } catch { return sendJson(res, 400, { error: 'JSON invalido.' }); }
   let alvo;
   try { alvo = detectar(body?.alvo); } catch (e) { return sendJson(res, 400, { error: e.message }); }
   if (alvo.tipo === 'cpf') return sendJson(res, 400, { error: 'Consulta de CPF fora do escopo.' });
   const ip = clientIp(req);
-  if (!consumeToken(body?.token, alvo.valor, ip)) {
+  // Token de operacao (escopo aquecimento): mesma porta de entrada do Worker.
+  const calor = verificarTokenCalor(req.headers['x-warm-token'], { env: WARM_ENV, escopo: 'aquecimento', alvo: alvo.valor });
+  if (!calor.ok && !consumeToken(body?.token, alvo.valor, ip)) {
     return sendJson(res, 429, { error: 'Token ausente, expirado, reutilizado ou vinculado a outro alvo.' });
   }
   const host = req.headers.host || 'localhost';
@@ -317,17 +403,28 @@ async function devScan(req, res) {
   });
   // O token foi validado contra o IP real; o rate limit usa a chave de sessao
   // local para nao gastar a cota de producao durante o desenvolvimento.
-  const response = await handleScan(request, env, rateLimitIp(ip));
+  const response = await handleScan(request, env, calor.ok ? `${rateLimitIp(ip)}#aquecimento` : rateLimitIp(ip), { escopo: calor.ok ? 'aquecimento' : 'visitante' });
   const payload = await response.text();
+  try { registrarJobLocal(JSON.parse(payload), calor.ok ? 'aquecimento' : 'visitante'); } catch { /* payload inesperado */ }
   const headers = Object.fromEntries(response.headers.entries());
   res.writeHead(response.status, { ...headers, 'cache-control': 'no-store' });
   res.end(payload);
+}
+
+// Painel de saude do operador. Fora do Cloudflare o historico fica em
+// memoria; a leitura exige um token de operador (escopo "operador").
+async function devSaude(req, res) {
+  if (req.method !== 'GET') return sendJson(res, 405, { error: 'Metodo nao permitido.' });
+  const auth = verificarTokenCalor(req.headers['x-warm-token'], { env: WARM_ENV, escopo: 'operador' });
+  if (!auth.ok) return sendJson(res, 401, { error: 'Token de operador ausente ou invalido.', motivo: auth.motivo });
+  return sendJson(res, 200, saudeLocal());
 }
 
 async function route(req, res) {
   const url = new URL(req.url || '/', 'http://localhost');
   const pathname = decodeURIComponent(url.pathname);
   if (pathname === '/api/scan') return devScan(req, res);
+  if (pathname === '/api/saude') return devSaude(req, res);
   if (pathname === '/.netlify/functions/token') return devToken(req, res);
   if (pathname === '/' || pathname === '/index.html') return sendIndex(res);
   if (pathname === '/app.js') return sendFile(res, path.join(publicDir, 'app.js'));
@@ -385,9 +482,9 @@ function listenOn(server, port, host) {
   });
 }
 
-async function openPort(port) {
+async function openPort(port, bindings = BINDINGS) {
   const opened = [];
-  for (const host of BINDINGS) {
+  for (const host of bindings) {
     const server = createDevServer();
     const address = await listenOn(server, port, host);
     if (!address) { try { server.close(); } catch { /* nao estava ouvindo */ } continue; }
@@ -397,16 +494,23 @@ async function openPort(port) {
 }
 
 async function main() {
-  const explicit = process.env.PORT ? Number(process.env.PORT) : null;
-  const candidates = explicit ? [explicit] : [3000, 5173, 8080, 4173, 5000];
+  const explicit = portaCli || (process.env.PORT ? Number(process.env.PORT) : null);
+  const bindings = hostCli ? [hostCli] : BINDINGS;
+  const candidatas = [3000, 5173, 8080, 4173, 5000];
+  // Com porta explicita e sem --sem-fallback, as portas livres alternatives
+  // entram na lista: a previa abre em vez de o processo terminar.
+  const candidates = explicit
+    ? (semFallback ? [explicit] : [explicit, ...candidatas.filter(p => p !== explicit)])
+    : candidatas;
   const groups = [];
   for (const port of candidates) {
-    const opened = await openPort(port);
+    const opened = await openPort(port, bindings);
     if (opened.length) groups.push({ port, opened });
-    if (explicit) break;
+    if (explicit && (semFallback || groups.length)) break;
   }
   if (!groups.length) {
-    console.error('[dev] nenhuma porta disponivel para o servidor local.');
+    const attemptadas = candidates.join(', ');
+    console.error(`[dev] nenhuma porta disponivel para o servidor local. Portas tentadas: ${attemptadas}. Defina PORT=<numero> ou use --port <numero> para escolher outra e tente novamente.`);
     process.exitCode = 1;
     return;
   }
@@ -424,6 +528,7 @@ async function main() {
   }
   console.log('');
   console.log(`  Server running on http://localhost:${groups[0].port}`);
+  console.log(`  NEXUS_PREVIEW_URL=http://localhost:${groups[0].port}`);
   console.log('');
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, () => { for (const s of servers) s.close(() => {}); process.exit(0); });

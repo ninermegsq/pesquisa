@@ -1,0 +1,34 @@
+{
+  "versao": 1,
+  "descricao": "Manifesto declarativo das fontes do scanner. Os metadados sao a fonte da verdade: scripts/build-registry.mjs gera src/sources/registry.meta.mjs e src/sources/registry.mjs valida cada implementacao contra esse manifesto no carregamento do modulo.",
+  "regras": {
+    "chave": "chave exigida ao visitante. O projeto nao exige nenhuma: sempre false.",
+    "requer": "credencial opcional do operador (chave ou token). Quando ausente, a fonte responde com o codigo sem_chave ou sem_token e o relatorio NAO e marcado como parcial."
+  },
+  "fontes": [
+    { "id": "gravatar", "titulo": "Gravatar", "tipos": ["email"], "custo": 1, "ttl": 86400, "provenance": "gravatar-public-profile", "chave": false, "requer": null },
+    { "id": "pgp", "titulo": "PGP", "tipos": ["email"], "custo": 1, "ttl": 604800, "provenance": "keys-openpgp", "chave": false, "requer": null },
+    { "id": "gitlab", "titulo": "GitLab", "tipos": ["email"], "custo": 1, "ttl": 21600, "provenance": "gitlab-users-api", "chave": false, "requer": null },
+    { "id": "npm", "titulo": "npm", "tipos": ["email"], "custo": 1, "ttl": 21600, "provenance": "npm-registry", "chave": false, "requer": null },
+    { "id": "bluesky", "titulo": "Bluesky", "tipos": ["email"], "custo": 1, "ttl": 21600, "provenance": "bsky-public-api", "chave": false, "requer": null },
+    { "id": "telegram", "titulo": "Telegram", "tipos": ["telefone"], "custo": 1, "ttl": 3600, "provenance": "telegram-tme", "chave": false, "requer": null },
+    { "id": "xon", "titulo": "Breaches e senhas", "tipos": ["email"], "custo": 2, "ttl": 43200, "provenance": "xposedornot", "chave": false, "requer": null },
+    { "id": "hudsonrock", "titulo": "Infostealer", "tipos": ["email"], "custo": 1, "ttl": 43200, "provenance": "hudson-rock-cavalier", "chave": false, "requer": null },
+    { "id": "github", "titulo": "GitHub", "tipos": ["email"], "custo": 1, "ttl": 86400, "provenance": "github-users-api", "chave": false, "requer": { "tipo": "token", "env": "GITHUB_TOKEN" } },
+    { "id": "emailrep", "titulo": "Reputacao", "tipos": ["email"], "custo": 1, "ttl": 43200, "provenance": "emailrep", "chave": false, "requer": { "tipo": "chave", "env": "EMAILREP_KEY" } },
+    { "id": "dns", "titulo": "DNS e e-mail", "tipos": ["email", "dominio"], "custo": 4, "ttl": 300, "provenance": "google-doh", "chave": false, "requer": null },
+    { "id": "crtsh", "titulo": "Subdominios", "tipos": ["email", "dominio"], "custo": 1, "ttl": 43200, "provenance": "subdomain-center", "chave": false, "requer": null },
+    { "id": "wayback", "titulo": "URLs historicas", "tipos": ["email", "dominio"], "custo": 1, "ttl": 43200, "provenance": "wayback-cdx", "chave": false, "requer": null },
+    { "id": "rdap", "titulo": "RDAP", "tipos": ["dominio"], "custo": 1, "ttl": 86400, "provenance": "rdap", "chave": false, "requer": null },
+    { "id": "ssllabs", "titulo": "SSL Labs", "tipos": ["dominio"], "custo": 1, "ttl": 3600, "provenance": "qualys-ssllabs", "chave": false, "requer": null },
+    { "id": "urlscan", "titulo": "urlscan", "tipos": ["dominio"], "custo": 1, "ttl": 21600, "provenance": "urlscan-public", "chave": false, "requer": null },
+    { "id": "internetdb", "titulo": "Exposicao", "tipos": ["ip"], "custo": 1, "ttl": 3600, "provenance": "shodan-internetdb", "chave": false, "requer": null },
+    { "id": "ipgeo", "titulo": "Rede", "tipos": ["ip"], "custo": 1, "ttl": 86400, "provenance": "ipwhois", "chave": false, "requer": null },
+    { "id": "asn", "titulo": "ASN", "tipos": ["ip"], "custo": 1, "ttl": 86400, "provenance": "team-cymru-dns", "chave": false, "requer": null },
+    { "id": "cnpj_br", "titulo": "Empresa", "tipos": ["cnpj"], "custo": 1, "ttl": 86400, "provenance": "minha-receita-cnpj", "chave": false, "requer": null },
+    { "id": "ceis", "titulo": "Sancoes", "tipos": ["cnpj"], "custo": 1, "ttl": 86400, "provenance": "portal-transparencia-ceis", "chave": false, "requer": { "tipo": "chave", "env": "TRANSPARENCIA_KEY" } },
+    { "id": "ddd", "titulo": "Regiao", "tipos": ["telefone"], "custo": 0, "ttl": 0, "provenance": "anatel-pgcn-snapshot-2026-10-30", "chave": false, "requer": null },
+    { "id": "wikidata", "titulo": "Wikidata", "tipos": ["nome"], "custo": 1, "ttl": 604800, "provenance": "wikidata-sparql", "chave": false, "requer": null },
+    { "id": "datajud", "titulo": "Processos", "tipos": ["nome"], "custo": 2, "ttl": 86400, "provenance": "cnj-datajud", "chave": false, "requer": null }
+  ]
+}

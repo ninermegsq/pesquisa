@@ -47,6 +47,8 @@ Para hospedar pela Netlify, use `public/` e `netlify/functions/` e configure as 
 | `ALLOWED_ORIGINS` | Sim | Origens HTTP(S) exatas, separadas por vírgula. Ex.: `https://site.netlify.app,https://seudominio.com`. |
 | `EMAILREP_KEY` | Não | API key opcional da EmailRep. Sem ela a checagem EmailRep aparece como indisponível. |
 | `GITHUB_TOKEN` | Não | Token opcional de leitura da API GitHub; configure com `wrangler secret put GITHUB_TOKEN`. Sem ele, GitHub aparece indisponível. A resposta é cacheada por e-mail durante 24 horas. |
+| `TRANSPARENCIA_KEY` | Não | Chave opcional da API do Portal da Transparência (sanções/CEIS). Sem ela a fonte CEIS responde `sem_chave` e o relatório **não** fica parcial. |
+| `WARM_SECRET` | Não | Segredo do token de operação (aquecimento e painel de saúde). Tem precedência sobre `HMAC_SECRET`. Sem ele, `/api/saude` e o aquecimento respondem "não autorizado". |
 | `AWS_LAMBDA_JS_RUNTIME` | Conforme plano/ambiente | Caso necessário na Netlify, valor `nodejs20.x` para selecionar explicitamente runtime das Functions. |
 
 **Nenhum segredo aparece no HTML.** A site key do Turnstile foi criada para divulgação pública; é impossível validar o Turnstile usando apenas o segredo no servidor sem configurar um widget no cliente.
@@ -100,11 +102,30 @@ netlify dev
 `npm run dev` **não** depende do Wrangler nem de conta da Cloudflare. Ele sobe um servidor Node puro (`scripts/dev-server.mjs`, sem dependências) que reaproveita o motor real de produção (`src/scan.mjs` + `src/sources/registry.mjs`) e serve `public/`.
 
 ```bash
-npm run dev            # http://localhost:3000 (ou 5173/8080/4173/5000 se ocupado)
-PORT=4000 npm run dev  # porta fixa
-npm run check          # sintaxe de todos os arquivos
-npm run test           # cache-check, worker-regression, dev-server-check, dev-process-check
+npm run dev                # http://localhost:3000 (ou 5173/8080/4173/5000 se ocupado)
+PORT=4000 npm run dev      # porta fixa
+npm run dev -- --port 4000 # mesma coisa, por argumento
+npm run dev -- --host 127.0.0.1
+npm run dev -- --sem-fallback  # exige a porta pedida: sai com 1 se ela estiver ocupada
+npm run start              # alias de dev (prévias automáticas do editor)
+npm run preview            # alias de dev
+npm run check              # sintaxe de todos os arquivos
+npm run test               # cache-check, contract-check, codegen-check, migrations-check,
+                           # warm-check, worker-regression, dev-server-check, dev-process-check, stats-check
 ```
+
+O servidor local imprime a URL da prévia no início:
+
+```text
+  Server running on http://localhost:3000
+  NEXUS_PREVIEW_URL=http://localhost:3000
+```
+
+Se a porta pedida já estiver ocupada, o servidor **não termina**: ele cai para
+outra porta livre e imprime a URL que de fato está no ar. É o que evita o erro
+do editor "o servidor terminou antes de abrir a prévia". Para exigir a porta
+pedida (e sair com código 1 se ela estiver ocupada), use `--sem-fallback`: a
+mensagem lista `Portas tentadas:` e `PORT=<numero>`.
 
 O que é **local e simulado** (rótulo `LOCAL ONLY` nos testes e banner `AMBIENTE LOCAL` na página):
 
@@ -153,7 +174,9 @@ Projeto está pronto para ser versionado e implantado **após configurar a Netli
 
 ## Motor de fontes
 
-`POST /api/scan` recebe `alvo` e token assinado de uso único emitido após Turnstile. Resultados em `caches.default`, com prefixo `https://ostnt.online/__cache/<id>/<alvo>` (componentes codificados); a rota pública desse prefixo responde 404. Sucesso usa o TTL da fonte; erros e timeouts usam 120 segundos. Cache é local ao datacenter e best-effort. KV (OSINT_KV, fallback CACHE) guarda somente limites: duas escritas por scan aceito. Tokens usam Durable Object SQLite para rejeitar replay atomicamente, sem escritas no KV. O orçamento é de 38 subrequests externos declarados; e-mail seleciona 12 fontes e custo 16. Telegram consulta somente telefone e extrai o título e a descrição do HTML. A migração `token-guard-v1` precisa acompanhar o deploy; conteúdo sem o binding TOKEN_GUARD falha de forma fechada.
+`POST /api/scan` recebe `alvo` e token assinado de uso único emitido após Turnstile. Resultados em `caches.default`, com prefixo `https://ostnt.online/__cache/<id>/<alvo>` (componentes codificados); a rota pública desse prefixo responde 404. Sucesso usa o TTL da fonte; erros e timeouts usam 120 segundos. Cache é local ao datacenter e best-effort. KV (OSINT_KV, fallback CACHE) guarda somente limites: duas escritas por scan aceito. Tokens usam Durable Object SQLite para rejeitar replay atomicamente, sem escritas no KV. O orçamento é de 38 subrequests externos declarados; e-mail seleciona 12 fontes e custo 16. Telegram consulta somente telefone: o número vai para o formato internacional (código 55 em números nacionais de 10 ou 11 dígitos) e a fonte extrai o título e a descrição da página pública de `t.me`. O resultado é `paginaPublica`, **não** "a conta existe": o Telegram entrega a mesma página de contato para qualquer número, e a existência da conta só é resolvida no aplicativo — a fonte registra essa limitação em `observacao`. A migração `token-guard-v1` precisa acompanhar o deploy; conteúdo sem o binding TOKEN_GUARD falha de forma fechada.
+
+A nota de segurança do HTTPS vem do **Qualys SSL Labs** (`ssllabs`), que substituiu o Mozilla Observatory: a API pública do Observatory foi descontinuada e todas as rotas `/api/*` respondem 404. A API v3 do SSL Labs não traz nota no nível do host — ela vem por endpoint (`endpoints[].grade`) —, então a fonte publica a **pior nota entre os servidores avaliados**, que é a própria regra do provedor. Enquanto a avaliação não foi publicada, a fonte devolve `situacao: "em_andamento"` (sem nota e sem erro) com TTL próprio de 300 segundos, para que a consulta seguinte encontre a nota; com a avaliação pronta, vale o TTL da fonte (3600 s).
 
 Chaves opcionais, somente no servidor:
 ```sh
@@ -162,7 +185,93 @@ wrangler secret put EMAILREP_KEY
 wrangler secret put TRANSPARENCIA_KEY
 ```
 
-Sem essas chaves, as fontes correspondentes informam erro e o relatório permanece parcial. CPF está fora do escopo. Nomes são consultas públicas não conclusivas; o nome informado não confirma identidade. JSON e CSV incluem proveniência e timestamp.
+Sem essas chaves, as fontes correspondentes respondem com o código `sem_chave` ou `sem_token` e o relatório **não** é marcado como parcial: a fonte não rodou, o restante das consultas continua valendo. CPF está fora do escopo. Nomes são consultas públicas não conclusivas; o nome informado não confirma identidade. JSON e CSV incluem proveniência e timestamp.
+
+## Endurecimento do scanner
+
+Cinco camadas, todas verificadas por `verification/` e executadas offline.
+
+### 1. Contrato de resultado e taxonomia de erro (`src/contract.mjs`)
+
+Um único lugar define o formato de uma fonte consultada e o significado de cada
+falha. Códigos: `sem_chave`, `sem_token`, `erro_rede`, `timeout`, `http`,
+`formato`, `erro`.
+
+- `sem_chave` e `sem_token` são **falhas de configuração** do operador: a fonte
+  não rodou, o relatório não fica parcial.
+- Os demais códigos são falha real e marcam o relatório como parcial.
+- `classificarErro()` transforma qualquer exceção em um código da taxonomia;
+  `normalizarFonte()` devolve sempre o mesmo formato de resultado;
+  `saudeDe()` resume o scan (`ok`, `indisponiveis`, `por_configuracao`, `parcial`).
+
+### 2. Manifesto das fontes (`src/sources/registry.json`)
+
+Os metadados das 24 fontes (título, tipos, custo, TTL, proveniência, credencial
+opcional) vivem em um JSON legível. `scripts/build-registry.mjs` gera
+`src/sources/registry.meta.mjs` de forma determinística e
+`src/sources/registry.mjs` valida cada implementação contra o manifesto no
+carregamento do módulo: divergência de tipo, custo, TTL, proveniência ou
+credencial interrompe o Worker na hora do build, não no meio de uma consulta.
+O manifesto também proíbe, por construção, qualquer fonte que exija chave do
+visitante.
+
+### 3. Migrações do Durable Object (`migrations/*.sql`)
+
+O schema do `TOKEN_GUARD` é versionado em arquivos `.sql` revistos.
+`scripts/build-migrations.mjs` empacota as migrações em `src/lib/migrations.mjs`
+(o runtime do Worker não lê arquivos) e `src/lib/sql-migrations.mjs` aplica
+cada versão uma única vez, registrando em `schema_meta`.
+
+- `0001_token_guard.sql`: nonces de uso único e expiração.
+- `0002_scan_jobs.sql`: histórico de scans (`jobs`/`job_fontes`), com retenção
+  de 7 dias.
+
+Nada de alvo, e-mail ou IP é persistido: só contagens, identificador de fonte e
+instantes.
+
+### 4. Painel de saúde e identificador de job
+
+Cada scan devolve `meta.job_id` (UUID), o cabeçalho `x-job-id` e um resumo
+`saude` + `fonte_saude` (status por fonte). O painel agregado fica em
+`GET /api/saude`, protegido por token de operador.
+
+### 5. Token de operação (`X-Warm-Token`)
+
+Credencial do operador assinada com HMAC-SHA256 (`WARM_SECRET`, ou
+`HMAC_SECRET`), com validade máxima de 24 horas, comparação em tempo
+constante e escopo fixo:
+
+| Escopo | Uso | Amarração |
+| --- | --- | --- |
+| `aquecimento` | `POST /api/scan` sem consumir o token do visitante | o alvo (hash SHA-256) |
+| `operador` | `GET /api/saude` | nenhuma |
+
+O alvo nunca aparece em texto claro no token. Emita um token com:
+
+```bash
+npm run warm-token -- --escopo operador --ttl 3600
+npm run warm-token -- --escopo aquecimento --alvo exemplo@dominio.com --ttl 900
+```
+
+Depois de emitir, use o header:
+
+```bash
+curl -s -H "X-Warm-Token: <token>" https://ostnt.online/api/saude
+```
+
+### Verificação contínua
+
+`.github/workflows/ci.yml` (raiz do repositório) roda `npm run check`,
+`npm test`, `npm run build` e falha se o `git diff` não estiver limpo depois do
+build — o build tem que ser idempotente. `.github/workflows/deploy.yml`
+publica o Worker somente por despacho manual, com confirmação digitada.
+
+`npm run check` na raiz verifica a sintaxe do Worker **e** da variante Netlify
+(`osint-infoc-hacker/`). `npm test` roda nove checks offline; o
+`dev-process-check` sobe o servidor local como processo filho e confirma que ele
+permanece vivo, imprime `NEXUS_PREVIEW_URL`, serve a interface com 200, cai
+para outra porta quando a pedida está ocupada e sai com 1 no modo estrito
+(`--sem-fallback`).
 
 ## Estado da verificação em 2026-10-30
 

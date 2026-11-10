@@ -61,9 +61,10 @@
     <button type="button" class="mo-reset" id="clear-btn">Nova análise</button>
     <div class="mo-live" id="scan-announcement" aria-live="polite" aria-atomic="true"></div>
   </section>
-  <div class="trust-row"><span><b id="stat-total">24</b> fontes integradas</span><span><b id="stat-auto">13</b> fontes para e-mail</span><span><b id="stat-cats">6</b> tipos de alvo</span><span><b id="stat-keys">0</b> chaves exigidas do visitante</span></div>
+  <div class="trust-row" data-stats="{{STATS_JSON}}"><span><b id="stat-total">{{STATS_TOTAL}}</b> fontes integradas</span><span><b id="stat-auto">{{STATS_EMAIL}}</b> fontes para e-mail</span><span><b id="stat-cats">{{STATS_CATEGORIAS}}</b> tipos de alvo</span><span><b id="stat-keys">{{STATS_KEYS}}</b> chaves exigidas do visitante</span></div>
   <section class="results-wrap" aria-label="Resultados da análise">
     <div id="stage" aria-live="off"></div>
+    <div id="scan-log" class="log" role="log" aria-live="polite" hidden></div>
     <nav id="actions" class="actions" hidden aria-label="Ações após o scan">
       <button class="bt amber" id="password-toggle" type="button" aria-expanded="false">+ TESTAR SENHA</button>
       <button class="bt" id="export-json" type="button">JSON</button><button class="bt" id="export-csv" type="button">CSV</button>

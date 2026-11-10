@@ -1,6 +1,6 @@
 {
   "name": "ostnt-osint",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "type": "module",
   "description": "OSINT // infoc.hacker — repositorio com o site publicado (current-site) e o pacote Netlify alternativo (osint-infoc-hacker)",
@@ -9,10 +9,13 @@
     "node": ">=20"
   },
   "scripts": {
-    "check": "npm --prefix current-site/osint-infoc-hacker run check",
+    "check": "npm --prefix current-site/osint-infoc-hacker run check && npm --prefix osint-infoc-hacker run check",
     "build": "npm --prefix current-site/osint-infoc-hacker run build",
     "test": "npm --prefix current-site/osint-infoc-hacker run test",
-    "dev": "npm --prefix current-site/osint-infoc-hacker run dev",
+    "dev": "npm --prefix current-site/osint-infoc-hacker run dev --",
+    "start": "npm --prefix current-site/osint-infoc-hacker run start --",
+    "preview": "npm --prefix current-site/osint-infoc-hacker run preview --",
+    "warm-token": "npm --prefix current-site/osint-infoc-hacker run warm-token --",
     "check:netlify": "npm --prefix osint-infoc-hacker run check",
     "git": "git"
   },

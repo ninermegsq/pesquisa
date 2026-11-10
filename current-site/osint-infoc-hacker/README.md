@@ -262,9 +262,12 @@ curl -s -H "X-Warm-Token: <token>" https://ostnt.online/api/saude
 ### Verificação contínua
 
 `.github/workflows/ci.yml` (raiz do repositório) roda `npm run check`,
-`npm test`, `npm run build` e falha se o `git diff` não estiver limpo depois do
-build — o build tem que ser idempotente. `.github/workflows/deploy.yml`
-publica o Worker somente por despacho manual, com confirmação digitada.
+`npm test`, `npm run build` e `npm run check:build`, e falha se a árvore não
+estiver limpa depois do build — o build tem que ser idempotente. O
+`check:build` confere os três artefatos derivados (presença, versionamento e
+diff), exige a árvore inteira limpa e roda o build de novo para provar que ele
+não muda nada. `.github/workflows/deploy.yml` publica o Worker somente por
+despacho manual, com confirmação digitada.
 
 `npm run check` na raiz verifica a sintaxe do Worker **e** da variante Netlify
 (`osint-infoc-hacker/`). `npm test` roda nove checks offline; o

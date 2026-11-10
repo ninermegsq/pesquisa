@@ -17,6 +17,7 @@
     "preview": "npm --prefix current-site/osint-infoc-hacker run preview --",
     "warm-token": "npm --prefix current-site/osint-infoc-hacker run warm-token --",
     "check:netlify": "npm --prefix osint-infoc-hacker run check",
+    "check:build": "npm --prefix current-site/osint-infoc-hacker run check:build",
     "git": "git"
   },
   "dependencies": {},

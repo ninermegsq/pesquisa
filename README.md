@@ -32,11 +32,15 @@ npm run preview            # alias de dev
 npm run check              # node --check no Worker e na variante Netlify
 npm test                   # verificações offline (contrato, cache, dev-server, CI)
 npm run build              # gera registro e migrações e injeta public/ no Worker
+npm run check:build        # prova que o build é idempotente (árvore limpa)
 npm run warm-token -- --escopo operador   # emite um token de operação
 ```
 
 O build é idempotente: rodá-lo duas vezes não altera nenhum arquivo, e a CI
-falha se o `git diff` não estiver limpo depois do build.
+falha se a árvore não estiver limpa depois do build. `npm run check:build`
+confere isso: os três artefatos derivados precisam existir, estar versionados
+e sem diff; a árvore inteira precisa estar limpa; e o build é rodado de novo
+para provar que ele não muda nada.
 
 Se a porta pedida para a prévia já estiver ocupada, o servidor local não
 termina: ele cai para outra porta livre e imprime a URL real
@@ -45,8 +49,8 @@ termina: ele cai para outra porta livre e imprime a URL real
 
 ## Verificação contínua
 
-- `.github/workflows/ci.yml` roda `check`, `test`, `build` e confere a
-  idempotência do build a cada push ou pull request.
+- `.github/workflows/ci.yml` roda `check`, `test`, `build` e a prova de
+  idempotência do build (`npm run check:build`) a cada push ou pull request.
 - `.github/workflows/deploy.yml` publica o Worker **somente** por despacho
   manual e exige confirmação digitada mais os segredos
   `CLOUDFLARE_API_TOKEN` e `CLOUDFLARE_ACCOUNT_ID`.

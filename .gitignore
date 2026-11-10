@@ -1,0 +1,8 @@
+# Dependencias instaladas localmente. O projeto nao tem dependencia de
+# runtime, mas `npm i -D wrangler` (documentado no README) e o `npm ci` da CI
+# criam `node_modules/`. Sem estas linhas, qualquer instalacao suja a arvore
+# do repositorio e derruba o passo de idempotencia da CI.
+node_modules/
+
+# Estado local do Wrangler (.wrangler/tmp, .wrangler/state).
+.wrangler/

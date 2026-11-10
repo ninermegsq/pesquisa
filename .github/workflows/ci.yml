@@ -46,8 +46,9 @@ jobs:
         run: npm run build
 
       - name: Build idempotente (nada muda depois do build)
-        run: >
-          git diff --exit-code --
-          current-site/osint-infoc-hacker/src/sources/registry.meta.mjs
-          current-site/osint-infoc-hacker/src/lib/migrations.mjs
-          current-site/osint-infoc-hacker/cloudflare-worker.mjs
+        # `git diff --exit-code` sozinho nao basta: ele ignora caminho que nao
+        # existe (artefato derivado apagado ou renomeado) e arquivo novo (nao
+        # versionado). O check confere os tres artefatos derivados, exige a
+        # arvore inteira limpa e roda o build de novo para provar que ele nao
+        # muda nada.
+        run: npm run check:build

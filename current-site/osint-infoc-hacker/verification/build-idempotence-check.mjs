@@ -88,12 +88,11 @@ conferirArvore('depois do build');
 
 // 3. Roda o build de novo: a arvore tem de continuar igual. E o que prova que
 //    o build e idempotente (e nao so que ele foi aplicado uma vez).
-const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const build = spawnSync(npm, ['run', 'build'], {
-  cwd: SITE,
-  encoding: 'utf8',
-  shell: process.platform === 'win32'
-});
+//    No Windows o npm e um .cmd: ele e chamado pelo `cmd.exe` para nao
+//    depender de `shell: true` (que o Node sinaliza como inseguro).
+const build = process.platform === 'win32'
+  ? spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 'npm run build'], { cwd: SITE, encoding: 'utf8' })
+  : spawnSync('npm', ['run', 'build'], { cwd: SITE, encoding: 'utf8' });
 if (build.status !== 0) {
   console.error(build.stdout || '');
   console.error(build.stderr || '');

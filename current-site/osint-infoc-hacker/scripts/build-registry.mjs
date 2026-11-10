@@ -56,7 +56,9 @@ export function validarManifesto(manifesto) {
       const env = fonte.requer?.env;
       if (!TIPOS_DE_CREDENCIAL.includes(tipo)) throw new Error(`${id}: requer.tipo invalido (${tipo})`);
       if (typeof env !== 'string' || !/^[A-Z][A-Z0-9_]{2,40}$/.test(env)) throw new Error(`${id}: requer.env invalido (${env})`);
-      requer = { tipo, env };
+      // `opcional: true` marca a credencial que apenas melhora o resultado:
+      // a fonte continua funcionando pelo caminho publico quando ela falta.
+      requer = { tipo, env, opcional: fonte.requer?.opcional === true };
     }
     return {
       id,

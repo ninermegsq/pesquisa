@@ -4,7 +4,7 @@
 
 export const REGISTRY_META = Object.freeze({
   versao: 1,
-  digest: "f2e0e7df4cce8e58a9a22ffb2bb350a4e804a3fcc3d7da6ba056c1ed6dd143c6",
+  digest: "80d41247b75c6aabc28856ad9b2180a44ad530d7e80837839172ee82ff1c5ef7",
   fontes: Object.freeze({
     "gravatar": Object.freeze({
       id: "gravatar",
@@ -94,7 +94,7 @@ export const REGISTRY_META = Object.freeze({
       ttl: 86400,
       provenance: "github-users-api",
       chave: false,
-      requer: Object.freeze({"tipo":"token","env":"GITHUB_TOKEN"})
+      requer: Object.freeze({"tipo":"token","env":"GITHUB_TOKEN","opcional":false})
     }),
     "emailrep": Object.freeze({
       id: "emailrep",
@@ -104,7 +104,7 @@ export const REGISTRY_META = Object.freeze({
       ttl: 43200,
       provenance: "emailrep",
       chave: false,
-      requer: Object.freeze({"tipo":"chave","env":"EMAILREP_KEY"})
+      requer: Object.freeze({"tipo":"chave","env":"EMAILREP_KEY","opcional":false})
     }),
     "dns": Object.freeze({
       id: "dns",
@@ -200,11 +200,11 @@ export const REGISTRY_META = Object.freeze({
       id: "cnpj_br",
       titulo: "Empresa",
       tipos: Object.freeze(["cnpj"]),
-      custo: 1,
+      custo: 2,
       ttl: 86400,
-      provenance: "minha-receita-cnpj",
+      provenance: "cnpj-ws-publica+minha-receita-cnpj",
       chave: false,
-      requer: null
+      requer: Object.freeze({"tipo":"token","env":"CNPJWS_TOKEN","opcional":true})
     }),
     "ceis": Object.freeze({
       id: "ceis",
@@ -214,7 +214,7 @@ export const REGISTRY_META = Object.freeze({
       ttl: 86400,
       provenance: "portal-transparencia-ceis",
       chave: false,
-      requer: Object.freeze({"tipo":"chave","env":"TRANSPARENCIA_KEY"})
+      requer: Object.freeze({"tipo":"chave","env":"TRANSPARENCIA_KEY","opcional":false})
     }),
     "ddd": Object.freeze({
       id: "ddd",
@@ -244,7 +244,7 @@ export const REGISTRY_META = Object.freeze({
       ttl: 86400,
       provenance: "cnj-datajud",
       chave: false,
-      requer: Object.freeze({"tipo":"chave","env":"DATAJUD_API_KEY"})
+      requer: Object.freeze({"tipo":"chave","env":"DATAJUD_API_KEY","opcional":false})
     }),
   })
 });

@@ -59,6 +59,7 @@ desses arquivos fica embutida em `cloudflare-worker.mjs`.
 | `GITHUB_TOKEN` | Não | Token opcional de leitura da API GitHub; configure com `wrangler secret put GITHUB_TOKEN`. Sem ele, GitHub aparece indisponível. A resposta é cacheada por e-mail durante 24 horas. |
 | `DATAJUD_API_KEY` | Não | Chave opcional da API pública do DataJud/CNJ (fonte `datajud`, categoria nome). Sem ela a fonte responde `sem_chave` e o relatório **não** fica parcial. Configure com `wrangler secret put DATAJUD_API_KEY`; **nenhuma chave fica no código**. |
 | `TRANSPARENCIA_KEY` | Não | Chave opcional da API do Portal da Transparência (sanções/CEIS). Sem ela a fonte CEIS responde `sem_chave` e o relatório **não** fica parcial. |
+| `CNPJWS_TOKEN` | Não | Token opcional da API comercial do CNPJ.ws (fonte `cnpj_br`). **Sem ele a fonte continua funcionando**: a consulta vai para a base pública (`publica.cnpj.ws`, 3 consultas por minuto/IP); com ele, vai para `comercial.cnpj.ws`, que tem cota própria. Configure com `wrangler secret put CNPJWS_TOKEN`; **nenhum token fica no código**. |
 | `WARM_SECRET` | Não | Segredo do token de operação (aquecimento e painel de saúde). Tem precedência sobre `HMAC_SECRET`. Sem ele, `/api/saude` e o aquecimento respondem "não autorizado". |
 | `AWS_LAMBDA_JS_RUNTIME` | Conforme plano/ambiente | Caso necessário na Netlify, valor `nodejs20.x` para selecionar explicitamente runtime das Functions. |
 
@@ -185,6 +186,7 @@ O que **não** muda: `cloudflare-worker.mjs`, `wrangler.toml`, `public/` e as Ne
 ## Limites conhecidos
 
 - **XposedOrNot:** cerca de **100 chamadas/dia por IP** para os endpoints usados (além de limites por hora), conforme a [documentação oficial](https://xposedornot.com/api_doc).
+- **CNPJ.ws:** a base pública (`publica.cnpj.ws`) aceita **3 consultas por minuto/IP**; a 4ª devolve HTTP 429 com `retry-after: 60`. Por isso a fonte `cnpj_br` cai no Minha Receita quando o limite é atingido — o limite do provedor não vira relatório parcial. Com `CNPJWS_TOKEN` configurado, a consulta vai para `comercial.cnpj.ws`, que tem cota própria. Os dados do CNPJ.ws têm defasagem de cerca de um mês.
 - **GitHub:** a consulta só é feita quando `GITHUB_TOKEN` está configurado; sem ele, `availability.github` fica `false`. No Worker, o resumo é cacheado por e-mail na Cache API durante 24 horas para reduzir chamadas compartilhadas.
 - **"não encontrado" ≠ seguro**. Uma ausência de resultados não elimina risco, e falhas de APIs devem ser tratadas como resultados inconclusivos.
 - APIs de terceiros podem mudar formatos, preços, restrições de CORS, políticas de consulta ou disponibilidade. As chamadas externas de investigação são feitas pela Function (com exceção do teste anônimo de senha diretamente do navegador).
@@ -219,9 +221,15 @@ wrangler secret put GITHUB_TOKEN
 wrangler secret put EMAILREP_KEY
 wrangler secret put TRANSPARENCIA_KEY
 wrangler secret put DATAJUD_API_KEY
+wrangler secret put CNPJWS_TOKEN
 ```
 
-Sem essas chaves, as fontes correspondentes respondem com o código `sem_chave` ou `sem_token` e o relatório **não** é marcado como parcial: a fonte não rodou, o restante das consultas continua valendo. CPF está fora do escopo. Nomes são consultas públicas não conclusivas; o nome informado não confirma identidade. JSON e CSV incluem proveniência e timestamp.
+Sem essas chaves, as fontes correspondentes respondem com o código `sem_chave` ou `sem_token` e o relatório **não** é marcado como parcial: a fonte não rodou, o restante das consultas continua valendo.
+
+O `CNPJWS_TOKEN` é o caso diferente: ele **não** é necessário. A fonte `cnpj_br`
+consulta o CNPJ.ws pela base pública e usa o Minha Receita como reserva; o token
+comercial, quando existe, apenas tira a consulta do limite de 3 por minuto/IP
+da base pública e libera os endpoints extras do plano pago. CPF está fora do escopo. Nomes são consultas públicas não conclusivas; o nome informado não confirma identidade. JSON e CSV incluem proveniência e timestamp.
 
 ### Rotas expostas pelo Worker
 
@@ -361,7 +369,7 @@ O operador relatou: "1010 é reputação de IP de saída do Worker; a mitigaçã
 | ID | Mudança | Motivo e evidência |
 | --- | --- | --- |
 | `ddd` | BrasilAPI DDD substituída por snapshot local Anatel (67 DDDs) | Elimina chamadas de rede; não depende de provar bloqueio do antigo endpoint |
-| `cnpj_br` | BrasilAPI CNPJ substituída por Minha Receita | Troca solicitada pelo operador; novo endpoint retornou 200/JSON no teste local, pendente no Worker |
+| `cnpj_br` | BrasilAPI CNPJ substituída por Minha Receita; agora **CNPJ.ws na frente** e Minha Receita de reserva | Resposta real do `publica.cnpj.ws` (HTTP 200, `situacao=Ativa`) na sonda de rede real; o endpoint público aceita 3 consultas por minuto/IP, então o 429 cai na reserva em vez de virar falha |
 | `crtsh` | crt.sh substituído por Subdomain Center | Troca solicitada pelo operador; novo endpoint retornou 503/server busy no teste local, pendente de sucesso e teste no Worker |
 
 Nenhuma fonte foi movida ao browser nem removida nesta etapa. Cada endpoint é classificado pelo próprio resultado. CORS do BrasilAPI CNPJ foi observado como `*`; o HEAD de crt.sh retornou 502 sem header CORS, portanto seu suporte permanece inconclusivo. Resultados completos e limites da comprovação estão em `verification/provider-switch.md`.

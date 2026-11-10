@@ -2,6 +2,52 @@
 
 Estado: código candidato; não promovido a produção. Nenhum novo scan foi executado no Worker bloqueado.
 
+## Troca do provedor de CNPJ: CNPJ.ws na frente (2026-11-10)
+
+O provedor de CNPJ passou a ser o **CNPJ.ws**, com o Minha Receita de reserva.
+O endpoint público (`GET https://publica.cnpj.ws/cnpj/{cnpj}`) não exige
+autenticação e devolve o estabelecimento completo — razão social, CNAE, situação
+cadastral, endereço, e-mail e telefone — mais a lista de sócios.
+
+Medições com rede real, neste ambiente:
+
+| Chamada | HTTP | Resultado |
+| --- | --- | --- |
+| `GET https://publica.cnpj.ws/cnpj/00000000000191` | 200 | Cadastro do Banco do Brasil com `situacao_cadastral: "Ativa"`, 183–436 ms |
+| 4ª chamada dentro do mesmo minuto | 429 | `retry-after: 60`; cabeçalhos `x-ratelimit-limit` / `x-ratelimit-remaining` / `x-ratelimit-reset` |
+| `GET https://publica.cnpj.ws/cnpj/00000000000000` (CNPJ inválido) | 400 | Corpo `CNPJ inválido` |
+| `GET https://comercial.cnpj.ws/cnpj/00000000000191` sem token | 401 | A base paga exige token |
+| `GET https://comercial.cnpj.ws/cnpj/00000000000191` com token inválido | 401 | Idem |
+
+A base pública funciona e é mais completa que o Minha Receita (traz e-mail e
+telefone do estabelecimento, que viram pivos de e-mail e telefone), mas aceita
+**3 consultas por minuto por IP** — e a saída do Worker é compartilhada. A
+fonte `cnpj_br` foi reescrita para consultar o CNPJ.ws primeiro e cair no
+Minha Receita quando o primário falha (429, 5xx, timeout ou formato
+inesperado). `existe:false` só sai quando **os dois** provedores dizem que o
+CNPJ não existe. A proveniência ficou `cnpj-ws-publica+minha-receita-cnpj` e o
+custo da fonte é 2 (dois provedores possíveis).
+
+O token comercial (`CNPJWS_TOKEN`) é **opcional**: quando existe, a consulta
+vai para `comercial.cnpj.ws` com o cabeçalho `x_api_token`; sem ele, a base
+pública continua sendo usada. Para o manifesto, isso é um campo novo,
+`requer.opcional`: a credencial só melhora o resultado e a sua ausência não
+vira `sem_chave`/`sem_token`. O manifesto continua sendo a fonte da verdade — o
+carregamento do módulo falha se a implementação e o manifesto divergirem, e a
+divergência agora distingue `exigirCredencial(` (obrigatória) de
+`credencialOpcional(` (melhoria).
+
+Na sonda de rede real das 24 fontes (`npm run probe:live`), a fonte respondeu
+`publica.cnpj.ws` com HTTP 200 em 487 ms, `situacao=Ativa`, sem precisar do
+reserva:
+
+```json
+{"id":"cnpj_br","tipo":"cnpj","alvo":"00000000000191","status":"ok","resumo":"situacao=Ativa","http":[{"host":"publica.cnpj.ws","status":200}],"ms":487}
+```
+
+Limitação declarada: a execução no edge (saída do Worker no Cloudflare) segue
+sem prova; a medição de 429 por IP foi feita nesta máquina.
+
 ## Atualização (2026-11-10): sonda de rede real das 24 fontes
 
 Os testes do projeto são todos **offline** (eles substituem `globalThis.fetch`
@@ -100,10 +146,10 @@ Essa evidência aplica-se ao endpoint de CNPJ; não classifica o antigo endpoint
 ## Código e testes
 
 - `ddd`: custo 0; todos os 67 DDDs executados localmente com fetch e Cache API proibidos pelo teste. Resultado: zero chamadas. Snapshot preserva todas as cidades fornecidas e UFs múltiplas quando presentes; a UF principal é DF no 61 e a UF majoritária nos demais. Não infere localização atual de um telefone.
-- `cnpj_br`: Minha Receita substitui BrasilAPI. O adaptador foi executado contra a resposta HTTP 200 salva e manteve o formato. Proveniência atualizada para `minha-receita-cnpj`.
+- `cnpj_br`: CNPJ.ws na frente e Minha Receita de reserva (o Minha Receita substituiu a BrasilAPI antes). Proveniência `cnpj-ws-publica+minha-receita-cnpj`, custo 2. O adaptador normaliza os dois formatos para o mesmo contrato e limita a lista de sócios a 20 no relatório, mantendo o total do cadastro.
 - `crtsh`: Subdomain Center substitui crt.sh, id mantido para compatibilidade. Proveniência `subdomain-center`; parser de array de strings deduplica, limita a 60 e rejeita nomes fora do domínio. Teste de parsing usa fixture e não comprova disponibilidade real. A resposta 503 salva preservou corpo/status no erro.
 - A documentação oficial do Subdomain Center informa amostra anônima de até 500 nomes e limite anônimo de 5 chamadas/minuto/IP; o relatório limita essa amostra a 60. Não representa enumeração completa.
-- Nenhuma fonte foi movida ao browser ou removida: não houve 1010 observado nos provedores alternativos neste ambiente. O fallback CNPJ.ws fica condicionado a 1010 confirmado em Minha Receita, que ainda não ocorreu no teste disponível.
+- Nenhuma fonte foi movida ao browser ou removida: não houve 1010 observado nos provedores alternativos neste ambiente. O CNPJ.ws deixou de ser um fallback condicionado a 1010 em Minha Receita: ele virou o provedor primário, com o Minha Receita como reserva para o limite de 3 consultas por minuto/IP da base pública.
 
 ## Pendências reais
 

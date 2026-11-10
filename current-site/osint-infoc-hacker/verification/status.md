@@ -67,6 +67,80 @@ no edge) continua sem prova. A sonda faz consultas públicas reais aos
 provedores e **não deve ser rodada em loop**. Nada foi publicado: o Worker de
 produção e o domínio `ostnt.online` seguem intocados.
 
+## Fonte de CNPJ: CNPJ.ws na frente, Minha Receita de reserva (2026-11-10)
+
+O pedido foi colocar a API do **CNPJ.ws** na busca de CNPJ. A base pública
+(`https://publica.cnpj.ws/cnpj/{cnpj}`) foi medida com rede real neste
+ambiente:
+
+| Chamada | HTTP | Resultado |
+| --- | --- | --- |
+| `GET https://publica.cnpj.ws/cnpj/00000000000191` | 200 | Cadastro do Banco do Brasil, `situacao_cadastral: "Ativa"`, 183–436 ms |
+| 4ª chamada dentro do mesmo minuto | 429 | `retry-after: 60`; cabeçalhos `x-ratelimit-limit/remaining/reset` |
+| `GET https://publica.cnpj.ws/cnpj/00000000000000` (CNPJ inválido) | 400 | Corpo `CNPJ inválido` |
+| `GET https://comercial.cnpj.ws/cnpj/00000000000191` sem token | 401 | A base paga exige token |
+
+O que mudou no código:
+
+- A fonte `cnpj_br` passou a consultar o **CNPJ.ws primeiro** e o **Minha
+  Receita de reserva**. Quando o primário falha (429, 5xx, timeout ou formato
+  inesperado), a fonte cai no reserva — o limite de 3 consultas por minuto/IP do
+  provedor não vira relatório parcial. `existe:false` só sai quando **os dois**
+  provedores dizem que o CNPJ não existe. Proveniência:
+  `cnpj-ws-publica+minha-receita-cnpj`; custo da fonte: 2.
+- O token comercial (`CNPJWS_TOKEN`) é **opcional**: quando existe, a consulta
+  vai para `comercial.cnpj.ws` com o cabeçalho `x_api_token`; sem ele, a base
+  pública continua em uso. Isso criou o conceito novo no manifesto,
+  `requer.opcional`: credencial que só melhora o resultado e cuja ausência
+  **não** vira `sem_chave`/`sem_token`. A validação do manifesto distingue
+  `exigirCredencial(` (obrigatória) de `credencialOpcional(` (melhoria) e
+  continua interrompendo o carregamento do módulo quando a implementação e o
+  manifesto divergem.
+- Os dois formatos foram normalizados para o mesmo contrato (razão social,
+  fantasia, situação, CNAE, capital, porte, natureza jurídica, endereço, CEP,
+  e-mail, telefone, Simples/MEI, início de atividade, sócios). O
+  `simples.mei`/`simples.simples` do CNPJ.ws vem como texto (`"Sim"`/`"Não"`)
+  e vira booleano. A lista de sócios entra inteira no cálculo e volta limitada
+  a 20 no relatório (`total_socios` preserva o total do cadastro).
+- O e-mail e o telefone do estabelecimento viram pivos — o e-mail primeiro,
+  porque alimenta as checagens de e-mail (e o limite de 12 pivos do relatório
+  corta os pivos, não a coleta).
+
+Prova com rede real, pela própria fonte (`npm run probe:live`):
+
+```json
+{"id":"cnpj_br","tipo":"cnpj","alvo":"00000000000191","status":"ok","erro_codigo":null,"resumo":"situacao=Ativa","http":[{"host":"publica.cnpj.ws","status":200}],"ms":487}
+```
+
+Na mesma passagem: **27 consultas, 23 responderam, 0 falharam**; as 4 restantes
+são as fontes com credencial opcional (`github`, `emailrep`, `ceis`, `datajud`),
+que respondem `sem_token`/`sem_chave` sem marcar o relatório como parcial.
+
+Verificação offline que fixa o contrato novo
+(`verification/source-fix-check.mjs`, fixtures dos provedores, sem rede, já na
+cadeia `npm test`): confere a URL pública, o desvio para `comercial.cnpj.ws`
+com `x_api_token` quando o token existe, o 429 caindo no Minha Receita, a
+propagação do erro quando os dois falham, o `existe:false` quando os dois
+negam o cadastro, o `"Não"` virando `false` e o corte da lista de sócios em
+20. Saída real:
+
+```json
+{"scope":"LOCAL ONLY; fixtures offline dos provedores","cnpj":{"primario":"cnpj-ws (publica.cnpj.ws)","reserva":"minha-receita (429 do primario nao vira falha)","token":"comercial.cnpj.ws quando CNPJWS_TOKEN existe","ausentes":"existe:false so quando os dois dizem que nao existe","limite_socios":"25 no cadastro, 20 no relatorio"}}
+```
+
+Registro de fontes (`npm test`): `cnpj_br` passou a constar entre as
+credenciais opcionais, e o digest do manifesto mudou.
+
+```json
+{"ok":true,"fontes":24,"email":12,"custo_email":16,"categorias":6,"chaves_visitante":0,"codigos":7,"credenciais_opcionais":["github","emailrep","cnpj_br","ceis","datajud"]}
+{"ok":true,"fontes":24,"digest":"80d41247b75c6aabc28856ad9b2180a44ad530d7e80837839172ee82ff1c5ef7","migracoes":2,"deterministico":true}
+```
+
+Limitações declaradas: o limite de 3/min/IP foi medido nesta máquina, e a
+saída do Worker é compartilhada — o 429 no edge é esperado e é o que a reserva
+resolve; a execução no edge (item 2 da lista “ainda obrigatório”) continua sem
+prova; e o token comercial não existe ainda, então a base paga segue sem uso.
+
 ## Evidência real obtida (2026-10-30)
 
 - GET/HEAD https://ostnt.online/: 200, HSTS `max-age=31536000`.

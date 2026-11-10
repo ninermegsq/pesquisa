@@ -51,6 +51,109 @@ function exigirCredencial(env,id){
     :new FaltaChaveError(requer.env);
 }
 
+// Credencial opcional que MELHORA o resultado sem ser necessaria. A fonte
+// continua funcionando pelo caminho publico quando ela falta: aqui a
+// ausencia da credencial nao e falha de configuracao (sem_chave/sem_token).
+function credencialOpcional(env,id){
+  const requer=metaDe(id)?.requer;
+  if(!requer)return null;
+  const valor=env?env[requer.env]:null;
+  return valor?String(valor):null;
+}
+
+// Texto de um campo do cadastro: vazio e null (o relatorio omite o campo).
+const texto=v=>v==null?null:(String(v).trim()||null);
+// "Sim"/"Nao"/true/false -> true/false/null. O CNPJ.ws devolve "Sim"/"Nao"
+// como texto; o Minha Receita devolve texto tambem.
+const simNao=v=>{
+  if(v===true||v===false)return v;
+  const t=String(v??'').trim().toLowerCase();
+  if(t==='sim'||t==='yes'||t==='true')return true;
+  if(t==='nao'||t==='não'||t==='no'||t==='false')return false;
+  return null;
+};
+// A lista de socios entra inteira no calculo e volta limitada no relatorio:
+// o Banco do Brasil tem 88 socios e o HTML nao precisa de 88 blocos.
+const LIMITE_SOCIOS=20;
+const joinLogradouro=(...partes)=>{
+  const textoFinal=partes.filter(p=>p!=null&&String(p).trim()).map(p=>String(p).trim()).join(' ');
+  return textoFinal||null;
+};
+// Cadastro do CNPJ.ws (cnpj-ws-publica). O estabelecimento traz e-mail,
+// telefone, CNAE, situacao e datas; a raiz traz porte e natureza juridica.
+function normalizarCnpjWs(j){
+  const e=j.estabelecimento||{};
+  const atividade=e.atividade_principal||{};
+  const simples=j.simples||null;
+  const socios=lista(j.socios).map(s=>({nome:texto(s?.nome),qual:texto(s?.qualificacao_socio?.descricao)}))
+    .filter(s=>s.nome);
+  return {
+    existe:true,
+    razao:texto(j.razao_social),
+    fantasia:texto(e.nome_fantasia),
+    situacao:texto(e.situacao_cadastral),
+    cnae:texto(atividade.descricao),
+    cnae_codigo:texto(atividade.classe),
+    capital:texto(j.capital_social),
+    porte:texto(j.porte?.descricao),
+    natureza_juridica:texto(j.natureza_juridica?.descricao),
+    uf:texto(e.estado?.sigla),
+    municipio:texto(e.cidade?.nome),
+    endereco:joinLogradouro(e.tipo_logradouro,e.logradouro,e.numero,e.bairro),
+    cep:texto(e.cep),
+    email:texto(e.email),
+    telefone:e.ddd1&&e.telefone1?texto(`${e.ddd1}${e.telefone1}`):null,
+    simples:simNao(simples?.simples),
+    mei:simNao(simples?.mei),
+    inicio_atividade:texto(e.data_inicio_atividade),
+    atualizado_em:texto(e.atualizado_em),
+    total_socios:socios.length,
+    socios:socios.slice(0,LIMITE_SOCIOS),
+    provedor:'cnpj-ws'
+  };
+}
+// Mesmo formato, a partir do Minha Receita (provedor de reserva).
+function normalizarReceita(j){
+  const socios=lista(j.qsa).map(s=>({nome:texto(s?.nome_socio),qual:texto(s?.qualificacao_socio)}))
+    .filter(s=>s.nome);
+  return {
+    existe:true,
+    razao:texto(j.razao_social),
+    fantasia:texto(j.nome_fantasia),
+    situacao:texto(j.descricao_situacao_cadastral),
+    cnae:texto(j.cnae_fiscal_descricao),
+    cnae_codigo:texto(j.cnae_fiscal),
+    capital:texto(j.capital_social),
+    porte:texto(j.porte),
+    natureza_juridica:texto(j.natureza_juridica),
+    uf:texto(j.uf),
+    municipio:texto(j.municipio),
+    endereco:joinLogradouro(j.descricao_tipo_de_logradouro,j.logradouro,j.numero,j.bairro),
+    cep:texto(j.cep),
+    email:texto(j.email),
+    telefone:j.ddd_telefone_1&&j.telefone_1?texto(`${j.ddd_telefone_1}${j.telefone_1}`):null,
+    simples:simNao(j.opcao_pelo_simples),
+    mei:simNao(j.opcao_pelo_mei),
+    inicio_atividade:texto(j.data_inicio_atividade),
+    atualizado_em:texto(j.atualizado_em),
+    total_socios:socios.length,
+    socios:socios.slice(0,LIMITE_SOCIOS),
+    provedor:'minha-receita'
+  };
+}
+// Pivos do cadastro: o e-mail e o telefone do estabelecimento (publicados no
+// registro) vem primeiro, porque alimentam as checagens de e-mail; depois
+// ficam os nomes dos socios.
+function pivosDeCnpj(dados){
+  const pivos=[];
+  const email=String(dados?.email||'').trim();
+  if(/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email))pivos.push({tipo:'email',valor:email});
+  const telefone=String(dados?.telefone||'').replace(/\D/g,'');
+  if(telefone.length>=10&&telefone.length<=13)pivos.push({tipo:'telefone',valor:telefone});
+  for(const s of dados?.socios||[])if(s?.nome)pivos.push({tipo:'nome',valor:s.nome});
+  return pivos;
+}
+
 export const REGISTRY=[
  {id:'gravatar',tipos:['email'],custo:1,ttl:86400,provenance:'gravatar-public-profile',
   async run(a,c){
@@ -308,19 +411,50 @@ export const REGISTRY=[
     const [asn,prefixo,pais,registro]=raw.split('|').map(x=>x.trim());
     return {dados:{asn:asn||null,prefixo:prefixo||null,pais:pais||null,registro:registro||null}};
   }},
- {id:'cnpj_br',tipos:['cnpj'],custo:1,ttl:86400,provenance:'minha-receita-cnpj',
+ {id:'cnpj_br',tipos:['cnpj'],custo:2,ttl:86400,provenance:'cnpj-ws-publica+minha-receita-cnpj',
   async run(a,c){
-    const r=await c.get(`https://minhareceita.org/${encodeURIComponent(a.valor)}`,{timeout:8000});
-    if(r.status===404) return {dados:{existe:false}};
-    if(!r.ok) throw falhar(r);
-    const j=await J(r);
-    if(!j||typeof j!=='object'||Array.isArray(j)||String(j.cnpj)!==a.valor)throw Error('formato inesperado de CNPJ');
-    const socios=lista(j?.qsa).map(s=>({nome:s.nome_socio,qual:s.qualificacao_socio}));
-    return {dados:{existe:true,razao:j.razao_social,fantasia:j.nome_fantasia,
-      situacao:j.descricao_situacao_cadastral,cnae:j.cnae_fiscal_descricao,capital:j.capital_social,
-      uf:j.uf,municipio:j.municipio,socios,
-      endereco:[j.logradouro,j.numero,j.bairro,j.cep].filter(Boolean).join(', ')},
-      pivos:socios.map(s=>({tipo:'nome',valor:s.nome}))};
+    // Provedor primario: CNPJ.ws. O endpoint publico devolve o
+    // estabelecimento completo (e-mail, telefone, CNAE, situacao cadastral) e
+    // a lista de socios, e aceita 3 consultas por minuto/IP - em IP
+    // compartilhado o 429 e esperado. Quando ele falha (429, 5xx, timeout,
+    // formato), a fonte cai para o Minha Receita, que responde o mesmo
+    // cadastro. Se o token comercial estiver configurado, a consulta vai
+    // para comercial.cnpj.ws, que tem cota propria.
+    const token=credencialOpcional(c.env,'cnpj_br');
+    const host=token?'comercial.cnpj.ws':'publica.cnpj.ws';
+    const cabecalhos=token?{'x_api_token':token}:{};
+    const tentarCnpjWs=async()=>{
+      const r=await c.get(`https://${host}/cnpj/${encodeURIComponent(a.valor)}`,{timeout:7000,headers:cabecalhos});
+      if(r.status===404)return {achou:false};
+      if(!r.ok)throw falhar(r);
+      const j=await J(r);
+      if(!j||typeof j!=='object'||Array.isArray(j)||!j.razao_social)throw Error('formato inesperado de CNPJ');
+      const dados=normalizarCnpjWs(j);
+      return {achou:true,dados,pivos:pivosDeCnpj(dados)};
+    };
+    const tentarReceita=async()=>{
+      const r=await c.get(`https://minhareceita.org/${encodeURIComponent(a.valor)}`,{timeout:7000});
+      if(r.status===404)return {achou:false};
+      if(!r.ok)throw falhar(r);
+      const j=await J(r);
+      if(!j||typeof j!=='object'||Array.isArray(j)||String(j.cnpj)!==a.valor)throw Error('formato inesperado de CNPJ');
+      const dados=normalizarReceita(j);
+      return {achou:true,dados,pivos:pivosDeCnpj(dados)};
+    };
+    let erro=null,ausentes=0;
+    for(const tentar of [tentarCnpjWs,tentarReceita]){
+      try{
+        const saida=await tentar();
+        if(saida.achou)return {dados:saida.dados,pivos:saida.pivos};
+        ausentes++;
+      }catch(e){
+        // O erro do provedor primario vem primeiro; o do provedor de reserva
+        // fica anexado, para a evidencia dos dois.
+        erro=erro?Object.assign(erro,{message:`${erro.message} | fallback: ${e.message}`}):e;
+      }
+    }
+    if(ausentes===2)return {dados:{existe:false}};
+    throw erro;
   }},
  {id:'ceis',tipos:['cnpj'],custo:1,ttl:86400,provenance:'portal-transparencia-ceis',
   async run(a,c){
@@ -376,8 +510,18 @@ for(const fonte of REGISTRY){
   if(fonte.custo!==meta.custo)throw new Error(`custo divergente do manifesto: ${fonte.id}`);
   if(fonte.ttl!==meta.ttl)throw new Error(`ttl divergente do manifesto: ${fonte.id}`);
   if(fonte.provenance!==meta.provenance)throw new Error(`provenance divergente do manifesto: ${fonte.id}`);
-  const usaCredencial=String(fonte.run).includes('exigirCredencial');
-  if(usaCredencial!==Boolean(meta.requer))throw new Error(`credencial divergente do manifesto: ${fonte.id}`);
+  // A fonte tem de usar exatamente o tipo de credencial que o manifesto
+  // declara: `exigirCredencial` quando a credencial e obrigatoria (a fonte
+  // para com sem_chave/sem_token) e `credencialOpcional` quando ela apenas
+  // melhora o resultado (a fonte segue pelo caminho publico).
+  const codigoFonte=String(fonte.run);
+  const usaExigir=/exigirCredencial\s*\(/.test(codigoFonte);
+  const usaOpcional=/credencialOpcional\s*\(/.test(codigoFonte);
+  const credencialOpcionalNoManifesto=Boolean(meta.requer?.opcional);
+  const credencialCoerente=meta.requer
+    ?(credencialOpcionalNoManifesto?(usaOpcional&&!usaExigir):(usaExigir&&!usaOpcional))
+    :(!usaExigir&&!usaOpcional);
+  if(!credencialCoerente)throw new Error(`credencial divergente do manifesto: ${fonte.id}`);
   Object.assign(fonte,{titulo:meta.titulo,chave:meta.chave,requer:meta.requer});
 }
 const idsManifesto=Object.keys(REGISTRY_META.fontes);

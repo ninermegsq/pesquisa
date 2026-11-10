@@ -116,6 +116,19 @@ Na mesma passagem: **27 consultas, 23 responderam, 0 falharam**; as 4 restantes
 são as fontes com credencial opcional (`github`, `emailrep`, `ceis`, `datajud`),
 que respondem `sem_token`/`sem_chave` sem marcar o relatório como parcial.
 
+Prova pelo caminho completo da prévia (servidor local -> `/api/scan` ->
+`devScan` -> CNPJ.ws, rede real), com alvo `00000000000191`:
+
+```json
+{"status":200,"alvo":{"tipo":"cnpj","valor":"00000000000191"},"cnpj_br":{"status":"ok","erro":null,"provenance":"cnpj-ws-publica+minha-receita-cnpj","cache":"miss","ms":505,"provedor":"cnpj-ws","razao":"BANCO DO BRASIL SA","situacao":"Ativa","cnae":"Bancos múltiplos, com carteira comercial","municipio":"Brasília","uf":"DF","email":"secex@bb.com.br","telefone":"6134939002","simples":false,"mei":false,"total_socios":88,"socios_no_relatorio":20,"inicio_atividade":"1966-08-01","atualizado_em":"2026-10-10T03:00:00.000Z"},"pivos":[{"tipo":"email","valor":"secex@bb.com.br"},{"tipo":"telefone","valor":"6134939002"}],"saude":{"por_fonte":{"ceis":"sem_chave","cnpj_br":"ok"},"ok":1,"indisponiveis":[],"por_configuracao":["ceis"],"parcial":false}}
+```
+
+O que essa prova fixa: o cadastro real do Banco do Brasil (88 sócios no
+cadastro, 20 no relatório), o e-mail e o telefone do estabelecimento virando
+pivo — o e-mail primeiro —, o `"Não"` do provedor virando `false` em
+`simples`/`mei`, e o relatório **não** parcial (a única fonte indisponível, o
+CEIS, está em `por_configuracao`, por falta da chave do operador).
+
 Verificação offline que fixa o contrato novo
 (`verification/source-fix-check.mjs`, fixtures dos provedores, sem rede, já na
 cadeia `npm test`): confere a URL pública, o desvio para `comercial.cnpj.ws`

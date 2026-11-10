@@ -242,6 +242,38 @@ que o Worker usa. A lista de links para visitantes que cita "Mozilla
 Observatory" (`cloudflare-worker.mjs` e `public/app.js`) foi mantida: é uma
 lista de links para consulta humana, não uma fonte do scanner.
 
+## Envio para o GitHub (2026-11-10)
+
+O trabalho da sessão foi enviado para `origin` (`https://github.com/ninermegsq/pesquisa.git`,
+branch `main`) no commit `d8626fa` — "feat: add result contract, token guard, migrations,
+source manifest and offline verification suite" (37 arquivos, +2621/−95). Antes do envio,
+`npm run check`, `npm test` e `npm run build` passaram, e
+`git diff --exit-code` sobre `registry.meta.mjs`, `migrations.mjs` e `cloudflare-worker.mjs`
+(depois do build) saiu limpo — é exatamente o passo de idempotência que a CI exige.
+
+O `origin/main` anterior ainda tinha a fonte antiga: `git grep -n observatory origin/main`
+encontrava `src/sources/registry.mjs:149` chamando
+`https://observatory.mozilla.org/api/v2/analyze`. Depois do envio, a mesma busca não
+encontra mais nada e o registro remoto já tem a fonte `ssllabs` (`registry.mjs:215`).
+
+Nenhuma publicação em produção ocorreu com esse envio: o workflow de deploy
+(`.github/workflows/deploy.yml`) é **manual** (`workflow_dispatch`) e só executa quando alguém
+digita "publicar" no gatilho, com os segredos `CLOUDFLARE_API_TOKEN` e `CLOUDFLARE_ACCOUNT_ID`.
+
+Pendência real: `.github/workflows/ci.yml` e `.github/workflows/deploy.yml` continuam **fora do
+GitHub**. O token OAuth do GitHub CLI guardado nesta máquina tem os escopos `gist`, `read:org`
+e `repo`, e o GitHub recusa criar arquivos de workflow sem o escopo `workflow`:
+
+```text
+! [remote rejected] main -> main (refusing to allow an OAuth App to create or update
+workflow `.github/workflows/ci.yml` without `workflow` scope)
+```
+
+Os dois arquivos estão preservados no disco, sem rastreio (aparece como `?? .github/` em
+`git status`). Para publicá-los depois: `gh auth refresh -h github.com -s workflow` (aprovação
+no navegador), depois `git add .github/workflows` e `git push`. Enquanto isso, a verificação
+continua rodando local com `npm run check`, `npm run test` e `npm run build`.
+
 ## Ainda obrigatório antes de concluir
 
 1. Desbloquear a validação autorizada no ambiente de teste sem contornar controles.

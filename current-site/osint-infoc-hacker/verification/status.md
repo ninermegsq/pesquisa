@@ -440,22 +440,22 @@ carregar o código novo.
 ### O que a Fase 1 não faz
 
 - Não publica nada. O Worker de produção e o domínio `ostnt.online` seguem
-  intocados.
-- `npm run check:build` **não** passou, e o motivo é esperado: ele exige a
-  árvore do Git limpa, e as alterações da Fase 1 (arquivos novos em `public/`,
-  `scripts/check-syntax.mjs`, `scripts/stop-dev-servers.mjs`,
-  `scripts/build-worker.mjs`, edições do Worker e do README) ainda não estão
-  commitadas. O Git **é** acessível neste ambiente pelo atalho `npm run git`
-  (encaminhamento para o binário `git`): `npm run git status --porcelain`
-  lista 16 arquivos modificados e 6 não rastreados. O commit fica para o seu
-  lado, porque ele precede um envio ao repositório. O que já foi comprovado
-  sem Git: `scripts/build-worker.mjs` agora imprime o `sha256` do arquivo
-  gerado e dois builds consecutivos produziram o mesmo —
-  `f0fee8fdb1942730c10162d5354c9684fe49175e93e9729c35d09720b6bc71a3`
-  nos dois — e `verification/codegen-check.mjs` confirma que
-  `registry.meta.mjs` e `migrations.mjs` batem com o que o codegen produz a
-  partir das fontes. O `check:build` completo deve rodar no runner da CI ou
-  depois do commit.
+  intocados. O commit `81b3d83` é local: nada foi enviado ao repositório
+  remoto nem ao Cloudflare.
+- `npm run check:build` **passou** depois do commit `81b3d83` (a Fase 1 foi
+  commitada; o `check:build` exige árvore limpa). Saída real:
+
+  ```json
+  {"ok":true,"escopo":"LOCAL ONLY; nenhum arquivo publicado","artefatos":["current-site/osint-infoc-hacker/src/sources/registry.meta.mjs","current-site/osint-infoc-hacker/src/lib/migrations.mjs","current-site/osint-infoc-hacker/cloudflare-worker.mjs"],"arvoreLimpa":true,"buildDeterministico":true}
+  ```
+
+  O commit ficou local: `npm run git status --porcelain` volta vazio, e o
+  `push` (que liga o sync automático do editor) continua para o seu lado.
+  Sem Git, o mesmo resultado já era garantido pelo `sha256` impresso pelo
+  build — `f0fee8fdb1942730c10162d5354c9684fe49175e93e9729c35d09720b6bc71a3`
+  em dois builds seguidos — e por `verification/codegen-check.mjs`, que
+  confirma que `registry.meta.mjs` e `migrations.mjs` batem com o que o
+  codegen produz a partir das fontes.
 - `DATAJUD_API_KEY` continua sem valor: sem ela a fonte fica `sem_chave`, o
   que é o comportamento declarado, não uma falha.
 - A prévia do editor precisa de **reinício** do servidor local: os módulos ESM

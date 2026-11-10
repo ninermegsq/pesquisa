@@ -122,6 +122,55 @@ try {
   await new Promise(resolve => blocker4.close(resolve));
   if (blocker6Up) await new Promise(resolve => blocker6.close(resolve));
 
+  // Todas as portas fixas ocupadas: o servidor ainda sobe, em uma porta
+  // efemera. Sem isso, o preview do editor abre com "o servidor terminou
+  // antes de abrir a previa" sempre que outro preview deixou as portas
+  // presas na maquina.
+  const portasFixas = [3000, 5173, 8080, 4173, 5000, 3001, 5174, 8000, 8888];
+  const bloqueadores = [];
+  for (const p of portasFixas) {
+    for (const host of ['127.0.0.1', '::1']) {
+      const srv = createServer(() => {});
+      try {
+        await new Promise((resolve, reject) => { srv.once('error', reject); srv.listen(p, host, resolve); });
+        bloqueadores.push(srv);
+      } catch { /* indisponivel nesta maquina: nao e um caso do teste */ }
+    }
+  }
+  const bloqueadas = bloqueadores.map(s => s.address().port);
+  let efemeraPort = 0;
+  let efemeraUi = 0;
+  const todasOcupadas = spawn(process.execPath, ['scripts/dev-server.mjs', '--port', String(portasFixas[0])], {
+    cwd: root,
+    env: { ...process.env, PORT: '' },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+  let todasOut = '';
+  todasOcupadas.stdout.on('data', chunk => { todasOut += chunk.toString(); });
+  todasOcupadas.stderr.on('data', chunk => { todasOut += chunk.toString(); });
+  try {
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline) {
+      const match = todasOut.match(/Server running on http:\/\/localhost:(\d+)/);
+      if (match) { efemeraPort = Number(match[1]); break; }
+      if (todasOcupadas.exitCode !== null) break;
+      await new Promise(resolve => setTimeout(resolve, 150));
+    }
+    assert.equal(todasOcupadas.exitCode, null, `o servidor terminou com todas as portas fixas ocupadas. Saida:\n${todasOut}`);
+    assert.ok(efemeraPort > 0, `sem aviso de "Server running" na porta efemera. Saida:\n${todasOut}`);
+    assert.ok(!bloqueadas.includes(efemeraPort), `a porta efemera nao pode ser uma das ocupadas. Saida:\n${todasOut}`);
+    assert.ok(todasOut.includes(`NEXUS_PREVIEW_URL=http://localhost:${efemeraPort}`), `NEXUS_PREVIEW_URL sem a porta efemera. Saida:\n${todasOut}`);
+    const efemeraBase = `http://127.0.0.1:${efemeraPort}`;
+    const efPage = await fetch(`${efemeraBase}/`, { headers: { origin: efemeraBase } });
+    efemeraUi = efPage.status;
+    assert.equal(efemeraUi, 200, 'interface da porta efemera nao respondeu 200');
+  } finally {
+    todasOcupadas.kill('SIGTERM');
+    await new Promise(resolve => setTimeout(resolve, 400));
+    if (todasOcupadas.exitCode === null) todasOcupadas.kill('SIGKILL');
+    for (const srv of bloqueadores) await new Promise(resolve => srv.close(resolve));
+  }
+
   const token = await fetch(`${base}/.netlify/functions/token`, { headers: { origin: base } });
   assert.equal(token.status, 200);
 
@@ -183,6 +232,7 @@ try {
     turnstileSimulado: true,
     portasEsgotadas: { codigo: busyCode, listouPortas: true },
     fallbackDePorta: { portaOcupada: busyPort, portaUsada: fallbackPort, ui: fallbackUi, permaneceuVivo: true },
+    portaEfemera: { portasFixasBloqueadas: bloqueadas.length, portaUsada: efemeraPort, ui: efemeraUi, permaneceuVivo: true },
     previaRaiz: { scriptDev, porta: previewPort, ui: previewUi, permaneceuVivo: true }
   }));
 } finally {

@@ -260,8 +260,13 @@ Nenhuma publicação em produção ocorreu com esse envio: o workflow de deploy
 (`.github/workflows/deploy.yml`) é **manual** (`workflow_dispatch`) e só executa quando alguém
 digita "publicar" no gatilho, com os segredos `CLOUDFLARE_API_TOKEN` e `CLOUDFLARE_ACCOUNT_ID`.
 
-Pendência real: `.github/workflows/ci.yml` e `.github/workflows/deploy.yml` continuam **fora do
-GitHub**. O token OAuth do GitHub CLI guardado nesta máquina tem os escopos `gist`, `read:org`
+Resolvido: `.github/workflows/ci.yml` e `.github/workflows/deploy.yml` **estão no GitHub**.
+
+A publicação foi feita pela API de conteúdo do repositório
+(`gh api -X PUT repos/ninermegsq/pesquisa/contents/.github/workflows/...`), que aceitou a
+escrita com o token que já estava na máquina, nos commits `cece9b6` e `3d51c5b` (ambos com a
+mensagem "ci: adiciona workflows de teste e deploy"), filhos de `282864f`. O envio por
+`git push` continuava bloqueado porque o token OAuth do GitHub CLI tinha só `gist`, `read:org`
 e `repo`, e o GitHub recusa criar arquivos de workflow sem o escopo `workflow`:
 
 ```text
@@ -269,10 +274,37 @@ e `repo`, e o GitHub recusa criar arquivos de workflow sem o escopo `workflow`:
 workflow `.github/workflows/ci.yml` without `workflow` scope)
 ```
 
-Os dois arquivos estão preservados no disco, sem rastreio (aparece como `?? .github/` em
-`git status`). Para publicá-los depois: `gh auth refresh -h github.com -s workflow` (aprovação
-no navegador), depois `git add .github/workflows` e `git push`. Enquanto isso, a verificação
-continua rodando local com `npm run check`, `npm run test` e `npm run build`.
+O escopo `workflow` foi concedido depois com `gh auth refresh -h github.com -s workflow`
+(fluxo de dispositivo: o GitHub CLI mostra um código de uso único e a aprovação é feita no
+navegador da conta `ninermegsq`). Depois da aprovação, `gh auth status` passa a listar
+`'gist', 'read:org', 'repo', 'workflow'`, e envios que alterem `.github/workflows/` passam a
+ser aceitos por `git push` sem depender da API.
+
+## Prévia: o servidor local não pode mais terminar por causa de porta (2026-11-10)
+
+Sintoma reportado pelo editor: "Não foi possível abrir a prévia — O servidor terminou antes
+de abrir a prévia". No `scripts/dev-server.mjs` o servidor encerrava com código 1 sempre
+que todas as portas da lista (3000, 5173, 8080, 4173, 5000) estavam ocupadas, e mantinha
+todas essas portas presas ao mesmo tempo quando subia sem porta explícita — o que deixava a
+prévia seguinte sem porta livre. Havia ainda um `dev-server.mjs` de uma sessão anterior
+(PID 18508) segurando portas na máquina; foi encerrado.
+
+Correções em `scripts/dev-server.mjs`:
+
+- o servidor ocupa **uma** porta (a primeira que abre), e não todas da lista;
+- a lista de candidatas ganhou 3001, 5174, 8000 e 8888;
+- quando nem a porta pedida nem nenhuma candidata está livre, o servidor cai para uma
+  **porta efemera** do sistema e continua no ar, em vez de encerrar;
+- o modo estrito (`--sem-fallback`) continua encerrando com código 1 e listando as portas
+  tentadas, como antes.
+
+Verificação nova em `verification/dev-process-check.mjs`: com as 9 portas fixas bloqueadas
+em IPv4 e IPv6, o processo continua vivo, imprime `NEXUS_PREVIEW_URL` e a interface responde
+200.
+
+```json
+{"portasEsgotadas":{"codigo":1,"listouPortas":true},"fallbackDePorta":{"portaOcupada":17549,"portaUsada":3000,"ui":200,"permaneceuVivo":true},"portaEfemera":{"portasFixasBloqueadas":18,"portaUsada":17552,"ui":200,"permaneceuVivo":true},"previaRaiz":{"porta":17554,"ui":200,"permaneceuVivo":true}}
+```
 
 ## Ainda obrigatório antes de concluir
 

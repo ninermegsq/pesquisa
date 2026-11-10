@@ -493,26 +493,61 @@ async function openPort(port, bindings = BINDINGS) {
   return opened;
 }
 
+// Ultimo recurso: uma porta efemera escolhida pelo sistema. Mantem o mesmo
+// numero de porta em IPv4 e IPv6 para que "localhost" funcione igual.
+async function openEphemeral(bindings = BINDINGS) {
+  const [primeiro, ...resto] = bindings;
+  if (!primeiro) return [];
+  const base = await openPort(0, [primeiro]);
+  if (!base.length) return [];
+  const opened = [...base];
+  const port = base[0].port;
+  for (const host of resto) {
+    const server = createDevServer();
+    const address = await listenOn(server, port, host);
+    if (address) opened.push({ server, host, port: address.port });
+    else { try { server.close(); } catch { /* nao estava ouvindo */ } }
+  }
+  return opened;
+}
+
 async function main() {
   const explicit = portaCli || (process.env.PORT ? Number(process.env.PORT) : null);
   const bindings = hostCli ? [hostCli] : BINDINGS;
-  const candidatas = [3000, 5173, 8080, 4173, 5000];
+  const candidatas = [3000, 5173, 8080, 4173, 5000, 3001, 5174, 8000, 8888];
   // Com porta explicita e sem --sem-fallback, as portas livres alternatives
   // entram na lista: a previa abre em vez de o processo terminar.
   const candidates = explicit
     ? (semFallback ? [explicit] : [explicit, ...candidatas.filter(p => p !== explicit)])
     : candidatas;
   const groups = [];
+  // Uma porta so: a primeira que abre. Antes o servidor segurava todas as
+  // portas da lista ao mesmo tempo, o que deixava a proxima previa sem porta
+  // livre e fazia o processo terminar.
   for (const port of candidates) {
     const opened = await openPort(port, bindings);
-    if (opened.length) groups.push({ port, opened });
-    if (explicit && (semFallback || groups.length)) break;
+    if (!opened.length) continue;
+    groups.push({ port, opened });
+    break;
   }
   if (!groups.length) {
     const attemptadas = candidates.join(', ');
-    console.error(`[dev] nenhuma porta disponivel para o servidor local. Portas tentadas: ${attemptadas}. Defina PORT=<numero> ou use --port <numero> para escolher outra e tente novamente.`);
-    process.exitCode = 1;
-    return;
+    if (semFallback) {
+      console.error(`[dev] nenhuma porta disponivel para o servidor local. Portas tentadas: ${attemptadas}. Defina PORT=<numero> ou use --port <numero> para escolher outra e tente novamente.`);
+      process.exitCode = 1;
+      return;
+    }
+    // Ultimo recurso: porta efemera do sistema. O servidor local nao pode
+    // terminar por causa de porta ocupada, senao o preview do editor abre com
+    // "o servidor terminou antes de abrir a previa".
+    const efemera = await openEphemeral(bindings);
+    if (!efemera.length) {
+      console.error(`[dev] nenhuma porta disponivel para o servidor local. Portas tentadas: ${attemptadas}. Defina PORT=<numero> ou use --port <numero> para escolher outra e tente novamente.`);
+      process.exitCode = 1;
+      return;
+    }
+    groups.push({ port: efemera[0].port, opened: efemera, efemera: true });
+    console.error(`[dev] portas fixas ocupadas (${attemptadas}); abrindo na porta efemera ${efemera[0].port}.`);
   }
   const servers = groups.flatMap(g => g.opened.map(o => o.server));
   console.log('');

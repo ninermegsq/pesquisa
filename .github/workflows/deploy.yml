@@ -1,0 +1,55 @@
+name: Deploy
+
+# Publicacao do Worker. Manual de proposito: nada acontece sem um dispatch
+# explicito e sem o texto de confirmacao.
+#
+# Segredos necessarios (Settings > Secrets and variables > Actions):
+#   CLOUDFLARE_API_TOKEN  - token da API com permissao de edicao de Workers
+#   CLOUDFLARE_ACCOUNT_ID - id da conta Cloudflare
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmar:
+        description: 'Digite "publicar" para confirmar o deploy em producao.'
+        required: true
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  publicar:
+    if: ${{ inputs.confirmar == 'publicar' }}
+    name: Publicar o Worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar dependencias
+        run: npm ci --no-audit --no-fund
+
+      - name: Checar sintaxe
+        run: npm run check
+
+      - name: Testes de verificacao (offline)
+        run: npm test
+
+      - name: Gerar artefatos derivados
+        run: npm run build
+
+      - name: Publicar
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: current-site/osint-infoc-hacker
+          command: deploy

@@ -8,7 +8,7 @@
   "fontes": [
     { "id": "gravatar", "titulo": "Gravatar", "tipos": ["email"], "custo": 1, "ttl": 86400, "provenance": "gravatar-public-profile", "chave": false, "requer": null },
     { "id": "pgp", "titulo": "PGP", "tipos": ["email"], "custo": 1, "ttl": 604800, "provenance": "keys-openpgp", "chave": false, "requer": null },
-    { "id": "gitlab", "titulo": "GitLab", "tipos": ["email"], "custo": 1, "ttl": 21600, "provenance": "gitlab-users-api", "chave": false, "requer": null },
+    { "id": "gitlab", "titulo": "GitLab", "tipos": ["email"], "custo": 1, "ttl": 21600, "provenance": "gitlab-graphql-search", "chave": false, "requer": null },
     { "id": "npm", "titulo": "npm", "tipos": ["email"], "custo": 1, "ttl": 21600, "provenance": "npm-registry", "chave": false, "requer": null },
     { "id": "bluesky", "titulo": "Bluesky", "tipos": ["email"], "custo": 1, "ttl": 21600, "provenance": "bsky-public-api", "chave": false, "requer": null },
     { "id": "telegram", "titulo": "Telegram", "tipos": ["telefone"], "custo": 1, "ttl": 3600, "provenance": "telegram-tme", "chave": false, "requer": null },

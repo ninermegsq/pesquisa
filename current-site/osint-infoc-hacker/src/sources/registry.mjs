@@ -71,19 +71,42 @@ export const REGISTRY=[
     const t=await r.text();
     return {dados:{existe:true,uids:[...t.matchAll(/^uid\s+:(.*)$/gm)].map(m=>m[1].trim()).filter(Boolean)}};
   }},
- {id:'gitlab',tipos:['email'],custo:1,ttl:21600,provenance:'gitlab-users-api',
+ // O GitLab nao permite busca publica de usuarios por e-mail: a rota
+ // GET /api/v4/users?search= responde 403 sem autenticacao, e o GraphQL de
+ // `users` exige permissao ("resource ... does not exist or you don't have
+ // permission"), verificado ao vivo. O que responde sem credencial e a busca
+ // de projetos, pelo GraphQL publico, e ela alcanca o e-mail publicado na
+ // descricao e no README do projeto. A fonte passou a procurar o e-mail em
+ // projetos publicos; o id e a proveniencia mudaram junto com o manifesto.
+ {id:'gitlab',tipos:['email'],custo:1,ttl:21600,provenance:'gitlab-graphql-search',
   async run(a,c){
-    const r=await c.get(`https://gitlab.com/api/v4/users?search=${encodeURIComponent(a.valor)}`,{timeout:6000});
-    if(!r.ok) throw falhar(r);
-    const j=lista(await J(r));
-    return {dados:{total:j.length,contas:j.slice(0,5).map(u=>({login:u.username,nome:u.name,bio:u.bio||null}))}};
-  }},
- {id:'npm',tipos:['email'],custo:1,ttl:21600,provenance:'npm-registry',
-  async run(a,c){
-    const r=await c.get(`https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(a.valor)}&size=5`,{timeout:6000});
+    const consulta=`{ projects(search: ${JSON.stringify(String(a.valor??''))}, first: 10) { nodes { name nameWithNamespace description webUrl } } }`;
+    const r=await c.get('https://gitlab.com/api/graphql',{method:'POST',timeout:8000,
+      headers:{'content-type':'application/json'},body:JSON.stringify({query:consulta})});
     if(!r.ok) throw falhar(r);
     const j=await J(r);
-    return {dados:{total:j.total||0,pacotes:lista(j?.objects).map(o=>({nome:o?.package?.name,autor:o?.package?.author?.name||null}))}};
+    const erros=lista(j?.errors);
+    if(erros.length) throw Error(`GitLab recusou a consulta: ${String(erros[0]?.message||'erro').slice(0,140)}`);
+    const nos=lista(j?.data?.projects?.nodes);
+    return {dados:{total:nos.length,
+      projetos:nos.map(p=>({nome:p?.name||null,caminho:p?.nameWithNamespace||null,descricao:p?.description||null,url:p?.webUrl||null})),
+      observacao:'O GitLab nao expoe busca publica de usuarios por e-mail: a fonte lista os projetos publicos em que o e-mail aparece (descricao ou README).'}};
+  }},
+ // A busca do npm e textual: para um e-mail que nao existe no indice ela
+ // devolve dezenas de milhares de pacotes irrelevantes (o total cru do
+ // provedor). O que interessa e quem publica com este e-mail, e cada
+ // resultado traz `package.maintainers` com o e-mail do mantenedor. A fonte
+ // conta e lista so os pacotes cujo mantenedor usa exatamente este e-mail.
+ {id:'npm',tipos:['email'],custo:1,ttl:21600,provenance:'npm-registry',
+  async run(a,c){
+    const r=await c.get(`https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(a.valor)}&size=50`,{timeout:8000});
+    if(!r.ok) throw falhar(r);
+    const j=await J(r);
+    const alvo=String(a.valor??'').trim().toLowerCase();
+    const meus=lista(j?.objects).filter(o=>lista(o?.package?.maintainers).some(m=>String(m?.email||'').trim().toLowerCase()===alvo));
+    return {dados:{total:meus.length,
+      pacotes:meus.slice(0,5).map(o=>({nome:o?.package?.name||null,autor:o?.package?.author?.name||null,descricao:o?.package?.description||null})),
+      observacao:'A busca do npm e textual e depende do indice do provedor; a fonte lista apenas os pacotes cujo mantenedor publica com este e-mail.'}};
   }},
  {id:'bluesky',tipos:['email'],custo:1,ttl:21600,provenance:'bsky-public-api',
   async run(a,c){
@@ -174,7 +197,11 @@ export const REGISTRY=[
  {id:'crtsh',tipos:['email','dominio'],custo:1,ttl:43200,provenance:'subdomain-center',
   async run(a,c){
     const d=a.tipo==='email'?a.valor.split('@')[1]:a.valor;
-    const r=await c.get(`https://api.subdomain.center/?domain=${encodeURIComponent(d)}`,{timeout:9000});
+    // O Subdomain Center responde, mas devolve em 0,3 s a 19 s (medido ao
+    // vivo) e as vezes devolve 503 "server busy (64 queries in flight)".
+    // O timeout de 9 s cortava a consulta valida; 20 s cobre a latencia
+    // observada. O 503 continua sendo falha real do provedor.
+    const r=await c.get(`https://api.subdomain.center/?domain=${encodeURIComponent(d)}`,{timeout:20000});
     if(!r.ok) throw falhar(r);
     const arr=await J(r);
     if(!Array.isArray(arr))throw Error('formato inesperado');
@@ -182,16 +209,33 @@ export const REGISTRY=[
       .filter(x=>x.endsWith('.'+d)&&x.length<=253&&/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(x)&&!x.includes('..')))].slice(0,60);
     return {dados:{total:subs.length,subdominios:subs},pivos:subs.slice(0,8).map(v=>({tipo:'dominio',valor:v}))};
   }},
+ // A listagem de URLs do Internet Archive (CDX) esta degradada com
+ // frequencia: responde 503 "Internet Archive: Temporarily Offline" ou a
+ // consulta wildcard nao termina (medido ao vivo: 8 s a 19 s, com 503 e
+ // timeout). A API de disponibilidade responde em cerca de 0,6 s e cobre o
+ // mesmo dominio. Quando a listagem falha, a fonte usa a disponibilidade:
+ // perde a lista completa de URLs, mas nao a fonte inteira. O resultado do
+ // fallback tem TTL proprio menor, para que a listagem completa seja tentada
+ // de novo em breve.
  {id:'wayback',tipos:['email','dominio'],custo:1,ttl:43200,provenance:'wayback-cdx',
   async run(a,c){
     const d=a.tipo==='email'?a.valor.split('@')[1]:a.valor;
-    const r=await c.get(`https://web.archive.org/cdx/search/cdx?url=${encodeURIComponent(d)}/*&output=json&fl=original,timestamp&collapse=urlkey&limit=200`,{timeout:9000});
-    if(!r.ok) throw falhar(r);
-    const arr=await J(r);
-    if(!Array.isArray(arr)||arr.length<2)return {dados:{total:0,parametros:[],amostra:[]}};
-    const urls=arr.slice(1).map(x=>x?.[0]).filter(Boolean);
-    const params=[...new Set(urls.flatMap(u=>{try{return [...new URL(u).searchParams.keys()]}catch{return[]}}))].slice(0,20);
-    return {dados:{total:urls.length,parametros:params,amostra:urls.slice(0,15)}};
+    const parametrosDe=urls=>[...new Set(urls.flatMap(u=>{try{return [...new URL(u).searchParams.keys()]}catch{return[]}}))].slice(0,20);
+    try{
+      const r=await c.get(`https://web.archive.org/cdx/search/cdx?url=${encodeURIComponent(d)}/*&output=json&fl=original,timestamp&collapse=urlkey&limit=200`,{timeout:20000});
+      if(!r.ok) throw falhar(r);
+      const arr=await J(r);
+      if(!Array.isArray(arr)||arr.length<2)return {dados:{total:0,parametros:[],amostra:[],origem:'cdx'}};
+      const urls=arr.slice(1).map(x=>x?.[0]).filter(Boolean);
+      return {dados:{total:urls.length,parametros:parametrosDe(urls),amostra:urls.slice(0,15),origem:'cdx'}};
+    }catch(e){
+      const r=await c.get(`https://archive.org/wayback/available?url=${encodeURIComponent(d)}`,{timeout:8000});
+      if(!r.ok) throw falhar(r);
+      const j=await J(r);
+      const url=j?.archived_snapshots?.closest?.url||null;
+      return {ttl:900,dados:{total:url?1:0,parametros:url?parametrosDe([url]):[],amostra:url?[url]:[],origem:'disponibilidade',
+        observacao:`A listagem de URLs do Internet Archive falhou (${String(e?.message||'erro').slice(0,80)}); a fonte usou a API de disponibilidade, que devolve apenas o snapshot mais proximo.`}};
+    }
   }},
  {id:'rdap',tipos:['dominio'],custo:1,ttl:86400,provenance:'rdap',
   async run(a,c){

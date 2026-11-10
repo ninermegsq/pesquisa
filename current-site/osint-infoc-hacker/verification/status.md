@@ -1,8 +1,73 @@
-# Verificação — 2026-10-30
+# Verificação — 2026-10-30 (última atualização: 2026-11-10)
 
 Estado: NÃO CONCLUÍDO. Código candidato, não promovido a produção.
 
-## Evidência real obtida
+## Sonda de rede real das 24 fontes (2026-11-10)
+
+A suíte do projeto é **offline** (substitui `globalThis.fetch` pelas fixtures)
+e, por isso, prova contrato, cache, TTL e orçamento — não prova disponibilidade
+dos provedores. Foi criada a sonda de rede `verification/live-source-probe.mjs`
+(atalho `npm run probe:live`, fora da suíte), que chama cada fonte com rede real.
+
+Primeira passagem: **27 consultas, 18 responderam, 5 falharam** (`gitlab` HTTP
+403, `crtsh` timeout ×2, `wayback` HTTP 503 + timeout), 4 bloqueadas por
+credencial. O diagnóstico ao vivo (11 rodadas contra os provedores) separou
+"nosso código está errado" de "o provedor está fora" e corrigiu as três fontes
+mais um defeito de ruído no `npm`:
+
+| Fonte | Falha real | Correção aplicada |
+| --- | --- | --- |
+| `gitlab` | `GET /api/v4/users?search=` exige autenticação (403); GraphQL de `users` exige permissão | Rota para o GraphQL público `projects(search:)`, que alcança o e-mail publicado na descrição/README. Proveniência: `gitlab-users-api` → `gitlab-graphql-search` |
+| `crtsh` | Timeout de 9 s: o Subdomain Center responde em 0,3 s a 19 s e às vezes 503 `server busy` | Timeout 9 s → 20 s |
+| `wayback` | Listagem de URLs (CDX) degradada: 503 `Internet Archive: Temporarily Offline` ou não termina | Cada chamada cai em `archive.org/wayback/available` (~0,6 s), com TTL próprio de 900 s |
+| `npm` | Bug de ruído (não era rede): o total cru do provedor (`34489` para qualquer e-mail) viraria pontuação sem dado real | Conta e lista só os pacotes cujo mantenedor usa exatamente este e-mail |
+
+Segunda passagem, depois das correções: **27 consultas, 23 responderam, 0
+falharam**. As 4 restantes são as fontes que declaram credencial opcional e
+respondem `sem_token`/`sem_chave` sem marcar o relatório como parcial
+(`github`, `emailrep`, `ceis`, `datajud`).
+
+```json
+{"consultas":27,"responderam":23,"falharam":0,"bloqueadas_por_credencial":[{"id":"github","erro_codigo":"sem_token"},{"id":"emailrep","erro_codigo":"sem_chave"},{"id":"ceis","erro_codigo":"sem_chave"},{"id":"datajud","erro_codigo":"sem_chave"}]}
+```
+
+Leituras positivas com rede real (não apenas fixtures):
+
+```json
+{"id":"gitlab","tipo":"email","status":"ok","resumo":"total=0","http":[{"host":"gitlab.com","status":200}],"ms":1046}
+{"id":"npm","tipo":"email","status":"ok","resumo":"total=0","http":[{"host":"registry.npmjs.org","status":200}],"ms":901}
+{"id":"crtsh","tipo":"dominio","status":"ok","resumo":"total=0","http":[{"host":"api.subdomain.center","status":200}],"ms":328}
+{"id":"wayback","tipo":"email","status":"ok","resumo":"total=1","http":[{"host":"archive.org","status":200}],"ms":20848}
+{"id":"wayback","tipo":"dominio","status":"ok","resumo":"total=0","http":[{"host":"web.archive.org","status":200}],"ms":7248}
+{"id":"ssllabs","tipo":"dominio","status":"ok","resumo":"situacao=pronta","http":[{"host":"api.ssllabs.com","status":200}],"ms":633}
+```
+
+- `gitlab`: com um e-mail **publicado** o GraphQL devolveu o projeto
+  (`fahadkhurshid60.gitlab.io`, descrição com o e-mail), HTTP 200 em 0,6 s.
+- `npm`: `sindresorhus@gmail.com` → `total=18577` do provedor, 48 dos 50
+  pacotes lidos com este mantenedor (`somebody`, `type-fest`, `email-regex`,
+  `execa`, `@sindresorhus/is`…); `ljharb@gmail.com` → 49 de 50.
+- `xon` (conferido à parte, pois reportou 9 brechas para `teste@example.com`):
+  é o provedor respondendo isso (corpo `\"breaches\":[[\"Nitro\",\"Canva\",…]]`);
+  para `admin@ostnt.online` o mesmo endpoint devolve `{"Error":"Not found"}` e a
+  fonte reporta 0 — o rótulo novo reflete o que o provedor informa.
+- Os dois caminhos do `wayback` foram exercitados na mesma sonda (CDX 200 em
+  7,2 s; fallback de disponibilidade em 20,8 s).
+
+Verificação offline que fixa o contrato novo: `verification/source-fix-check.mjs`
+(fixtures dos provedores, sem rede), já parte da cadeia `npm test`. Saída real:
+
+```json
+{"scope":"LOCAL ONLY; fixtures offline dos provedores","gitlab":{"rota":"graphql projects(search:)","encontrados":2,"erroDePermissao":"falha real"},"npm":{"total":"2 pacotes do mantenedor (total cru do provedor ignorado)","ruido":"0"},"wayback":{"cdx":"2 URLs + parametros","fallback":"disponibilidade, TTL 900s","semFallback":"falha real"},"crtsh":{"subdominios":2,"servidorOcupado":"HTTP 503 propagado"}}
+```
+
+Limitações declaradas: a sonda roda **neste ambiente de execução**, não pela
+saída do Worker no Cloudflare; o item 2 da lista “ainda obrigatório” (execução
+no edge) continua sem prova. A sonda faz consultas públicas reais aos
+provedores e **não deve ser rodada em loop**. Nada foi publicado: o Worker de
+produção e o domínio `ostnt.online` seguem intocados.
+
+## Evidência real obtida (2026-10-30)
 
 - GET/HEAD https://ostnt.online/: 200, HSTS `max-age=31536000`.
 - CSP em produção contém `static.cloudflareinsights.com` em script-src e `cloudflareinsights.com` em connect-src. Sem unsafe-inline em script-src.

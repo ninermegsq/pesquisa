@@ -2,6 +2,72 @@
 
 Estado: código candidato; não promovido a produção. Nenhum novo scan foi executado no Worker bloqueado.
 
+## Atualização (2026-11-10): sonda de rede real das 24 fontes
+
+Os testes do projeto são todos **offline** (eles substituem `globalThis.fetch`
+pelas fixtures) e, por isso, não provavam disponibilidade dos provedores. Foi
+criada uma sonda de rede separada (`verification/live-source-probe.mjs`,
+atalho `npm run probe:live`, fora da suíte offline) que chama cada fonte com
+rede real.
+
+Resultado da primeira passagem (27 consultas):
+
+```json
+{"consultas":27,"responderam":18,"falharam":5,"bloqueadas_por_credencial":["github","emailrep","ceis","datajud"]}
+```
+
+As 5 falhas reais e a causa encontrada por diagnóstico ao vivo:
+
+| Fonte | Sintoma | Causa comprovada | Correção |
+| --- | --- | --- | --- |
+| `gitlab` | HTTP 403 `Not authorized to access /api/v4/users` | A rota `GET /api/v4/users?search=` exige autenticação; o GraphQL de `users` também exige permissão. A busca pública que responde é a de **projetos** (`projects(search:)`), que alcança o e-mail publicado na descrição/README do projeto | Rota trocada para o GraphQL de projetos; proveniência `gitlab-users-api` → `gitlab-graphql-search` (manifesto + implementação juntos) |
+| `crtsh` | timeout de 9 s (dois alvos) | O Subdomain Center responde, mas em 0,3 s a 19 s (medido) e às vezes devolve 503 `server busy (64 queries in flight)` | Timeout de 9 s → 20 s. O 503 continua sendo falha real |
+| `wayback` | HTTP 503 `Internet Archive: Temporarily Offline` (e-mail) e timeout (domínio) | A listagem de URLs (CDX) está degradada; a API de disponibilidade responde em ~0,6 s | Cada chamada da listagem passa a cair em `archive.org/wayback/available`, com TTL próprio de 900 s, para retomar a listagem completa em breve |
+
+O diagnóstico ainda encontrou um **bug de ruído** na fonte `npm` (não era uma
+falha de rede): a busca textual devolvia o total cru do provedor
+(`total: 34489` para qualquer e-mail inexistente), o que viraria uma
+pontuação alta sem nenhum dado real. A fonte passou a contar e listar apenas
+os pacotes cujo mantenedor (`package.maintainers`) usa exatamente o e-mail
+consultado.
+
+Resultado da segunda passagem, depois das correções (27 consultas):
+
+```json
+{"consultas":27,"responderam":23,"falharam":0,"bloqueadas_por_credencial":["github sem_token","emailrep sem_chave","ceis sem_chave","datajud sem_chave"]}
+```
+
+Nenhuma das 23 consultas que respondeu depende de segredo do operador; as 4
+restantes são as fontes que declaradamente exigem credencial opcional e
+respondem `sem_chave`/`sem_token` sem marcar o relatório como parcial.
+
+Leituras positivas confirmadas com rede real:
+
+- `gitlab`: `projects(search: "<e-mail publicado>")` devolveu o projeto que
+  publica o e-mail na descrição (HTTP 200, ~0,6 s). Com um e-mail inexistente
+  devolve `total=0`.
+- `npm`: para `sindresorhus@gmail.com` a busca devolveu `total=18577` do
+  provedor, dos quais 48 dos 50 pacotes lidos têm este mantenedor
+  (`somebody`, `type-fest`, `email-regex`, `execa`, `@sindresorhus/is`, …);
+  para `ljharb@gmail.com`, 49 de 50. Para `teste@example.com`, 0.
+- `crtsh`: 200 em 0,3 s (domínio) e 0,4 s (e-mail).
+- `wayback`: o CDX respondeu 200 em 7,2 s (domínio) e caiu no fallback de
+  disponibilidade em 20,8 s (e-mail) — ou seja, os dois caminhos foram
+  exercitados.
+
+A fonte `xon` foi conferida separadamente porque reportou 9 brechas para
+`teste@example.com`: é o provedor respondendo isso mesmo (corpo com
+`"breaches":[["Nitro","Canva",...]]`, HTTP 200); para `admin@ostnt.online` e
+para `nao-existe-zzz@exemplo.com` o mesmo endpoint devolve
+`{"Error":"Not found"}` e a fonte reporta 0. Ou seja, o rótulo novo está
+correto: ele reflete o que o provedor informa.
+
+Limitação declarada: a sonda roda **neste ambiente de execução**, não pela
+saída do Worker no Cloudflare, e não substitui o item 2 da lista
+“ainda obrigatório”. A execução no edge continua não validada.
+
+## Evidência anterior (2026-10-30)
+
 Todas as chamadas HTTP abaixo usaram curl e o mesmo UA identificado: `ostnt.online scanner (+https://ostnt.online)`. Estes resultados pertencem ao ambiente local de execução, não à saída de rede do Worker.
 
 | Endpoint | HTTP | Corpo/resultado | Classificação |
@@ -49,4 +115,8 @@ Nova chamada de `curl` ao mesmo endpoint `https://api.subdomain.center/?domain=o
 
 Consulta autenticada à API de gerenciamento Cloudflare confirmou no Worker `ostnt-validation`: `enabled: false`, `previews_enabled: false`; bindings `CACHE`, `GITHUB_TOKEN` e `TOKEN_GUARD`. UA_MODE/UA_NAVEGADOR preparados no arquivo de configuração ainda não estão instalados nesse Worker. Essa consulta não executou nenhuma fonte.
 
-O aceite permanece incompleto: Subdomain Center não respondeu com sucesso nos testes disponíveis, e não há execução comprovada do novo motor na saída do Worker. Remoção ou migração ao browser por 1010 não foi acionada, pois não se observou 1010 nos provedores alternativos.
+O aceite de rede das fontes foi refeito depois das correções (ver o topo
+deste arquivo: 27 consultas, 23 responderam e 0 falharam). O aceite no
+**edge** do Cloudflare segue incompleto: não há execução comprovada do motor
+na saída do Worker de produção. Remoção ou migração ao browser por 1010 não
+foi acionada, pois não se observou 1010 nos provedores alternativos.

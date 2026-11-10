@@ -4,7 +4,7 @@
 
 export const REGISTRY_META = Object.freeze({
   versao: 1,
-  digest: "7b09a5349c229384f8ccc0d2e01e3154a6e73d328633a6765b1a6ef920ab52d5",
+  digest: "f2e0e7df4cce8e58a9a22ffb2bb350a4e804a3fcc3d7da6ba056c1ed6dd143c6",
   fontes: Object.freeze({
     "gravatar": Object.freeze({
       id: "gravatar",
@@ -32,7 +32,7 @@ export const REGISTRY_META = Object.freeze({
       tipos: Object.freeze(["email"]),
       custo: 1,
       ttl: 21600,
-      provenance: "gitlab-users-api",
+      provenance: "gitlab-graphql-search",
       chave: false,
       requer: null
     }),

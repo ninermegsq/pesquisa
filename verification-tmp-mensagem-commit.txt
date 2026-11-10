@@ -1,0 +1,29 @@
+fix: sonda de rede real das 24 fontes e correção de gitlab, npm, crtsh e wayback
+
+A suíte do projeto é offline (substitui globalThis.fetch pelas fixtures) e não
+provava disponibilidade dos provedores. A sonda npm run probe:live chamou cada
+fonte com rede real: 27 consultas, 18 responderam, 5 falharam.
+
+Correções (comprovadas por diagnóstico ao vivo contra os provedores):
+
+- gitlab: GET /api/v4/users?search= responde 403 sem autenticação e o GraphQL
+  de users exige permissão. A fonte passou a usar a busca pública de projetos
+  pelo GraphQL, que alcança o e-mail publicado na descrição/README do projeto.
+  Proveniência: gitlab-users-api -> gitlab-graphql-search (manifesto e
+  implementação atualizados juntos).
+- npm: a busca textual devolvia o total cru do provedor (34489 para qualquer
+  e-mail inexistente), o que viraria pontuação sem dado real. A fonte agora
+  conta e lista só os pacotes cujo mantenedor usa exatamente este e-mail.
+- crtsh: o Subdomain Center responde em 0,3 s a 19 s e às vezes devolve 503
+  "server busy". Timeout de 9 s -> 20 s; o 503 continua sendo falha real.
+- wayback: a listagem de URLs (CDX) está degradada (503 "Internet Archive:
+  Temporarily Offline" ou não termina). Cada chamada cai em
+  archive.org/wayback/available, com TTL próprio de 900 s.
+
+Depois das correções: 27 consultas, 23 responderam, 0 falharam; as 4 restantes
+são as fontes que declaram credencial opcional e respondem sem_token/sem_chave
+(github, emailrep, ceis, datajud) sem marcar o relatório como parcial.
+
+Adicionado verification/source-fix-check.mjs (fixtures offline, sem rede), já
+parte da cadeia npm test, que trava o contrato novo das quatro fontes e o
+fallback do wayback. Nada foi publicado.

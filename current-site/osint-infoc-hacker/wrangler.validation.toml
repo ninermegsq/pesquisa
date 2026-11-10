@@ -9,6 +9,13 @@ preview_urls = true
 binding = "CACHE"
 id = "d83ef821c9b44516a7d0f163088cc484"
 
+# O rate limit (10 scans/hora e 60/dia por IP) usa o binding OSINT_KV.
+# Sem ele o Worker cai no binding CACHE por fallback: o KV e compartilhado
+# com a contagem de requisicoes e a cota de um ambiente contamina a do outro.
+[[kv_namespaces]]
+binding = "OSINT_KV"
+id = "d83ef821c9b44516a7d0f163088cc484"
+
 [[durable_objects.bindings]]
 name = "TOKEN_GUARD"
 class_name = "TokenGuard"

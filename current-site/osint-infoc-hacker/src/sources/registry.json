@@ -29,6 +29,6 @@
     { "id": "ceis", "titulo": "Sancoes", "tipos": ["cnpj"], "custo": 1, "ttl": 86400, "provenance": "portal-transparencia-ceis", "chave": false, "requer": { "tipo": "chave", "env": "TRANSPARENCIA_KEY" } },
     { "id": "ddd", "titulo": "Regiao", "tipos": ["telefone"], "custo": 0, "ttl": 0, "provenance": "anatel-pgcn-snapshot-2026-10-30", "chave": false, "requer": null },
     { "id": "wikidata", "titulo": "Wikidata", "tipos": ["nome"], "custo": 1, "ttl": 604800, "provenance": "wikidata-sparql", "chave": false, "requer": null },
-    { "id": "datajud", "titulo": "Processos", "tipos": ["nome"], "custo": 2, "ttl": 86400, "provenance": "cnj-datajud", "chave": false, "requer": null }
+    { "id": "datajud", "titulo": "Processos", "tipos": ["nome"], "custo": 2, "ttl": 86400, "provenance": "cnj-datajud", "chave": false, "requer": { "tipo": "chave", "env": "DATAJUD_API_KEY" } }
   ]
 }

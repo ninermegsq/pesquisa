@@ -9,13 +9,14 @@
     "node": ">=20"
   },
   "scripts": {
-    "check": "node --check cloudflare-worker.mjs && node --check public/app.js && node --check src/contract.mjs && node --check src/render.mjs && node --check src/scan.mjs && node --check src/data/ddd.mjs && node --check src/lib/alvo.mjs && node --check src/lib/cache.mjs && node --check src/lib/http.mjs && node --check src/lib/md5.mjs && node --check src/lib/score.mjs && node --check src/lib/sql-migrations.mjs && node --check src/lib/token-guard.mjs && node --check src/lib/warm.mjs && node --check src/lib/migrations.mjs && node --check src/sources/registry.mjs && node --check src/sources/registry.meta.mjs && node --check scripts/build-migrations.mjs && node --check scripts/build-registry.mjs && node --check scripts/build-worker.mjs && node --check scripts/dev-server.mjs && node --check scripts/stats.mjs && node --check scripts/warm-token.mjs && node --check verification/build-idempotence-check.mjs && node --check verification/cache-check.mjs && node --check verification/codegen-check.mjs && node --check verification/contract-check.mjs && node --check verification/dev-process-check.mjs && node --check verification/dev-server-check.mjs && node --check verification/migrations-check.mjs && node --check verification/stats-check.mjs && node --check verification/telegram-source-check.mjs && node --check verification/ssllabs-source-check.mjs && node --check verification/warm-check.mjs && node --check verification/worker-regression.mjs",
+    "check": "node scripts/check-syntax.mjs",
     "check:build": "node verification/build-idempotence-check.mjs",
     "build": "node scripts/build-registry.mjs && node scripts/build-migrations.mjs && node scripts/build-worker.mjs",
     "build:registry": "node scripts/build-registry.mjs",
     "build:migrations": "node scripts/build-migrations.mjs",
     "test": "node verification/cache-check.mjs && node verification/contract-check.mjs && node verification/codegen-check.mjs && node verification/migrations-check.mjs && node verification/telegram-source-check.mjs && node verification/ssllabs-source-check.mjs && node verification/warm-check.mjs && node verification/worker-regression.mjs && node verification/dev-server-check.mjs && node verification/dev-process-check.mjs && node verification/stats-check.mjs",
     "dev": "node scripts/dev-server.mjs",
+    "dev:stop": "node scripts/stop-dev-servers.mjs",
     "start": "node scripts/dev-server.mjs",
     "preview": "node scripts/dev-server.mjs",
     "warm-token": "node scripts/warm-token.mjs",

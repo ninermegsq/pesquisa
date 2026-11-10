@@ -304,7 +304,8 @@ export const REGISTRY=[
   }},
  {id:'datajud',tipos:['nome'],custo:2,ttl:86400,provenance:'cnj-datajud',
   async run(a,c){
-    const key='APIKey cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==';
+    exigirCredencial(c.env,'datajud');
+    const key=`APIKey ${c.env.DATAJUD_API_KEY}`;
     const limpo=a.valor.replace(/[:"“”()\[\]{}^~*?\\!]/g,' ').replace(/\s+/g,' ').trim();
     const url='https://api-publica.datajud.cnj.jus.br/api_publica_stj/_search';
     const headers={authorization:key,'content-type':'application/json'};

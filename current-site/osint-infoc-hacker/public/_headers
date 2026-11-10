@@ -1,1 +1,52 @@
-# Only applies to netlify dev; production headers are managed by cloudflare-worker.mjs.
+# Cabeçalhos de segurança da Netlify.
+#
+# Em produção quem responde hoje é o cloudflare-worker.mjs (a Worker tem
+# prioridade no domínio). Este arquivo vale para `netlify dev` e para a porta
+# da Netlify na Fase 2, com a mesma política do Worker para não haver duas
+# regras de segurança diferentes.
+
+/*
+  Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; img-src 'self' data: https://www.gravatar.com; style-src 'self' 'unsafe-inline'; script-src 'self' https://challenges.cloudflare.com https://static.cloudflareinsights.com; connect-src 'self' https://challenges.cloudflare.com https://api.pwnedpasswords.com https://cloudflareinsights.com; frame-src https://challenges.cloudflare.com
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=()
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: credentialless
+  Cross-Origin-Resource-Policy: same-origin
+
+/
+  Strict-Transport-Security: max-age=31536000
+  Cache-Control: no-cache
+
+/index.html
+  Strict-Transport-Security: max-age=31536000
+  Cache-Control: no-cache
+
+/obrigado.html
+  Strict-Transport-Security: max-age=31536000
+  Cache-Control: no-cache
+
+/app.js
+  Cache-Control: public, max-age=300
+  Content-Type: text/javascript; charset=utf-8
+
+/favicon.svg
+  Cache-Control: public, max-age=86400
+  Content-Type: image/svg+xml; charset=utf-8
+
+/og.png
+  Cache-Control: public, max-age=86400
+  Content-Type: image/png
+
+/robots.txt
+  Cache-Control: public, max-age=3600
+  Content-Type: text/plain; charset=utf-8
+
+/sitemap.xml
+  Cache-Control: public, max-age=3600
+  Content-Type: application/xml; charset=utf-8
+
+/.well-known/security.txt
+  Cache-Control: public, max-age=3600
+  Content-Type: text/plain; charset=utf-8

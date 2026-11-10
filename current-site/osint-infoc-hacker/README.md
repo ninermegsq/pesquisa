@@ -25,8 +25,13 @@ Para hospedar pela Netlify, use `public/` e `netlify/functions/` e configure as 
 /
 ├─ public/
 │  ├─ index.html
+│  ├─ app.js
 │  ├─ obrigado.html
 │  ├─ favicon.svg
+│  ├─ og.png
+│  ├─ robots.txt
+│  ├─ sitemap.xml
+│  ├─ .well-known/security.txt
 │  └─ _headers
 ├─ netlify/functions/
 │  ├─ token.js
@@ -36,6 +41,11 @@ Para hospedar pela Netlify, use `public/` e `netlify/functions/` e configure as 
 ├─ .gitignore
 └─ README.md
 ```
+
+O `public/` é a **única** fonte dos ativos estáticos: o Worker e o servidor
+local servem `favicon.svg`, `robots.txt`, `sitemap.xml`,
+`.well-known/security.txt` e `obrigado.html` a partir daí. Nenhuma cópia
+desses arquivos fica embutida em `cloudflare-worker.mjs`.
 
 ## Variáveis de ambiente
 
@@ -47,6 +57,7 @@ Para hospedar pela Netlify, use `public/` e `netlify/functions/` e configure as 
 | `ALLOWED_ORIGINS` | Sim | Origens HTTP(S) exatas, separadas por vírgula. Ex.: `https://site.netlify.app,https://seudominio.com`. |
 | `EMAILREP_KEY` | Não | API key opcional da EmailRep. Sem ela a checagem EmailRep aparece como indisponível. |
 | `GITHUB_TOKEN` | Não | Token opcional de leitura da API GitHub; configure com `wrangler secret put GITHUB_TOKEN`. Sem ele, GitHub aparece indisponível. A resposta é cacheada por e-mail durante 24 horas. |
+| `DATAJUD_API_KEY` | Não | Chave opcional da API pública do DataJud/CNJ (fonte `datajud`, categoria nome). Sem ela a fonte responde `sem_chave` e o relatório **não** fica parcial. Configure com `wrangler secret put DATAJUD_API_KEY`; **nenhuma chave fica no código**. |
 | `TRANSPARENCIA_KEY` | Não | Chave opcional da API do Portal da Transparência (sanções/CEIS). Sem ela a fonte CEIS responde `sem_chave` e o relatório **não** fica parcial. |
 | `WARM_SECRET` | Não | Segredo do token de operação (aquecimento e painel de saúde). Tem precedência sobre `HMAC_SECRET`. Sem ele, `/api/saude` e o aquecimento respondem "não autorizado". |
 | `AWS_LAMBDA_JS_RUNTIME` | Conforme plano/ambiente | Caso necessário na Netlify, valor `nodejs20.x` para selecionar explicitamente runtime das Functions. |
@@ -107,11 +118,13 @@ PORT=4000 npm run dev      # porta fixa
 npm run dev -- --port 4000 # mesma coisa, por argumento
 npm run dev -- --host 127.0.0.1
 npm run dev -- --sem-fallback  # exige a porta pedida: sai com 1 se ela estiver ocupada
+npm run dev:stop            # encerra servidores de desenvolvimento deixados no ar
 npm run start              # alias de dev (prévias automáticas do editor)
 npm run preview            # alias de dev
 npm run check              # sintaxe de todos os arquivos
 npm run test               # cache-check, contract-check, codegen-check, migrations-check,
-                           # warm-check, worker-regression, dev-server-check, dev-process-check, stats-check
+                           # telegram-source-check, ssllabs-source-check, warm-check,
+                           # worker-regression, dev-server-check, dev-process-check, stats-check
 ```
 
 O servidor local imprime a URL da prévia no início:
@@ -126,6 +139,15 @@ outra porta livre e imprime a URL que de fato está no ar. É o que evita o erro
 do editor "o servidor terminou antes de abrir a prévia". Para exigir a porta
 pedida (e sair com código 1 se ela estiver ocupada), use `--sem-fallback`: a
 mensagem lista `Portas tentadas:` e `PORT=<numero>`.
+
+Um processo antigo do servidor de desenvolvimento continua segurando a porta
+mesmo depois do código ter sido corrigido, e é a causa mais comum da prévia
+não abrir. Para encerrá-lo:
+
+```bash
+npm run dev:stop             # encerra todo dev-server.mjs em execução
+npm run dev:stop -- --listar # só lista os processos, sem encerrar
+```
 
 O que é **local e simulado** (rótulo `LOCAL ONLY` nos testes e banner `AMBIENTE LOCAL` na página):
 
@@ -183,9 +205,24 @@ Chaves opcionais, somente no servidor:
 wrangler secret put GITHUB_TOKEN
 wrangler secret put EMAILREP_KEY
 wrangler secret put TRANSPARENCIA_KEY
+wrangler secret put DATAJUD_API_KEY
 ```
 
 Sem essas chaves, as fontes correspondentes respondem com o código `sem_chave` ou `sem_token` e o relatório **não** é marcado como parcial: a fonte não rodou, o restante das consultas continua valendo. CPF está fora do escopo. Nomes são consultas públicas não conclusivas; o nome informado não confirma identidade. JSON e CSV incluem proveniência e timestamp.
+
+### Rotas expostas pelo Worker
+
+| Rota | Método | Observação |
+| --- | --- | --- |
+| `/api/scan` | POST | **Única** rota de scan. Motor v1.3 (`src/scan.mjs`). |
+| `/api/saude` | GET | Painel de saúde, exige token de operador. |
+| `/.netlify/functions/token` | GET/POST | Emissão e consumo de token do Turnstile. Continua porque `public/app.js` ainda a chama. |
+| `/`, `/app.js`, `/og.png`, `/favicon.svg`, `/obrigado.html`, `/robots.txt`, `/sitemap.xml`, `/.well-known/security.txt` | GET | Estáticos e páginas. |
+
+A rota legada `/.netlify/functions/scan` **não existe mais** no Worker: o motor
+antigo (v1.2) foi removido do arquivo e a única forma de consultar o scanner é
+`POST /api/scan`. O `verification/worker-regression.mjs` fixa essa regra — se a
+rota legada voltar, o check falha.
 
 ## Endurecimento do scanner
 
@@ -269,8 +306,9 @@ diff), exige a árvore inteira limpa e roda o build de novo para provar que ele
 não muda nada. `.github/workflows/deploy.yml` publica o Worker somente por
 despacho manual, com confirmação digitada.
 
-`npm run check` na raiz verifica a sintaxe do Worker **e** da variante Netlify
-(`osint-infoc-hacker/`). `npm test` roda nove checks offline; o
+`npm run check` na raiz verifica a sintaxe de todos os arquivos `.mjs`/`.js` do
+Worker **e** da variante Netlify (`osint-infoc-hacker/`), por meio de
+`scripts/check-syntax.mjs`. `npm test` roda onze checks offline; o
 `dev-process-check` sobe o servidor local como processo filho e confirma que ele
 permanece vivo, imprime `NEXUS_PREVIEW_URL`, serve a interface com 200, cai
 para outra porta quando a pedida está ocupada e sai com 1 no modo estrito

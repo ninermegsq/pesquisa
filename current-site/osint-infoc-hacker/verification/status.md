@@ -306,6 +306,163 @@ em IPv4 e IPv6, o processo continua vivo, imprime `NEXUS_PREVIEW_URL` e a interf
 {"portasEsgotadas":{"codigo":1,"listouPortas":true},"fallbackDePorta":{"portaOcupada":17549,"portaUsada":3000,"ui":200,"permaneceuVivo":true},"portaEfemera":{"portasFixasBloqueadas":18,"portaUsada":17552,"ui":200,"permaneceuVivo":true},"previaRaiz":{"porta":17554,"ui":200,"permaneceuVivo":true}}
 ```
 
+## Fase 1 — correções pequenas, sem publicação (2026-11-10)
+
+Seis correções de baixo risco, todas **locais**: nada foi publicado, nenhum
+segredo foi criado e nenhum endpoint de produção foi tocado. A sétima linha
+da tabela (o `dev:stop`) é o acréscimo que fecha o erro de prévia do editor.
+
+| # | Correção | Arquivo |
+| --- | --- | --- |
+| 1 | Binding `OSINT_KV` declarado no Worker de validação (o rate limit usava o fallback `CACHE`, misturando contadores de requisição e cota no mesmo KV) | `wrangler.validation.toml` |
+| 2 | Cinco ativos estáticos movidos do Worker para `public/`: `favicon.svg`, `obrigado.html`, `robots.txt`, `sitemap.xml`, `.well-known/security.txt` | `public/` + `cloudflare-worker.mjs` + `scripts/dev-server.mjs` |
+| 3 | Chave da API do DataJud saiu do código e virou variável de ambiente `DATAJUD_API_KEY`, marcada como `requer` no manifesto | `src/sources/registry.json`, `src/sources/registry.mjs` |
+| 4 | `npm run check` deixou de ser uma cadeia manual de 35 `node --check` e virou um verificador que percorre `src/`, `scripts/`, `verification/` e os arquivos da raiz | `scripts/check-syntax.mjs`, `package.json` |
+| 5 | `public/_headers` deixou de ser resíduo do fork Netlify e passou a espelhar os cabeçalhos reais do Worker (CSP, HSTS, cache por tipo) | `public/_headers` |
+| 6 | Rota legada `/.netlify/functions/scan` removida do Worker: o motor v1.2 foi removido e sobrou só `POST /api/scan` | `cloudflare-worker.mjs` |
+| 7 | Comando `npm run dev:stop` para encerrar servidores de desenvolvimento órfãos (era a causa do erro de prévia do editor) | `scripts/stop-dev-servers.mjs`, `package.json` |
+
+Efeito colateral asociado à correção 2: `scripts/dev-server.mjs` deixou de
+extrair os ativos do fonte do Worker por expressão regular (o round-trip
+`loadWorkerAssets()`) e passou a servir tudo de `public/`. O `sendStatic`
+ganhou uma guarda de travessia de caminho: o alvo é resolvido e comparado
+com `path.relative`, e qualquer caminho que saia de `public/` devolve 404
+(`startsWith` sozinho aceitaria `public-seguro`, que está fora de `public/`).
+
+A correção 6 deixou o Worker com 125 linhas (antes 252). A rota
+`/.netlify/functions/token` **continua**, porque `public/app.js` ainda a
+chama; o que saiu foi só a rota de scan.
+
+### Chave do DataJud
+
+Antes: a chave estava escrita dentro de `src/sources/registry.mjs`. Agora a
+fonte usa o mesmo caminho das outras chaves opcionais:
+
+```js
+exigirCredencial(c.env, 'datajud');
+const key = `APIKey ${c.env.DATAJUD_API_KEY}`;
+```
+
+e o manifesto declara `"requer": { "tipo": "chave", "env": "DATAJUD_API_KEY" }`.
+Sem a variável no ambiente, a fonte responde `sem_chave` e o relatório **não**
+fica parcial. Para configurar no Worker:
+
+```sh
+wrangler secret put DATAJUD_API_KEY
+```
+
+### Acordeões fechados por padrão
+
+`src/render.mjs` não emite mais o atributo `open` no `<details>`; o indicador
+é o caractere `▶`, que vira `▼` quando o bloco abre. A primeira dobra do
+relatório passa a ser o comportamento esperado pelo checklist de produção.
+
+### Erro encontrado e corrigido no caminho
+
+Depois de editar `src/sources/registry.json`, o `npm test` parou com
+`Error: credencial divergente do manifesto: datajud`
+(`src/sources/registry.mjs:336`). O motivo era o `src/sources/registry.meta.mjs`
+gerado, que ainda descrevia a fonte antiga (`chave: false`, sem `requer`).
+Corrigido rodando `npm run build`, que regenera o meta a partir do manifesto:
+
+```text
+registro: src/sources/registry.meta.mjs gerado a partir de src/sources/registry.json.
+migracoes: src/lib/migrations.mjs ja esta atualizado (2 migracoes).
+worker atualizado; fontes injetadas: 8/8
+```
+
+Rodando `npm run build` duas vezes seguidas depois das correções, os dois
+imprimiram exatamente a mesma linha, agora com o digest do arquivo gerado:
+
+```text
+registro: src/sources/registry.meta.mjs ja esta atualizado.
+migracoes: src/lib/migrations.mjs ja esta atualizado (2 migracoes).
+worker atualizado; fontes injetadas: 8/8; sha256: f0fee8fdb1942730c10162d5354c9684fe49175e93e9729c35d09720b6bc71a3
+```
+
+É a prova de determinismo do build nesta fase, obtida sem Git.
+
+### Saídas reais depois das correções
+
+`npm run check` (raiz do repositório):
+
+```json
+{"escopo":"sintaxe","arquivos":37,"falhas":0}
+```
+
+`npm test` — registro de fontes (o `datajud` passou a constar entre as
+credenciais opcionais):
+
+```json
+{"ok":true,"fontes":24,"email":12,"custo_email":16,"categorias":6,"chaves_visitante":0,"codigos":7,"credenciais_opcionais":["github","emailrep","ceis","datajud"]}
+```
+
+`npm test` — regressão do Worker (rota legada ausente, rota v1.3 presente,
+token emitido com 200):
+
+```json
+{"scope":"local regression; siteverify mocked","tokenIssuance":200,"rotaLegadaRemovida":true,"rotaScanV13":true,"originScoped":true}
+```
+
+`npm test` — servidor local, com o bloco novo de ativos estáticos e a guarda de
+travessia:
+
+```json
+{"estaticos":{"/favicon.svg":{"status":200,"bytes":322},"/robots.txt":{"status":200,"bytes":65},"/sitemap.xml":{"status":200,"bytes":278},"/.well-known/security.txt":{"status":200,"bytes":158},"/obrigado.html":{"status":200,"bytes":775},"travessia":{"status":404}}}
+```
+
+O `verification/dev-server-check.mjs` ganhou esse bloco: ele exige 200 com o
+`content-type` esperado (`image/svg+xml`, `text/plain`, `application/xml`,
+`text/plain`, `text/html`), corpo não vazio, e 404 para um caminho codificado
+que tentaria sair de `public/`.
+
+### O erro de prévia do editor e o `dev:stop`
+
+O editor acusava "Não foi possível abrir a prévia — o servidor terminou antes
+de abrir a prévia". A causa não era o código: havia um processo antigo do
+servidor de desenvolvimento (PID 11720) segurando a porta e mantendo o
+código velho em memória. Como os módulos ESM são carregados uma vez por
+processo, corrigir o arquivo não corrige o processo que já está no ar.
+
+Foi criado `scripts/stop-dev-servers.mjs` (e o atalho `npm run dev:stop` nos
+dois `package.json`) para encerrar só os processos `dev-server.mjs` da própria
+máquina, com `--listar` para apenas inspecionar e `--json` para a saída
+estruturada. Executando:
+
+```json
+{"escopo":"LOCAL ONLY; apenas processos node do servidor de desenvolvimento","encontrados":0,"pids":[],"apenasListar":true,"encerrados":[],"restantes":[],"erros":[]}
+```
+
+Ou seja: o processo órfão foi encerrado e hoje não sobra nenhum servidor de
+desenvolvimento rodando. O editor ainda precisa **reiniciar** a prévia para
+carregar o código novo.
+
+### O que a Fase 1 não faz
+
+- Não publica nada. O Worker de produção e o domínio `ostnt.online` seguem
+  intocados.
+- `npm run check:build` **não** passou, e o motivo é esperado: ele exige a
+  árvore do Git limpa, e as alterações da Fase 1 (arquivos novos em `public/`,
+  `scripts/check-syntax.mjs`, `scripts/stop-dev-servers.mjs`,
+  `scripts/build-worker.mjs`, edições do Worker e do README) ainda não estão
+  commitadas. O Git **é** acessível neste ambiente pelo atalho `npm run git`
+  (encaminhamento para o binário `git`): `npm run git status --porcelain`
+  lista 16 arquivos modificados e 6 não rastreados. O commit fica para o seu
+  lado, porque ele precede um envio ao repositório. O que já foi comprovado
+  sem Git: `scripts/build-worker.mjs` agora imprime o `sha256` do arquivo
+  gerado e dois builds consecutivos produziram o mesmo —
+  `f0fee8fdb1942730c10162d5354c9684fe49175e93e9729c35d09720b6bc71a3`
+  nos dois — e `verification/codegen-check.mjs` confirma que
+  `registry.meta.mjs` e `migrations.mjs` batem com o que o codegen produz a
+  partir das fontes. O `check:build` completo deve rodar no runner da CI ou
+  depois do commit.
+- `DATAJUD_API_KEY` continua sem valor: sem ela a fonte fica `sem_chave`, o
+  que é o comportamento declarado, não uma falha.
+- A prévia do editor precisa de **reinício** do servidor local: os módulos ESM
+  são carregados uma vez por processo, então só um processo novo enxerga o
+  código novo. Já não há processo antigo no ar (ver acima); basta o editor
+  subir a prévia de novo.
+
 ## Ainda obrigatório antes de concluir
 
 1. Desbloquear a validação autorizada no ambiente de teste sem contornar controles.

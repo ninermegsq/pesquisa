@@ -327,21 +327,6 @@ const injectShim = html => {
   return html.slice(0, at) + DEV_SHIM + '\n' + html.slice(at);
 };
 
-// Ativos estaticos adicionais injetados no Worker (favicon, robots, sitemap).
-async function loadWorkerAssets() {
-  const assets = {};
-  let source = '';
-  try { source = await readFile(path.join(root, 'cloudflare-worker.mjs'), 'utf8'); } catch { return assets; }
-  for (const name of ['FAVICON', 'ROBOTS', 'SITEMAP', 'SECURITY', 'THANKS']) {
-    const match = source.match(new RegExp('^const ' + name + ' = (.*);$', 'm'));
-    if (!match) continue;
-    try { assets[name] = JSON.parse(match[1]); } catch { /* constante ausente ou alterada */ }
-  }
-  return assets;
-}
-
-const assets = await loadWorkerAssets();
-
 async function sendIndex(res) {
   let html;
   try { html = await readFile(path.join(publicDir, 'index.html'), 'utf8'); }
@@ -359,9 +344,15 @@ async function sendFile(res, file, type) {
 }
 
 async function sendStatic(res, pathname) {
-  const target = path.join(publicDir, path.normalize(pathname).replace(/^([/\\])+/, ''));
-  if (!target.startsWith(publicDir)) return sendJson(res, 404, { error: 'Nao encontrado.' });
-  await sendFile(res, target);
+  // Guarda de travessia de caminho: o alvo precisa continuar dentro de public/.
+  // A comparacao usa path.relative, e nao startsWith, porque "public-seguro"
+  // comeca com "public" mas esta fora de "public/".
+  const alvo = path.resolve(publicDir, path.normalize(pathname).replace(/^([/\\])+/, ''));
+  const relativo = path.relative(publicDir, alvo);
+  if (!relativo || relativo.startsWith('..') || path.isAbsolute(relativo)) {
+    return sendJson(res, 404, { error: 'Nao encontrado.' });
+  }
+  await sendFile(res, alvo);
 }
 
 async function devToken(req, res) {
@@ -429,21 +420,8 @@ async function route(req, res) {
   if (pathname === '/' || pathname === '/index.html') return sendIndex(res);
   if (pathname === '/app.js') return sendFile(res, path.join(publicDir, 'app.js'));
   if (pathname === '/og.png') return sendFile(res, path.join(publicDir, 'og.png'));
-  if (pathname === '/favicon.svg' && assets.FAVICON) {
-    return sendBuffer(res, 200, assets.FAVICON, { 'content-type': MIME['.svg'] });
-  }
-  if (pathname === '/robots.txt' && assets.ROBOTS) {
-    return sendBuffer(res, 200, assets.ROBOTS, { 'content-type': MIME['.txt'] });
-  }
-  if (pathname === '/sitemap.xml' && assets.SITEMAP) {
-    return sendBuffer(res, 200, assets.SITEMAP, { 'content-type': MIME['.xml'] });
-  }
-  if (pathname === '/.well-known/security.txt' && assets.SECURITY) {
-    return sendBuffer(res, 200, assets.SECURITY, { 'content-type': MIME['.txt'] });
-  }
-  if (pathname === '/obrigado.html' && assets.THANKS) {
-    return sendBuffer(res, 200, assets.THANKS, { 'content-type': MIME['.html'] });
-  }
+  // favicon.svg, robots.txt, sitemap.xml, .well-known/security.txt e
+  // obrigado.html sao servidos de public/ como os demais arquivos estaticos.
   if (req.method !== 'GET' && req.method !== 'HEAD') return sendJson(res, 405, { error: 'Metodo nao permitido.' });
   return sendStatic(res, pathname);
 }

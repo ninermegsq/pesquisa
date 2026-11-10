@@ -3,7 +3,11 @@ const chip=(v,cls='')=>`<span class="chip ${esc(cls)}">${esc(v)}</span>`;
 const bloco=(titulo,corpo,r)=>{if(!corpo)return '';
  const selo=r?.cache === 'hit'?chip('cache','cyan'):'';
  const est=r&&r.status!=='ok'?chip(r.erro||r.status,'red'):'';
- return `<details class="acc" open><summary>${esc(titulo)}${selo}${est}</summary><div class="accbody">${corpo}</div></details>`;
+ // O acordeao comeca fechado (README, secao "Verificacao recomendada"): o
+ // estado aberto era so do servidor, e o cliente ja gerava fechado. A seta
+ // fica no <summary> para que o estado fechado seja legivel, e os chips de
+ // cache e de erro permanecem no resumo: nenhuma informacao fica oculta.
+ return `<details class="acc"><summary><span class="arr">▶</span><span>${esc(titulo)}</span>${selo}${est}</summary><div class="accbody">${corpo}</div></details>`;
 };
 const titulos={xon:'BREACHES & SENHAS',hudsonrock:'INFOSTEALER',gravatar:'GRAVATAR',pgp:'PGP',github:'GITHUB',emailrep:'REPUTAÇÃO',dns:'DNS & E-MAIL',crtsh:'SUBDOMÍNIOS',wayback:'URLS HISTÓRICAS',internetdb:'EXPOSIÇÃO',ipgeo:'REDE',asn:'ASN',cnpj_br:'EMPRESA',ceis:'SANÇÕES',ddd:'REGIÃO',wikidata:'WIKIDATA',datajud:'PROCESSOS',telegram:'TELEGRAM',gitlab:'GITLAB',npm:'NPM',bluesky:'BLUESKY',rdap:'RDAP',ssllabs:'SSL LABS',urlscan:'URLSCAN'};
 function campo(k,v){

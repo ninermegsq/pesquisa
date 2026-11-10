@@ -4,7 +4,7 @@
 
 export const REGISTRY_META = Object.freeze({
   versao: 1,
-  digest: "03345ece5f5bf65eccebd9522267ec0c0d309047b7392f3673fafad698fb746e",
+  digest: "7b09a5349c229384f8ccc0d2e01e3154a6e73d328633a6765b1a6ef920ab52d5",
   fontes: Object.freeze({
     "gravatar": Object.freeze({
       id: "gravatar",
@@ -244,7 +244,7 @@ export const REGISTRY_META = Object.freeze({
       ttl: 86400,
       provenance: "cnj-datajud",
       chave: false,
-      requer: null
+      requer: Object.freeze({"tipo":"chave","env":"DATAJUD_API_KEY"})
     }),
   })
 });

@@ -27,9 +27,10 @@ tem dependências de runtime (só Node 20+).
 ```bash
 npm run dev                # servidor local de desenvolvimento (prévia)
 npm run dev -- --port 4000 # porta fixa
+npm run dev:stop           # encerra servidores de desenvolvimento deixados no ar
 npm run start              # alias de dev (usado por prévias automáticas)
 npm run preview            # alias de dev
-npm run check              # node --check no Worker e na variante Netlify
+npm run check              # sintaxe de todos os arquivos .mjs/.js (walker)
 npm test                   # verificações offline (contrato, cache, dev-server, CI)
 npm run build              # gera registro e migrações e injeta public/ no Worker
 npm run check:build        # prova que o build é idempotente (árvore limpa)
@@ -46,6 +47,11 @@ Se a porta pedida para a prévia já estiver ocupada, o servidor local não
 termina: ele cai para outra porta livre e imprime a URL real
 (`NEXUS_PREVIEW_URL=`). Para exigir a porta pedida, use
 `npm run dev -- --port 4000 --sem-fallback`.
+
+Um servidor antigo em execução continua segurando a porta e mantém o código
+antigo em memória (os módulos ESM são carregados uma vez por processo). Para
+encerrá-lo: `npm run dev:stop` (ou `npm run dev:stop -- --listar` para só
+listar os processos).
 
 ## Verificação contínua
 

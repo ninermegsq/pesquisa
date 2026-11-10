@@ -69,6 +69,29 @@ try {
   assert.ok(appJs.includes('scan-form'), 'app.js nao contem o formulario de scan');
   checks.appJs = { status: app.status, bytes: appJs.length };
 
+  // 2b. Ativos estaticos servidos de public/ (favicon, robots, sitemap,
+  // security.txt e obrigado.html) e guarda de travessia de caminho.
+  const estaticos = {};
+  for (const [rota, tipoEsperado] of [
+    ['/favicon.svg', 'image/svg+xml'],
+    ['/robots.txt', 'text/plain'],
+    ['/sitemap.xml', 'application/xml'],
+    ['/.well-known/security.txt', 'text/plain'],
+    ['/obrigado.html', 'text/html']
+  ]) {
+    const resposta = await realFetch(`${base}${rota}`);
+    const corpo = await resposta.text();
+    assert.equal(resposta.status, 200, `${rota} deveria responder 200`);
+    assert.ok((resposta.headers.get('content-type') || '').includes(tipoEsperado), `${rota} com content-type inesperado`);
+    assert.ok(corpo.length > 0, `${rota} servido vazio`);
+    estaticos[rota] = { status: resposta.status, bytes: corpo.length };
+  }
+  // Caminho codificado que sairia de public/ tem de ser recusado com 404.
+  const travessia = await realFetch(`${base}/%2e%2e%2f%2e%2e%2fpackage.json`);
+  assert.equal(travessia.status, 404, 'travessia de caminho deveria responder 404');
+  estaticos.travessia = { status: travessia.status };
+  checks.estaticos = estaticos;
+
   // 3. GET /.netlify/functions/token expoe a site key publica
   const siteKeyRes = await realFetch(`${base}/.netlify/functions/token`, { headers: { origin } });
   const siteKey = await siteKeyRes.json();

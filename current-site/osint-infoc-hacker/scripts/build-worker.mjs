@@ -1,4 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { aplicarStats } from './stats.mjs';
@@ -26,4 +27,7 @@ try {
   injected++;
 } catch { console.warn('fonte ausente, constante preservada: public/og.png'); }
 await writeFile(workerPath, worker);
-console.log('worker atualizado; fontes injetadas: ' + injected + '/' + (SOURCES.length + 1));
+// O digest permite provar a idempotencia do build sem depender do git:
+// dois builds seguidos precisam produzir o mesmo sha256.
+const digest = createHash('sha256').update(worker).digest('hex');
+console.log('worker atualizado; fontes injetadas: ' + injected + '/' + (SOURCES.length + 1) + '; sha256: ' + digest);

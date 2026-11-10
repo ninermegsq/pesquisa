@@ -1,5 +1,4 @@
 export {TokenGuard} from './src/lib/token-guard.mjs';
-import {chaveCache} from './src/lib/cache.mjs';
 import {handleScan} from './src/scan.mjs';
 import {detectar} from './src/lib/alvo.mjs';
 import {verificarTokenCalor} from './src/lib/warm.mjs';
@@ -31,27 +30,6 @@ const staticHeaders = {
 // HSTS rollout is phased: preload submission to hstspreload.org is a later manual step.
 // Add includeSubDomains only after confirming every subdomain is HTTPS-only.
 const htmlHeaders = { ...staticHeaders, 'strict-transport-security': 'max-age=31536000' };
-function createStore(kv,origem) {
-  // Legacy scan shares the edge cache; only rate counters use Workers KV.
-  const isRate=key=>key.startsWith('rate:');
-  const keyOf=key=>chaveCache(origem,'legacy',key);
-  return {
-    get: async (key,options) => {
-      if(isRate(key))return kv.get(key,options?.type==='json'?'json':'text');
-      const hit=await caches.default.match(keyOf(key));
-      if(!hit)return null;
-      const text=await hit.text();return options?.type==='json'?JSON.parse(text):text;
-    },
-    setJSON: async (key,value,options={}) => {
-      const exp=options?.metadata?.expiration;
-      const ttl=exp?Math.max(1,Math.ceil((exp-Date.now())/1000)):86400;
-      if(isRate(key))return kv.put(key,JSON.stringify(value),{expirationTtl:Math.max(60,ttl)});
-      await caches.default.put(keyOf(key),new Response(JSON.stringify(value),{headers:{'cache-control':`public, max-age=${ttl}`,'content-type':'application/json'}}));
-    },
-    delete: key=>isRate(key)?kv.delete(key):caches.default.delete(keyOf(key)),
-    put: (key,value,options)=>{if(!isRate(key))throw Error('KV reservado a rate limit');return kv.put(key,value,options);}
-  };
-}
 async function token(req, env, ip) {
   const siteKey = env.TURNSTILE_SITEKEY || env.TURNSTILE_SITE_KEY || '';
   if (req.method === 'GET') {
@@ -88,8 +66,6 @@ const reply = (data, status = 200, extraHeaders = {}) => new Response(JSON.strin
 const allowed = env => new Set((env.ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean));
 const sha256 = s => createHash('sha256').update(s).digest('hex');
 const emailRegex = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
-const array = x => Array.isArray(x) ? x : [];
-const n = x => Number.isFinite(Number(x)) ? Number(x) : 0;
 async function consumeToken(token, email, ip, env) {
   if (typeof token !== 'string' || !env.HMAC_SECRET || token.length > 2000) return false;
   const parts = token.split('.');
@@ -103,146 +79,6 @@ async function consumeToken(token, email, ip, env) {
   if(!env.TOKEN_GUARD)throw Error('Controle de uso único indisponível');
   return env.TOKEN_GUARD.getByName(sha256(ip||'unknown')).consume(payload.nonce,payload.exp);
 }
-const enforceScanLimits = async (store, ip) => {
-  const now = Date.now();
-  const safeIp = sha256(ip || 'unknown');
-  const hourStart = Math.floor(now / 3600000) * 3600000;
-  const dayStart = Math.floor(now / 86400000) * 86400000;
-  const hourKey = 'rate:hour:' + safeIp + ':' + hourStart;
-  const dayKey = 'rate:day:' + safeIp + ':' + dayStart;
-  const hour = Number(await store.get(hourKey) || 0);
-  const day = Number(await store.get(dayKey) || 0);
-  if (hour >= 10) return Math.max(1, Math.ceil((hourStart + 3600000 - now) / 1000));
-  if (day >= 60) return Math.max(1, Math.ceil((dayStart + 86400000 - now) / 1000));
-  await store.put(hourKey, String(hour + 1), { expirationTtl: 7200 });
-  await store.put(dayKey, String(day + 1), { expirationTtl: 172800 });
-  return 0;
-}
-const external = (url, opts = {}) => fetch(url, { ...opts, signal: AbortSignal.timeout(5500) })
-  .then(async r => ({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null, checkedAt: new Date().toISOString() }))
-  .catch(() => ({ ok: false, status: 0, data: null, checkedAt: new Date().toISOString() }));
-const txt = a => array(a?.Answer).map(r => String(r.data || '').replace(/^"|"$/g, '').replace(/\\"/g, '"'));
-const safeList = x => array(x).slice(0, 70).map(v => String(v).slice(0, 240));
-function normalizeXon(raw) {
-  const details = array(raw?.ExposedBreaches?.breaches_details);
-  const strength = array(raw?.BreachMetrics?.passwords_strength)[0] || {};
-  const risk = array(raw?.BreachMetrics?.risk)[0] || {};
-  return {
-    breaches: details.slice(0, 100).map(b => ({
-      name: String(b.breach || 'Fonte não identificada').slice(0, 140),
-      year: String(b.xposed_date || '—').slice(0, 12),
-      data: String(b.xposed_data || 'Não informado').slice(0, 350),
-      records: n(b.xposed_records),
-      passwordRisk: String(b.password_risk || 'não informado').slice(0, 60),
-      domain: String(b.domain || '').slice(0, 150)
-    })),
-    pastes: n(raw?.PastesSummary?.cnt),
-    metrics: {
-      plaintext: n(strength.PlainText), weak: n(strength.EasyToCrack), strong: n(strength.StrongHash),
-      risk_score: Math.max(0, n(risk.risk_score))
-    }
-  };
-}
-
-async function scan(req, env, ctx) {
-  if (req.method !== 'POST') return reply({ error: 'Método não permitido.' }, 405);
-  if (!allowed(env).has(req.headers.get('origin') || '')) return reply({ error: 'Origem não permitida.' }, 403);
-  let body;
-  try { body = await req.json(); } catch { return reply({ error: 'JSON inválido.' }, 400); }
-  const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
-  if (!emailRegex.test(email) || email.length > 254) return reply({ error: 'E-mail inválido.' }, 400);
-  const ip = ctx.ip || '';
-  const store = createStore(env.CACHE,new URL(req.url).origin);
-  try {
-    const accepted = await consumeToken(body?.token, email, ip, env);
-    if (!accepted) return reply({ error: 'Token ausente, expirado, reutilizado ou vinculado a outro e-mail. Faça uma nova verificação.' }, 429);
-    const retryAfter = await enforceScanLimits(store, ip);
-    if (retryAfter) return reply({ error: 'Limite de consultas atingido (10 por hora ou 60 por dia). Tente novamente após o período indicado.' }, 429, { 'retry-after': String(retryAfter) });
-  } catch {
-    return reply({ error: 'Controle de uso único e limites indisponível. Tente novamente.' }, 503);
-  }
-  const host = email.split('@')[1];
-  const ck = `e:${sha256(email)}`;
-  try {
-    const cached = await store.get(ck, { type: 'json' });
-    if (cached && cached.cacheExpiresAt > Date.now()) {
-      const { cacheExpiresAt, ...rest } = cached;
-      return reply({ ...rest, cached: true });
-    }
-    if (cached) await store.delete(ck).catch(() => null);
-  } catch { /* Cache is best-effort; continue without it. */ }
-
-  const enc = encodeURIComponent(email);
-  const md5 = createHash('md5').update(email).digest('hex');
-  // Server-side fanout; client cannot learn private API keys.
-  const fetchGravatar = fetch(`https://www.gravatar.com/avatar/${md5}?d=404`, { method: 'HEAD', signal: AbortSignal.timeout(3000) })
-    .then(r => r.status === 200).catch(() => null);
-  const githubRequest = env.GITHUB_TOKEN ? (async () => {
-    const key = 'github:' + sha256(email);
-    try {
-      const cached = await store.get(key, { type: 'json' });
-      if (cached && cached.cacheExpiresAt > Date.now()) return { ok: true, status: 200, data: cached.data, checkedAt: cached.checkedAt, cached: true };
-      const result = await external('https://api.github.com/search/users?q=' + enc, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'osint-infoc-hacker', Authorization: 'Bearer ' + env.GITHUB_TOKEN } });
-      if (result?.ok) await store.setJSON(key, { data: result.data, checkedAt: result.checkedAt, cacheExpiresAt: Date.now() + 86400000 }, { metadata: { expiration: Date.now() + 86400000 } });
-      return result;
-    } catch { return null; }
-  })() : Promise.resolve(null);
-  const requests = [
-    external(`https://api.xposedornot.com/v1/check-email/${enc}`),
-    external(`https://api.xposedornot.com/v1/breach-analytics?email=${enc}`),
-    external(`https://cavalier.hudsonrock.com/api/json/v2/osint-tools/search-by-email?email=${enc}`),
-    env.EMAILREP_KEY ? external(`https://emailrep.io/${enc}`, { headers: { Key: env.EMAILREP_KEY, Accept: 'application/json' } }) : Promise.resolve(null),
-    external(`https://dns.google/resolve?name=${encodeURIComponent(host)}&type=TXT`),
-    external(`https://dns.google/resolve?name=${encodeURIComponent(host)}&type=MX`),
-    external(`https://dns.google/resolve?name=${encodeURIComponent(host)}&type=A`),
-    external(`https://dns.google/resolve?name=${encodeURIComponent('_dmarc.' + host)}&type=TXT`),
-    githubRequest,
-    external(`https://keybase.io/_/api/1.0/user/lookup.json?emails=${enc}`),
-    fetchGravatar
-  ];
-  const [check, analytic, hudson, rep, dnsTxt, dnsMx, dnsA, dnsDmarc, gh, keybase, gravatar] = await Promise.all(requests);
-  const ipAddrs = array(dnsA?.data?.Answer).filter(a => a.type === 1 && /^\d{1,3}(\.\d{1,3}){3}$/.test(a.data)).map(a => a.data);
-  const db = ipAddrs.length ? await external(`https://internetdb.shodan.io/${ipAddrs[0]}`) : null;
-  const xon = normalizeXon(analytic?.data);
-  // A summary-only answer is not treated as a detailed breach report.
-  const summary = array(check?.data?.breaches).flat().filter(v => typeof v === 'string');
-  if (!xon.breaches.length && summary.length) {
-    xon.breaches = summary.slice(0, 100).map(name => ({ name, year: '—', data: 'Detalhes indisponíveis', records: 0, passwordRisk: 'não informado', domain: '' }));
-  }
-  const txtRecords = txt(dnsTxt?.data);
-  const dmarcRecords = txt(dnsDmarc?.data);
-  const mxRecords = array(dnsMx?.data?.Answer).map(a => String(a.data || '').slice(0, 200));
-  const dnsOK = Boolean(dnsTxt?.ok && dnsMx?.ok && dnsA?.ok && dnsDmarc?.ok);
-  const scanTimestamp = new Date().toISOString();
-  const sources = {
-    xposedornot: { provider: 'XposedOrNot', endpoints: ['https://api.xposedornot.com/v1/check-email/', 'https://api.xposedornot.com/v1/breach-analytics'], available: Boolean(analytic?.ok || check?.ok), checkedAt: analytic?.checkedAt || check?.checkedAt || scanTimestamp },
-    hudsonRock: { provider: 'Hudson Rock', endpoint: 'https://cavalier.hudsonrock.com/api/json/v2/osint-tools/search-by-email', available: Boolean(hudson?.ok), checkedAt: hudson?.checkedAt || scanTimestamp },
-    emailRep: { provider: 'EmailRep', endpoint: 'https://emailrep.io/', available: Boolean(rep?.ok), status: env.EMAILREP_KEY ? (rep?.ok ? 'available' : 'unavailable') : 'not_configured', checkedAt: rep?.checkedAt || scanTimestamp },
-    googleDns: { provider: 'Google Public DNS', queries: ['TXT', 'MX', 'A', '_dmarc TXT'], available: dnsOK, checkedAt: [dnsTxt?.checkedAt, dnsMx?.checkedAt, dnsA?.checkedAt, dnsDmarc?.checkedAt].filter(Boolean).sort().at(-1) || scanTimestamp },
-    github: { provider: 'GitHub Search', endpoint: 'https://api.github.com/search/users', available: Boolean(gh?.ok && env.GITHUB_TOKEN), status: env.GITHUB_TOKEN ? (gh?.ok ? 'available' : 'unavailable') : 'not_configured', cached: Boolean(gh?.cached), checkedAt: gh?.checkedAt || scanTimestamp },
-    keybase: { provider: 'Keybase', endpoint: 'https://keybase.io/_/api/1.0/user/lookup.json', available: Boolean(keybase?.ok), checkedAt: keybase?.checkedAt || scanTimestamp },
-    gravatar: { provider: 'Gravatar', method: 'HEAD with local MD5 hash', available: gravatar !== null, checkedAt: scanTimestamp },
-    internetdb: { provider: 'Shodan InternetDB', endpoint: 'https://internetdb.shodan.io/', available: Boolean(db?.ok), status: ipAddrs.length ? (db?.ok ? 'available' : 'unavailable') : 'not_applicable', checkedAt: db?.checkedAt || scanTimestamp }
-  };
-  const data = {
-    email, breaches: xon.breaches, pastes: xon.pastes, metrics: xon.metrics, sources,
-    // Return only summary metadata; never forward recovered credentials or raw stealer logs.
-    stealer: hudson?.ok ? { detected: Boolean(hudson.data?.stealers?.length || hudson.data?.total || hudson.data?.found), count: Math.max(0, n(hudson.data?.stealers?.length || hudson.data?.total)) } : null,
-    reputation: rep?.ok ? { reputation: String(rep.data?.reputation || 'unknown').slice(0, 30), suspicious: Boolean(rep.data?.suspicious), references: n(rep.data?.references), blacklisted: Boolean(rep.data?.details?.blacklisted) } : null,
-    dns: { txt: safeList(txtRecords), mx: safeList(mxRecords), ips: safeList(ipAddrs), dmarcTxt: safeList(dmarcRecords),
-      hasSPF: txtRecords.some(s => /v=spf1/i.test(s)), dmarc: dmarcRecords.some(s => /v=DMARC1/i.test(s)), available: dnsOK },
-    internetdb: db?.ok ? { ports: array(db.data?.ports).slice(0, 100), vulns: array(db.data?.vulns).slice(0, 80) } : null,
-    github: gh?.ok ? { count: n(gh.data?.total_count), users: array(gh.data?.items).slice(0, 5).map(u => String(u.login || '').slice(0, 70)).filter(Boolean) } : null,
-    keybase: keybase?.ok ? String(keybase.data?.them?.[0]?.basics?.username || '') : null,
-    gravatar,
-    availability: { xon: Boolean(analytic?.ok || check?.ok), analytics: Boolean(analytic?.ok), hudson: Boolean(hudson?.ok), emailrep: Boolean(rep?.ok), dns: dnsOK, github: Boolean(gh?.ok && env.GITHUB_TOKEN), keybase: Boolean(keybase?.ok), internetdb: Boolean(db?.ok), gravatar: gravatar !== null },
-    checkedAt: scanTimestamp, cached: false
-  };
-  try { await store.setJSON(ck, { ...data, cacheExpiresAt: Date.now() + 86400000 }, { metadata: { expiration: Date.now() + 86400000 } }); }
-  catch { /* Cache best-effort only. */ }
-  return reply(data);
-};
-
 
 export default {
   async fetch(req, env, ctx) {
@@ -274,7 +110,6 @@ export default {
       }catch{return reply({error:'Saúde indisponível.'},503);}
     }
     if (url.pathname === '/.netlify/functions/token') return token(req, env, ip);
-    if (url.pathname === '/.netlify/functions/scan') return scan(req, env, { ip });
     if (req.method !== 'GET' && req.method !== 'HEAD') return reply({ error: 'Método não permitido.' }, 405);
     if (url.pathname === '/robots.txt') return new Response(ROBOTS, { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'public, max-age=3600' } });
     if (url.pathname === '/sitemap.xml') return new Response(SITEMAP, { status: 200, headers: { 'content-type': 'application/xml; charset=utf-8', 'cache-control': 'public, max-age=3600' } });

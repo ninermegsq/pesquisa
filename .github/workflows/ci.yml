@@ -1,0 +1,53 @@
+name: CI
+
+# Verificacao local do projeto: sintaxe, testes de verificacao, geracao dos
+# artefatos derivados e idempotencia do build.
+#
+# Nenhum passo aqui fala com a rede dos provedores de OSINT: os testes usam
+# fixtures offline. Nenhum passo publica nada.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    name: Verificacao local (Node 20)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar dependencias
+        run: npm ci --no-audit --no-fund
+
+      - name: Checar sintaxe de todos os modulos (Worker e variante Netlify)
+        run: npm run check
+
+      - name: Testes de verificacao (offline)
+        run: npm test
+
+      - name: Gerar artefatos derivados (registro e migracoes)
+        run: npm run build
+
+      - name: Build idempotente (nada muda depois do build)
+        run: >
+          git diff --exit-code --
+          current-site/osint-infoc-hacker/src/sources/registry.meta.mjs
+          current-site/osint-infoc-hacker/src/lib/migrations.mjs
+          current-site/osint-infoc-hacker/cloudflare-worker.mjs

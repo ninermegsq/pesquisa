@@ -28,6 +28,7 @@ tem dependências de runtime (só Node 20+).
 npm run dev                # servidor local de desenvolvimento (prévia)
 npm run dev -- --port 4000 # porta fixa
 npm run dev:stop           # encerra servidores de desenvolvimento deixados no ar
+npm run dev:restart        # encerra os antigos e sobe um novo em segundo plano
 npm run start              # alias de dev (usado por prévias automáticas)
 npm run preview            # alias de dev
 npm run check              # sintaxe de todos os arquivos .mjs/.js (walker)
@@ -52,6 +53,18 @@ Um servidor antigo em execução continua segurando a porta e mantém o código
 antigo em memória (os módulos ESM são carregados uma vez por processo). Para
 encerrá-lo: `npm run dev:stop` (ou `npm run dev:stop -- --listar` para só
 listar os processos).
+
+Para resolver isso em um comando só — encerrar os servidores antigos, subir um
+novo desacoplado (sobrevive ao fim do comando), imprimir a URL e conferir que a
+página responde 200:
+
+```bash
+npm run dev:restart
+npm run dev:restart -- --port 4000   # porta fixa
+```
+
+A saída é um JSON com `url`, `pid`, `statusRaiz` e o status de cada ativo
+estático. O log do servidor fica em `%TEMP%\osint-dev-server.log`.
 
 ## Verificação contínua
 

@@ -17,6 +17,7 @@
     "test": "node verification/cache-check.mjs && node verification/contract-check.mjs && node verification/codegen-check.mjs && node verification/migrations-check.mjs && node verification/telegram-source-check.mjs && node verification/ssllabs-source-check.mjs && node verification/warm-check.mjs && node verification/worker-regression.mjs && node verification/dev-server-check.mjs && node verification/dev-process-check.mjs && node verification/stats-check.mjs",
     "dev": "node scripts/dev-server.mjs",
     "dev:stop": "node scripts/stop-dev-servers.mjs",
+    "dev:restart": "node scripts/dev-restart.mjs",
     "start": "node scripts/dev-server.mjs",
     "preview": "node scripts/dev-server.mjs",
     "warm-token": "node scripts/warm-token.mjs",

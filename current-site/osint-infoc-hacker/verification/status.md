@@ -437,6 +437,23 @@ Ou seja: o processo órfão foi encerrado e hoje não sobra nenhum servidor de
 desenvolvimento rodando. O editor ainda precisa **reiniciar** a prévia para
 carregar o código novo.
 
+### `npm run dev:restart`
+
+Para resolver a prévia de uma vez, foi criado `scripts/dev-restart.mjs` (e o
+atalho `npm run dev:restart` nos dois `package.json`): ele encerra os
+servidores antigos, sobe um servidor novo **desacoplado** — o processo
+sobrevive ao fim do comando —, espera a linha `NEXUS_PREVIEW_URL=` no log,
+confere que `/` responde 200 e devolve o resultado em JSON:
+
+```json
+{"escopo":"LOCAL ONLY; servidor de desenvolvimento local","pid":688,"url":"http://localhost:3000","statusRaiz":200,"estaticos":{"/favicon.svg":200,"/robots.txt":200,"/sitemap.xml":200,"/.well-known/security.txt":200,"/obrigado.html":200},"encerradosAntes":[7900],"log":"C:\\Users\\USUARIO\\AppData\\Local\\Temp\\osint-dev-server.log"}
+```
+
+Dois erros apareceram na implementação e foram corrigidos: o `stdio` do
+`spawn` não aceita um `WriteStream` (precisa do descritor numérico, com
+`openSync`), e a linha `NEXUS_PREVIEW_URL=` do log é impressa com dois
+espaços de indentação — a leitura precisa de `trim()` antes do `startsWith`.
+
 ### O que a Fase 1 não faz
 
 - Não publica nada. O Worker de produção e o domínio `ostnt.online` seguem

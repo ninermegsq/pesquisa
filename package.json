@@ -14,6 +14,7 @@
     "test": "npm --prefix current-site/osint-infoc-hacker run test",
     "dev": "npm --prefix current-site/osint-infoc-hacker run dev --",
     "dev:stop": "npm --prefix current-site/osint-infoc-hacker run dev:stop --",
+    "dev:restart": "npm --prefix current-site/osint-infoc-hacker run dev:restart --",
     "start": "npm --prefix current-site/osint-infoc-hacker run start --",
     "preview": "npm --prefix current-site/osint-infoc-hacker run preview --",
     "warm-token": "npm --prefix current-site/osint-infoc-hacker run warm-token --",

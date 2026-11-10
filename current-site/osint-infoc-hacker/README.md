@@ -119,6 +119,7 @@ npm run dev -- --port 4000 # mesma coisa, por argumento
 npm run dev -- --host 127.0.0.1
 npm run dev -- --sem-fallback  # exige a porta pedida: sai com 1 se ela estiver ocupada
 npm run dev:stop            # encerra servidores de desenvolvimento deixados no ar
+npm run dev:restart         # encerra os antigos e sobe um novo em segundo plano
 npm run start              # alias de dev (prévias automáticas do editor)
 npm run preview            # alias de dev
 npm run check              # sintaxe de todos os arquivos
@@ -147,7 +148,19 @@ não abrir. Para encerrá-lo:
 ```bash
 npm run dev:stop             # encerra todo dev-server.mjs em execução
 npm run dev:stop -- --listar # só lista os processos, sem encerrar
+npm run dev:restart          # encerra os antigos e sobe um novo, já pronto
 ```
+
+`npm run dev:restart` é o atalho que resolve a prévia de uma vez: ele
+encerra os servidores antigos, sobe um servidor novo **desacoplado** (o
+processo sobrevive ao fim do comando), espera a linha `NEXUS_PREVIEW_URL=`,
+confere que `/` responde 200 e imprime o resultado:
+
+```json
+{"escopo":"LOCAL ONLY; servidor de desenvolvimento local","pid":688,"url":"http://localhost:3000","statusRaiz":200,"estaticos":{"/favicon.svg":200,"/robots.txt":200,"/sitemap.xml":200,"/.well-known/security.txt":200,"/obrigado.html":200},"encerradosAntes":[7900],"log":"C:\\Users\\USUARIO\\AppData\\Local\\Temp\\osint-dev-server.log"}
+```
+
+O log do servidor fica em `%TEMP%\osint-dev-server.log`.
 
 O que é **local e simulado** (rótulo `LOCAL ONLY` nos testes e banner `AMBIENTE LOCAL` na página):
 

@@ -9,8 +9,10 @@
 //   node verification/live-source-probe.mjs
 //
 // As fontes que exigem credencial do operador (github, emailrep, ceis,
-// datajud) devolvem sem_chave/sem_token: e o comportamento declarado, e nao
-// uma falha do provedor.
+// datajud, numverify, placa_consultarplaca) devolvem sem_chave/sem_token
+// quando a variavel de ambiente nao existe: e o comportamento declarado, e
+// nao uma falha do provedor. Quando a variavel existe, a fonte usa a
+// credencial de verdade.
 //
 // Nao use este script em laco: ele consome cota dos provedores publicos.
 
@@ -32,10 +34,26 @@ const ALVOS = {
   nome: 'São Paulo'
 };
 
-const base = ctx(
-  { UA_MODE: 'identificado', UA: 'ostnt.online scanner (+https://ostnt.online)' },
-  'https://local.test'
-);
+// Credenciais do operador: o valor vem do ambiente e nunca e gravado no
+// projeto. Sem a variavel, a fonte responde com o codigo de configuracao.
+const CREDENCIAIS = [
+  'GITHUB_TOKEN',
+  'EMAILREP_KEY',
+  'TRANSPARENCIA_KEY',
+  'NUMVERIFY_API_KEY',
+  'DATAJUD_API_KEY',
+  'CONSULTARPLACA_CREDENCIAL'
+];
+const envOperador = { UA_MODE: 'identificado', UA: 'ostnt.online scanner (+https://ostnt.online)' };
+const credenciaisPresentes = [];
+for (const nome of CREDENCIAIS) {
+  const valor = process.env[nome];
+  if (typeof valor !== 'string' || !valor.trim()) continue;
+  envOperador[nome] = valor.trim();
+  credenciaisPresentes.push(nome);
+}
+
+const base = ctx(envOperador, 'https://local.test');
 
 const consultas = [];
 for (const fonte of REGISTRY) {
@@ -88,7 +106,7 @@ for (const { fonte, tipo } of consultas) {
   });
 }
 
-const comCredencial = ['github', 'emailrep', 'ceis', 'datajud'];
+const comCredencial = ['github', 'emailrep', 'ceis', 'datajud', 'numverify', 'placa_consultarplaca'];
 const respondidas = resultados.filter(r => r.status === 'ok');
 const falhasReais = resultados.filter(r => r.status !== 'ok' && !comCredencial.includes(r.id));
 const bloqueadasPorCredencial = resultados.filter(r => r.status !== 'ok' && comCredencial.includes(r.id));
@@ -98,6 +116,7 @@ console.log(JSON.stringify({
   alvos: ALVOS,
   consultas: resultados.length,
   responderam: respondidas.length,
+  credenciais_presentes: credenciaisPresentes,
   falharam: falhasReais.length,
   bloqueadas_por_credencial: bloqueadasPorCredencial.map(r => ({ id: r.id, tipo: r.tipo, erro_codigo: r.erro_codigo })),
   detalhe: resultados

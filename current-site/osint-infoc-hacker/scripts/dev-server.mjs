@@ -23,17 +23,44 @@ import { readFile } from 'node:fs/promises';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { handleScan } from '../src/scan.mjs';
 import { detectar } from '../src/lib/alvo.mjs';
 import { aplicarStats } from './stats.mjs';
-import { REGISTRY } from '../src/sources/registry.mjs';
 import { verificarTokenCalor } from '../src/lib/warm.mjs';
+import { sincronizarManifesto } from './garantir-manifesto.mjs';
 import {
   liberarPortasCanicas,
   portasCanonicas,
   registrarInstancia,
   removerInstancia
 } from './dev-instancia.mjs';
+
+// ---------------------------------------------------------------------------
+// Manifesto sincronizado ANTES do motor de fontes
+// ---------------------------------------------------------------------------
+//
+// O manifesto (src/sources/registry.json) e a fonte da verdade dos
+// metadados das fontes; o modulo gerado (src/sources/registry.meta.mjs) e o
+// que o runtime consome. Quando o manifesto muda sem o build rodar, o
+// modulo gerado fica velho e o carregamento falha com "fonte sem manifesto:
+// <id>" (ou "credencial divergente do manifesto: <id>"). O erro acontece no
+// import: o processo morre antes de abrir a porta e a previa do editor abre
+// com "o servidor terminou antes de abrir a previa".
+//
+// Por isso o servidor sincroniza o modulo gerado antes de carregar o motor.
+// O carregamento e dinamico de proposito: em ESM o modulo e lido (linked)
+// antes de qualquer avaliacao, entao reescrever o arquivo durante a
+// avaliacao nao mudaria o modulo ja carregado.
+let handleScan = null;
+let REGISTRY = [];
+try {
+  await sincronizarManifesto();
+  ({ handleScan } = await import('../src/scan.mjs'));
+  ({ REGISTRY } = await import('../src/sources/registry.mjs'));
+} catch (erro) {
+  // Falha aqui nao pode derrubar o servidor: sem motor de fontes a interface
+  // ainda abre e o motivo exato fica no log do processo.
+  console.error(`[dev] o motor de fontes nao carregou: ${erro.message}`);
+}
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
@@ -52,7 +79,11 @@ const opcaoCli = nome => {
   return '';
 };
 const portaCli = Number(opcaoCli('port')) || null;
-const hostCli = opcaoCli('host').trim();
+// O editor passa HOST e PORT no ambiente do processo filho. A flag --host tem
+// precedencia; HOST vale quando e um endereco de loopback.
+const HOSTS_DE_LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+const hostDoEnv = String(process.env.HOST || '').trim();
+const hostCli = opcaoCli('host').trim() || (HOSTS_DE_LOOPBACK.has(hostDoEnv) ? hostDoEnv : '');
 // --efemera: pedir uma porta efemera ao sistema, fora da lista de portas
 // que a previa do editor usa. O servidor de fundo (`dev:restart`) sobe
 // assim, para nunca disputar a porta com a previa em andamento.
@@ -164,6 +195,19 @@ const env = {
   BUDGET_SUBREQ: '38',
   TURNSTILE_SITEKEY: '1x00000000000000000000AA'
 };
+
+// Credenciais do operador declaradas no manifesto (GITHUB_TOKEN,
+// EMAILREP_KEY, TRANSPARENCIA_KEY, NUMVERIFY_API_KEY, DATAJUD_API_KEY,
+// CONSULTARPLACA_CREDENCIAL). O valor vem do ambiente do processo e nunca e
+// gravado no projeto. Sem a variavel, a fonte responde com o codigo de
+// configuracao (sem_chave/sem_token) e o restante do relatorio continua
+// valendo.
+for (const fonte of REGISTRY) {
+  const nome = fonte?.requer?.env;
+  if (!nome || env[nome]) continue;
+  const valor = process.env[nome];
+  if (typeof valor === 'string' && valor.trim()) env[nome] = valor.trim();
+}
 
 // Token de operacao no ambiente local: so funciona quando o operador define
 // WARM_SECRET (ou HMAC_SECRET) e usa o mesmo valor em scripts/warm-token.mjs.
@@ -388,6 +432,9 @@ async function devToken(req, res) {
 
 async function devScan(req, res) {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Metodo nao permitido.' });
+  if (!handleScan) {
+    return sendJson(res, 503, { error: 'O motor de fontes nao carregou. Veja o log do servidor.' });
+  }
   if (!originAllowed(req.headers.origin || '')) return sendJson(res, 403, { error: 'Origem nao permitida.', origem_recebida: req.headers.origin || null, origens_liberadas: ['localhost', '127.0.0.1', '[::1]'].concat([...allowedOrigins]) });
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); } catch { return sendJson(res, 400, { error: 'JSON invalido.' }); }
@@ -502,9 +549,84 @@ async function openEphemeral(bindings = BINDINGS) {
   return opened;
 }
 
+// Abre a porta que o editor reservou para a previa.
+//
+// O editor consulta SOMENTE a porta que reservou: se o servidor cair para
+// outra porta, a previa nunca abre ("a previa nao ficou pronta em 2
+// minutos"). Por isso a porta e perseguida: enquanto ela estiver ocupada, as
+// instancias anteriores DESTE projeto que a seguram sao encerradas e a
+// tentativa e refeita. Um dono orfao (o processo que o iniciou ja morreu) e
+// um dono vivo de uma previa anterior sao os dois casos que precisam cair:
+// enquanto um deles segura a porta, a previa do editor nao abre.
+async function abrirPortaReservada(port, bindings, { tentativasMs = 45000 } = {}) {
+  // A previa e consultada no endereco principal (127.0.0.1). Abrir apenas o
+  // outro loopback nao serve: e o endereco principal que precisa estar no ar.
+  const abrir = async () => {
+    const abertos = await openPort(port, bindings);
+    const principal = abertos.find(o => o.host === bindings[0]);
+    if (principal) return abertos;
+    for (const aberto of abertos) { try { aberto.server.close(); } catch { /* nao estava ouvindo */ } }
+    return [];
+  };
+  const fim = Date.now() + tentativasMs;
+  let tentativa = 0;
+  while (Date.now() < fim) {
+    tentativa += 1;
+    const abertos = await abrir();
+    if (abertos.length) return abertos;
+    const assumidas = await liberarPortasCanicas({
+      portas: [port],
+      excetoPid: process.pid,
+      apenasOrfas: false
+    });
+    for (const assumida of assumidas) {
+      console.error(`[dev] porta ${assumida.porta} liberada: instancia anterior (pid ${assumida.pid}) encerrada.`);
+    }
+    if (assumidas.length) {
+      const abertos = await abrir();
+      if (abertos.length) return abertos;
+    }
+    if (tentativa === 1) {
+      console.error(`[dev] porta ${port} ocupada; tentando de novo por ${Math.round(tentativasMs / 1000)}s.`);
+    }
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  return [];
+}
+
+// Quando a porta reservada nao pode ser aberta, o servidor continua no ar em
+// outra porta e fica de olho na reservada: se ela for liberada (um preview
+// antigo que ainda segurava a porta, por exemplo), ela e aberta e a previa do
+// editor passa a responder.
+function vigiarPortaReservada(port, bindings) {
+  let vigiando = false;
+  const timer = setInterval(async () => {
+    if (vigiando) return;
+    vigiando = true;
+    try {
+      const abertos = await openPort(port, bindings);
+      const principal = abertos.find(o => o.host === bindings[0]);
+      if (!principal) {
+        for (const aberto of abertos) { try { aberto.server.close(); } catch { /* nao estava ouvindo */ } }
+        return;
+      }
+      clearInterval(timer);
+      console.error(`[dev] porta reservada ${port} liberada; a previa do editor passa a responder nela.`);
+    } catch { /* nova tentativa no proximo ciclo */ } finally { vigiando = false; }
+  }, 2000);
+  if (typeof timer.unref === 'function') timer.unref();
+  return timer;
+}
+
 async function main() {
-  const explicit = portaCli || (process.env.PORT ? Number(process.env.PORT) : null);
-  const bindings = hostCli ? [hostCli] : BINDINGS;
+  // A porta que o editor reservou vem no ambiente (PORT). Ela e obrigatoria:
+  // cair para outra porta significa previa que nunca abre.
+  const portaDoEditor = !portaCli && process.env.PORT ? Number(process.env.PORT) : null;
+  const explicit = portaCli || (Number.isFinite(portaDoEditor) && portaDoEditor > 0 ? portaDoEditor : null);
+  // O endereco pedido vem primeiro, mas o outro loopback continua em lista:
+  // "localhost" pode resolver para IPv6 ou IPv4, e a previa precisa abrir nos
+  // dois casos.
+  const bindings = hostCli ? [...new Set([hostCli, ...BINDINGS])] : BINDINGS;
   const candidatas = portasCanonicas();
   // Com porta explicita e sem --sem-fallback, as portas livres alternatives
   // entram na lista: a previa abre em vez de o processo terminar.
@@ -522,6 +644,33 @@ async function main() {
     }
     groups.push({ port: efemera[0].port, opened: efemera, efemera: true });
     console.error(`[dev] porta efemera ${efemera[0].port} (pedido: --efemera).`);
+  } else if (explicit && explicit === portaDoEditor) {
+    // Porta reservada pelo editor (PORT no ambiente): o servidor precisa
+    // abrir EXATAMENTE nessa porta. A tentativa e perseguida e as instancias
+    // antigas deste projeto que a seguram sao encerradas.
+    const opened = await abrirPortaReservada(explicit, bindings);
+    if (opened.length) {
+      groups.push({ port: explicit, opened });
+    } else if (semFallback) {
+      console.error(`[dev] a porta reservada ${explicit} nao pode ser aberta. Defina PORT=<numero> ou use --port <numero> para escolher outra e tente novamente.`);
+      process.exitCode = 1;
+      return;
+    } else {
+      // Nao foi possivel abrir a porta reservada. O servidor continua no ar em
+      // uma porta efemera: encerrar aqui produziria "o servidor terminou
+      // antes de abrir a previa" no editor.
+      const efemera = await openEphemeral(bindings);
+      if (!efemera.length) {
+        console.error(`[dev] nenhuma porta disponivel para o servidor local. Porta reservada: ${explicit}.`);
+        process.exitCode = 1;
+        return;
+      }
+      groups.push({ port: efemera[0].port, opened: efemera, efemera: true });
+      console.error(`[dev] porta reservada ${explicit} indisponivel; abrindo na porta efemera ${efemera[0].port}.`);
+      // Fica de olho na porta reservada: se ela for liberada, a previa do
+      // editor passa a responder nela.
+      vigiarPortaReservada(explicit, bindings);
+    }
   } else {
     // Uma porta so: a primeira que abre. Antes o servidor segurava todas as
     // portas da lista ao mesmo tempo, o que deixava a proxima previa sem porta

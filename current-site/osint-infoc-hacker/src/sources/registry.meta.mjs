@@ -4,7 +4,7 @@
 
 export const REGISTRY_META = Object.freeze({
   versao: 1,
-  digest: "6f2ee2a01ee57446ccb2452ca62e201f2589b71e7d1b95f0bd8a62f5a6410004",
+  digest: "a91f3b8a0063340363f56a4ed9179065c48c761bfb1fdf234d306422541941e4",
   fontes: Object.freeze({
     "gravatar": Object.freeze({
       id: "gravatar",
@@ -214,7 +214,7 @@ export const REGISTRY_META = Object.freeze({
       ttl: 86400,
       provenance: "cnpj-ws-publica+minha-receita-cnpj",
       chave: false,
-      requer: Object.freeze({"tipo":"token","env":"CNPJWS_TOKEN","opcional":true})
+      requer: null
     }),
     "ceis": Object.freeze({
       id: "ceis",

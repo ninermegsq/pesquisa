@@ -26,7 +26,7 @@
     { "id": "internetdb", "titulo": "Exposicao", "tipos": ["ip"], "custo": 1, "ttl": 3600, "provenance": "shodan-internetdb", "chave": false, "requer": null },
     { "id": "ipgeo", "titulo": "Rede", "tipos": ["ip"], "custo": 1, "ttl": 86400, "provenance": "ipwhois", "chave": false, "requer": null },
     { "id": "asn", "titulo": "ASN", "tipos": ["ip"], "custo": 1, "ttl": 86400, "provenance": "team-cymru-dns", "chave": false, "requer": null },
-    { "id": "cnpj_br", "titulo": "Empresa", "tipos": ["cnpj"], "custo": 2, "ttl": 86400, "provenance": "cnpj-ws-publica+minha-receita-cnpj", "chave": false, "requer": { "tipo": "token", "env": "CNPJWS_TOKEN", "opcional": true } },
+    { "id": "cnpj_br", "titulo": "Empresa", "tipos": ["cnpj"], "custo": 2, "ttl": 86400, "provenance": "cnpj-ws-publica+minha-receita-cnpj", "chave": false, "requer": null },
     { "id": "ceis", "titulo": "Sancoes", "tipos": ["cnpj"], "custo": 1, "ttl": 86400, "provenance": "portal-transparencia-ceis", "chave": false, "requer": { "tipo": "chave", "env": "TRANSPARENCIA_KEY" } },
     { "id": "ddd", "titulo": "Regiao", "tipos": ["telefone"], "custo": 0, "ttl": 0, "provenance": "anatel-pgcn-snapshot-2026-10-30", "chave": false, "requer": null },
     { "id": "phone_footprint", "titulo": "Rastreio de telefone", "tipos": ["telefone"], "custo": 0, "ttl": 0, "provenance": "phoneinfoga-local-dorks", "chave": false, "requer": null },

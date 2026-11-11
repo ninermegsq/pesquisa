@@ -109,11 +109,10 @@ inesperado). `existe:false` só sai quando **os dois** provedores dizem que o
 CNPJ não existe. A proveniência ficou `cnpj-ws-publica+minha-receita-cnpj` e o
 custo da fonte é 2 (dois provedores possíveis).
 
-O token comercial (`CNPJWS_TOKEN`) é **opcional**: quando existe, a consulta
-vai para `comercial.cnpj.ws` com o cabeçalho `x_api_token`; sem ele, a base
-pública continua sendo usada. Para o manifesto, isso é um campo novo,
-`requer.opcional`: a credencial só melhora o resultado e a sua ausência não
-vira `sem_chave`/`sem_token`. O manifesto continua sendo a fonte da verdade — o
+A credencial do CNPJ.ws comercial saiu do projeto: a fonte `cnpj_br` usa
+sempre a base pública (`publica.cnpj.ws`), sem cabeçalho de credencial, e o
+manifesto voltou a declarar `requer: null` para ela — a ausência de
+credencial não vira `sem_chave`/`sem_token`. O manifesto continua sendo a fonte da verdade — o
 carregamento do módulo falha se a implementação e o manifesto divergirem, e a
 divergência agora distingue `exigirCredencial(` (obrigatória) de
 `credencialOpcional(` (melhoria).

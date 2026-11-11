@@ -1,6 +1,58 @@
-# Verificação — 2026-10-30 (última atualização: 2026-11-11)
+# Verificação — 2026-10-30 (última atualização: 2026-11-12)
 
 Estado: NÃO CONCLUÍDO. Código candidato, não promovido a produção.
+
+## A prévia do editor: manifesto gerado velho e porta reservada (2026-11-12)
+
+A prévia voltou a falhar com "o servidor terminou antes de abrir a prévia". O
+log do editor trazia a causa: `A prévia não iniciou: fonte sem manifesto:
+placa_consultarplaca`.
+
+### Causa real
+
+`src/sources/registry.mjs` valida, no carregamento do módulo, que toda fonte do
+manifesto (`src/sources/registry.json`) tem implementação e credencial
+compatível. O arquivo gerado `src/sources/registry.meta.mjs` estava **velho**:
+ainda trazia a fonte `placa_consultarplaca` sem o manifesto correspondente. O
+`import` de `registry.mjs` lançava exceção **antes** do servidor abrir a porta,
+o processo morria e o editor mostrava a falha genérica.
+
+### Correção
+
+1. **`scripts/garantir-manifesto.mjs` (novo).** Antes de carregar o motor, o
+   servidor compara `registry.meta.mjs` com o manifesto e regera o arquivo
+   quando está velho (escrita atômica em `.tmp` + `rename`). Nunca lança: uma
+   falha de sincronização não derruba a prévia.
+2. **Import dinâmico do motor no `scripts/dev-server.mjs`.** O manifesto é
+   sincronizado **antes** de `await import('../src/scan.mjs')` e
+   `await import('../src/sources/registry.mjs')`. Um módulo já vinculado não é
+   reavaliado por uma reescrita posterior, então a ordem importa.
+3. **Porta reservada pelo editor.** O editor reserva uma porta de `127.0.0.1` e
+   a passa em `PORT`; ele só sonda **aquela** porta. Quando `PORT` vem do
+   editor, o servidor abre exatamente essa porta: espera até 45 s, assume
+   instâncias anteriores deste mesmo projeto (as vivas também, por serem deste
+   projeto) e, em último caso, abre uma porta efêmera com um vigia que toma a
+   porta reservada quando ela ficar livre. O `--port` por argumento mantém o
+   comportamento antigo (fallback liberado; dono vivo nunca é derrubado).
+4. **Credenciais do operador no servidor local.** As chaves declaradas no
+   manifesto que existirem no ambiente (`GITHUB_TOKEN`, `EMAILREP_KEY`,
+   `TRANSPARENCIA_KEY`, `NUMVERIFY_API_KEY`, `DATAJUD_API_KEY`,
+   `CONSULTARPLACA_CREDENCIAL`) são repassadas ao motor local, para que a
+   prévia use as mesmas fontes do Worker. Nenhuma chave é gravada em arquivo.
+
+### Verificação nova (`verification/dev-manifesto-check.mjs`), na cadeia do
+`npm test`
+
+Ela corrompe o arquivo gerado, exige que o sincronizador o regere, sobe o
+servidor com `HOST`/`PORT`/`BROWSER` como o editor faz, exige HTTP 200 na porta
+reservada, exige que o processo continue vivo e confere que o arquivo gerado
+foi restaurado.
+
+Saída real:
+
+```json
+{"escopo":"LOCAL ONLY; manifesto gerado e previa do editor","sincronizador":{"regerou":true,"emDia":true},"previaComManifestoVelho":{"porta":30861,"status":200,"regenerou":true}}
+```
 
 ## A prévia do editor: a causa real do "o servidor terminou antes de abrir" (2026-11-11)
 
@@ -178,12 +230,11 @@ O que mudou no código:
   provedor não vira relatório parcial. `existe:false` só sai quando **os dois**
   provedores dizem que o CNPJ não existe. Proveniência:
   `cnpj-ws-publica+minha-receita-cnpj`; custo da fonte: 2.
-- O token comercial (`CNPJWS_TOKEN`) é **opcional**: quando existe, a consulta
-  vai para `comercial.cnpj.ws` com o cabeçalho `x_api_token`; sem ele, a base
-  pública continua em uso. Isso criou o conceito novo no manifesto,
-  `requer.opcional`: credencial que só melhora o resultado e cuja ausência
-  **não** vira `sem_chave`/`sem_token`. A validação do manifesto distingue
-  `exigirCredencial(` (obrigatória) de `credencialOpcional(` (melhoria) e
+- A credencial do CNPJ.ws comercial saiu do projeto: a consulta usa sempre a
+  base pública (`publica.cnpj.ws`), sem cabeçalho de credencial, e o manifesto
+  voltou a declarar `requer: null` para a fonte `cnpj_br` — a ausência de
+  credencial **não** vira `sem_chave`/`sem_token`. A validação do manifesto
+  distingue `exigirCredencial(` (obrigatória) de `credencialOpcional(` (melhoria) e
   continua interrompendo o carregamento do módulo quando a implementação e o
   manifesto divergem.
 - Os dois formatos foram normalizados para o mesmo contrato (razão social,
@@ -228,7 +279,7 @@ negam o cadastro, o `"Não"` virando `false` e o corte da lista de sócios em
 20. Saída real:
 
 ```json
-{"scope":"LOCAL ONLY; fixtures offline dos provedores","cnpj":{"primario":"cnpj-ws (publica.cnpj.ws)","reserva":"minha-receita (429 do primario nao vira falha)","token":"comercial.cnpj.ws quando CNPJWS_TOKEN existe","ausentes":"existe:false so quando os dois dizem que nao existe","limite_socios":"25 no cadastro, 20 no relatorio"}}
+{"scope":"LOCAL ONLY; fixtures offline dos provedores","cnpj":{"primario":"cnpj-ws (publica.cnpj.ws)","reserva":"minha-receita (429 do primario nao vira falha)","token":"nenhum: a base publica (publica.cnpj.ws) e o bastante","ausentes":"existe:false so quando os dois dizem que nao existe","limite_socios":"25 no cadastro, 20 no relatorio"}}
 ```
 
 Registro de fontes (`npm test`): `cnpj_br` passou a constar entre as

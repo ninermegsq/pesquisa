@@ -42,7 +42,7 @@ assert.equal(wayback.provenance, 'wayback-cdx');
 assert.equal(crtsh.provenance, 'subdomain-center');
 assert.equal(cnpj.provenance, 'cnpj-ws-publica+minha-receita-cnpj');
 assert.equal(cnpj.custo, 2, 'a fonte de CNPJ pode chegar a dois provedores');
-assert.deepEqual(cnpj.requer, { tipo: 'token', env: 'CNPJWS_TOKEN', opcional: true });
+assert.equal(cnpj.requer, null, 'a fonte de CNPJ nao exige credencial: a base publica basta');
 
 // --- fixtures offline ---------------------------------------------------------
 const GITLAB_OK = {
@@ -248,12 +248,13 @@ try {
   assert.deepEqual(saidaCnpj.pivos[1], { tipo: 'telefone', valor: '6134939002' });
   assert.deepEqual(saidaCnpj.pivos[2], { tipo: 'nome', valor: 'FULANO DE TAL' });
 
-  // Token comercial configurado: a consulta vai para comercial.cnpj.ws.
-  const ctxComToken = ctx({ UA_MODE: 'identificado', UA: 'fixture-check/1.0', CNPJWS_TOKEN: 'token-de-teste' }, 'https://local.test');
+  // Sem token comercial: a consulta vai sempre para a base publica e nao
+  // manda cabecalho de credencial.
+  const ctxSemToken = ctx({ UA_MODE: 'identificado', UA: 'fixture-check/1.0' }, 'https://local.test');
   respostas = [{ corpo: JSON.stringify(CNPJ_WS_OK) }];
-  saidaCnpj = await cnpj.run(alvoCnpj, ctxComToken);
-  assert.match(chamadas.at(-1).url, /^https:\/\/comercial\.cnpj\.ws\/cnpj\/00000000000191$/);
-  assert.equal(chamadas.at(-1).headers.get('x_api_token'), 'token-de-teste');
+  saidaCnpj = await cnpj.run(alvoCnpj, ctxSemToken);
+  assert.match(chamadas.at(-1).url, /^https:\/\/publica\.cnpj\.ws\/cnpj\/00000000000191$/);
+  assert.equal(chamadas.at(-1).headers.get('x_api_token'), null);
   assert.equal(saidaCnpj.dados.provedor, 'cnpj-ws');
 
   // Limite do endpoint publico (429): a fonte cai no Minha Receita.
@@ -298,7 +299,7 @@ try {
     cnpj: {
       primario: 'cnpj-ws (publica.cnpj.ws)',
       reserva: 'minha-receita (429 do primario nao vira falha)',
-      token: 'comercial.cnpj.ws quando CNPJWS_TOKEN existe',
+      token: 'nenhum: a base publica (publica.cnpj.ws) e o bastante',
       ausentes: 'existe:false so quando os dois dizem que nao existe',
       limite_socios: '25 no cadastro, 20 no relatorio'
     }

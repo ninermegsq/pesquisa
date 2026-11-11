@@ -59,7 +59,6 @@ desses arquivos fica embutida em `cloudflare-worker.mjs`.
 | `GITHUB_TOKEN` | Não | Token opcional de leitura da API GitHub; configure com `wrangler secret put GITHUB_TOKEN`. Sem ele, GitHub aparece indisponível. A resposta é cacheada por e-mail durante 24 horas. |
 | `DATAJUD_API_KEY` | Não | Chave opcional da API pública do DataJud/CNJ (fonte `datajud`, categoria nome). Sem ela a fonte responde `sem_chave` e o relatório **não** fica parcial. Configure com `wrangler secret put DATAJUD_API_KEY`; **nenhuma chave fica no código**. |
 | `TRANSPARENCIA_KEY` | Não | Chave opcional da API do Portal da Transparência (sanções/CEIS). Sem ela a fonte CEIS responde `sem_chave` e o relatório **não** fica parcial. |
-| `CNPJWS_TOKEN` | Não | Token opcional da API comercial do CNPJ.ws (fonte `cnpj_br`). **Sem ele a fonte continua funcionando**: a consulta vai para a base pública (`publica.cnpj.ws`, 3 consultas por minuto/IP); com ele, vai para `comercial.cnpj.ws`, que tem cota própria. Configure com `wrangler secret put CNPJWS_TOKEN`; **nenhum token fica no código**. |
 | `NUMVERIFY_API_KEY` | Não | Chave opcional da API Numverify/APILayer (fonte `numverify`, número de celular: validade, operadora, país, tipo de linha). **Sem ela a fonte não roda** e responde `sem_chave` — o relatório **não** fica parcial. Configure com `wrangler secret put NUMVERIFY_API_KEY`; **nenhuma chave fica no código**. |
 | `WARM_SECRET` | Não | Segredo do token de operação (aquecimento e painel de saúde). Tem precedência sobre `HMAC_SECRET`. Sem ele, `/api/saude` e o aquecimento respondem "não autorizado". |
 | `AWS_LAMBDA_JS_RUNTIME` | Conforme plano/ambiente | Caso necessário na Netlify, valor `nodejs20.x` para selecionar explicitamente runtime das Functions. |
@@ -131,8 +130,8 @@ npm run test               # cache-check, contract-check, codegen-check, migrati
                            # telegram-source-check, ssllabs-source-check,
                            # osint-github-source-check, source-fix-check,
                            # novos-alvos-check, warm-check, worker-regression,
-                           # dev-server-check, dev-process-check, dev-ownership-check,
-                           # dev-preview-check, stats-check
+                           # dev-server-check, dev-manifesto-check, dev-process-check,
+                           # dev-ownership-check, dev-preview-check, stats-check
 npm run pesquisa:github    # ranking dos repositorios open source de OSINT (e-mail/telefone)
                            # na API publica de busca do GitHub, ordenado por estrelas
 ```
@@ -153,6 +152,24 @@ mensagem lista `Portas tentadas:` e `PORT=<numero>`.
 Um processo antigo do servidor de desenvolvimento continua segurando a porta
 mesmo depois do código ter sido corrigido, mas já não derruba a prévia: o
 servidor cai para outra porta livre e imprime a URL que está no ar.
+
+**Porta reservada pelo editor.** Quando o editor abre a prévia, ele escolhe uma
+porta livre de `127.0.0.1` e a passa em `PORT`; o servidor **precisa** abrir
+exatamente essa porta, porque o editor só sonda a porta que reservou. Nesse
+caso o servidor não cai para outra porta: ele espera até 45 s pela porta
+reservada, assumindo instâncias anteriores deste mesmo projeto (inclusive as
+vivas, que são deste projeto), e só em último caso abre uma porta efêmera
+mantendo um vigia que toma a porta reservada assim que ela ficar livre. O
+argumento `--port` mantém o comportamento antigo (fallback liberado e dono vivo
+nunca derrubado).
+
+**O manifesto gerado nunca mais derruba a prévia.** Antes de carregar o motor,
+o servidor confere `src/sources/registry.meta.mjs` contra
+`src/sources/registry.json` e regera o arquivo quando ele está velho
+(`scripts/garantir-manifesto.mjs`). Um manifesto desatualizado já não derruba o
+processo — ele é corrigido na hora, e a prévia abre normalmente. O
+`dev-manifesto-check` cobre esse caminho: ele corrompe o arquivo gerado, sobe o
+servidor e exige HTTP 200 na porta reservada com o arquivo já regerado.
 
 **A prévia do editor é preservada por padrão.** Ela é um
 `node scripts/dev-server.mjs` como qualquer outro — encerrá-la produz o erro
@@ -206,7 +223,7 @@ O que **não** muda: `cloudflare-worker.mjs`, `wrangler.toml`, `public/` e as Ne
 ## Limites conhecidos
 
 - **XposedOrNot:** cerca de **100 chamadas/dia por IP** para os endpoints usados (além de limites por hora), conforme a [documentação oficial](https://xposedornot.com/api_doc).
-- **CNPJ.ws:** a base pública (`publica.cnpj.ws`) aceita **3 consultas por minuto/IP**; a 4ª devolve HTTP 429 com `retry-after: 60`. Por isso a fonte `cnpj_br` cai no Minha Receita quando o limite é atingido — o limite do provedor não vira relatório parcial. Com `CNPJWS_TOKEN` configurado, a consulta vai para `comercial.cnpj.ws`, que tem cota própria. Os dados do CNPJ.ws têm defasagem de cerca de um mês.
+- **CNPJ.ws:** a base pública (`publica.cnpj.ws`) aceita **3 consultas por minuto/IP**; a 4ª devolve HTTP 429 com `retry-after: 60`. Por isso a fonte `cnpj_br` cai no Minha Receita quando o limite é atingido — o limite do provedor não vira relatório parcial. A consulta usa sempre a base pública (`publica.cnpj.ws`): o token comercial saiu do projeto e a fonte não exige credencial. Os dados do CNPJ.ws têm defasagem de cerca de um mês.
 - **GitHub:** a consulta só é feita quando `GITHUB_TOKEN` está configurado; sem ele, `availability.github` fica `false`. No Worker, o resumo é cacheado por e-mail na Cache API durante 24 horas para reduzir chamadas compartilhadas.
 - **Busca do GitHub (`npm run pesquisa:github`):** a API pública de busca permite **10 consultas por minuto sem token** e 30 com token. O script espera a janela abrir (`x-ratelimit-reset`) e repete; só depois de duas tentativas registra o aviso e segue com o que tem. O ranking é uma fotografia do momento da execução.
 - **Numverify:** a API pública responde **HTTP 401** sem `access_key`. Por isso a fonte `numverify` é declarada com **credencial obrigatória**: sem `NUMVERIFY_API_KEY` ela responde `sem_chave` e o relatório **não** fica parcial (a fonte não rodou). É a única fonte de telefone que depende de chave.
@@ -325,7 +342,6 @@ wrangler secret put GITHUB_TOKEN
 wrangler secret put EMAILREP_KEY
 wrangler secret put TRANSPARENCIA_KEY
 wrangler secret put DATAJUD_API_KEY
-wrangler secret put CNPJWS_TOKEN
 wrangler secret put NUMVERIFY_API_KEY
 wrangler secret put CONSULTARPLACA_CREDENCIAL
 ```
@@ -335,10 +351,9 @@ como senha**, no formato `email:api_key` (Basic Auth).
 
 Sem essas chaves, as fontes correspondentes respondem com o código `sem_chave` ou `sem_token` e o relatório **não** é marcado como parcial: a fonte não rodou, o restante das consultas continua valendo.
 
-O `CNPJWS_TOKEN` é o caso diferente: ele **não** é necessário. A fonte `cnpj_br`
-consulta o CNPJ.ws pela base pública e usa o Minha Receita como reserva; o token
-comercial, quando existe, apenas tira a consulta do limite de 3 por minuto/IP
-da base pública e libera os endpoints extras do plano pago. CPF, placa e nome completo passaram a fazer parte do escopo (ver "Alvos novos: CPF, placa e nome completo" acima). Nomes são consultas públicas não conclusivas; o nome informado não confirma identidade. A placa identifica o veículo, não o titular: nenhum provedor público consultado aqui devolve o nome do proprietário. JSON e CSV incluem proveniência e timestamp.
+A fonte `cnpj_br` não exige credencial: ela consulta o CNPJ.ws pela base
+pública e usa o Minha Receita como reserva (o token comercial saiu do
+projeto). CPF, placa e nome completo passaram a fazer parte do escopo (ver "Alvos novos: CPF, placa e nome completo" acima). Nomes são consultas públicas não conclusivas; o nome informado não confirma identidade. A placa identifica o veículo, não o titular: nenhum provedor público consultado aqui devolve o nome do proprietário. JSON e CSV incluem proveniência e timestamp.
 
 ### Rotas expostas pelo Worker
 

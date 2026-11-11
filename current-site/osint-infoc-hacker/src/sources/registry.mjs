@@ -738,13 +738,10 @@ export const REGISTRY=[
     // a lista de socios, e aceita 3 consultas por minuto/IP - em IP
     // compartilhado o 429 e esperado. Quando ele falha (429, 5xx, timeout,
     // formato), a fonte cai para o Minha Receita, que responde o mesmo
-    // cadastro. Se o token comercial estiver configurado, a consulta vai
-    // para comercial.cnpj.ws, que tem cota propria.
-    const token=credencialOpcional(c.env,'cnpj_br');
-    const host=token?'comercial.cnpj.ws':'publica.cnpj.ws';
-    const cabecalhos=token?{'x_api_token':token}:{};
+    // cadastro. A consulta usa sempre a base publica (publica.cnpj.ws): o
+    // token comercial saiu do projeto, entao a fonte nao exige credencial.
     const tentarCnpjWs=async()=>{
-      const r=await c.get(`https://${host}/cnpj/${encodeURIComponent(a.valor)}`,{timeout:7000,headers:cabecalhos});
+      const r=await c.get(`https://publica.cnpj.ws/cnpj/${encodeURIComponent(a.valor)}`,{timeout:7000});
       if(r.status===404)return {achou:false};
       if(!r.ok)throw falhar(r);
       const j=await J(r);

@@ -60,6 +60,7 @@ desses arquivos fica embutida em `cloudflare-worker.mjs`.
 | `DATAJUD_API_KEY` | Não | Chave opcional da API pública do DataJud/CNJ (fonte `datajud`, categoria nome). Sem ela a fonte responde `sem_chave` e o relatório **não** fica parcial. Configure com `wrangler secret put DATAJUD_API_KEY`; **nenhuma chave fica no código**. |
 | `TRANSPARENCIA_KEY` | Não | Chave opcional da API do Portal da Transparência (sanções/CEIS). Sem ela a fonte CEIS responde `sem_chave` e o relatório **não** fica parcial. |
 | `CNPJWS_TOKEN` | Não | Token opcional da API comercial do CNPJ.ws (fonte `cnpj_br`). **Sem ele a fonte continua funcionando**: a consulta vai para a base pública (`publica.cnpj.ws`, 3 consultas por minuto/IP); com ele, vai para `comercial.cnpj.ws`, que tem cota própria. Configure com `wrangler secret put CNPJWS_TOKEN`; **nenhum token fica no código**. |
+| `NUMVERIFY_API_KEY` | Não | Chave opcional da API Numverify/APILayer (fonte `numverify`, número de celular: validade, operadora, país, tipo de linha). **Sem ela a fonte não roda** e responde `sem_chave` — o relatório **não** fica parcial. Configure com `wrangler secret put NUMVERIFY_API_KEY`; **nenhuma chave fica no código**. |
 | `WARM_SECRET` | Não | Segredo do token de operação (aquecimento e painel de saúde). Tem precedência sobre `HMAC_SECRET`. Sem ele, `/api/saude` e o aquecimento respondem "não autorizado". |
 | `AWS_LAMBDA_JS_RUNTIME` | Conforme plano/ambiente | Caso necessário na Netlify, valor `nodejs20.x` para selecionar explicitamente runtime das Functions. |
 
@@ -119,14 +120,19 @@ PORT=4000 npm run dev      # porta fixa
 npm run dev -- --port 4000 # mesma coisa, por argumento
 npm run dev -- --host 127.0.0.1
 npm run dev -- --sem-fallback  # exige a porta pedida: sai com 1 se ela estiver ocupada
-npm run dev:stop            # encerra servidores de desenvolvimento deixados no ar
-npm run dev:restart         # encerra os antigos e sobe um novo em segundo plano
+npm run dev:stop            # encerra o servidor de fundo registrado (preserva a prévia)
+npm run dev:stop -- --todos # encerra todos os servidores, inclusive a prévia
+npm run dev:restart         # sobe um servidor novo em segundo plano (porta efêmera)
 npm run start              # alias de dev (prévias automáticas do editor)
 npm run preview            # alias de dev
 npm run check              # sintaxe de todos os arquivos
 npm run test               # cache-check, contract-check, codegen-check, migrations-check,
-                           # telegram-source-check, ssllabs-source-check, warm-check,
-                           # worker-regression, dev-server-check, dev-process-check, stats-check
+                           # telegram-source-check, ssllabs-source-check,
+                           # osint-github-source-check, source-fix-check, warm-check,
+                           # worker-regression, dev-server-check, dev-process-check,
+                           # dev-ownership-check, stats-check
+npm run pesquisa:github    # ranking dos repositorios open source de OSINT (e-mail/telefone)
+                           # na API publica de busca do GitHub, ordenado por estrelas
 ```
 
 O servidor local imprime a URL da prévia no início:
@@ -143,22 +149,34 @@ pedida (e sair com código 1 se ela estiver ocupada), use `--sem-fallback`: a
 mensagem lista `Portas tentadas:` e `PORT=<numero>`.
 
 Um processo antigo do servidor de desenvolvimento continua segurando a porta
-mesmo depois do código ter sido corrigido, e é a causa mais comum da prévia
-não abrir. Para encerrá-lo:
+mesmo depois do código ter sido corrigido, mas já não derruba a prévia: o
+servidor cai para outra porta livre e imprime a URL que está no ar.
+
+**A prévia do editor é preservada por padrão.** Ela é um
+`node scripts/dev-server.mjs` como qualquer outro — encerrá-la produz o erro
+"o servidor terminou antes de abrir a prévia". Por isso:
 
 ```bash
-npm run dev:stop             # encerra todo dev-server.mjs em execução
-npm run dev:stop -- --listar # só lista os processos, sem encerrar
-npm run dev:restart          # encerra os antigos e sobe um novo, já pronto
+npm run dev:stop                # encerra só o servidor de fundo registrado
+npm run dev:stop -- --listar    # só lista os processos, sem encerrar
+npm run dev:stop -- --pid 1234  # encerra um PID específico
+npm run dev:stop -- --todos     # encerra todos (derruba a prévia de propósito)
+npm run dev:restart             # sobe um servidor novo, desacoplado, já pronto
 ```
 
-`npm run dev:restart` é o atalho que resolve a prévia de uma vez: ele
-encerra os servidores antigos, sobe um servidor novo **desacoplado** (o
-processo sobrevive ao fim do comando), espera a linha `NEXUS_PREVIEW_URL=`,
-confere que `/` responde 200 e imprime o resultado:
+O `dev:stop` sem opção encerra apenas o servidor de fundo que o
+`dev:restart` subiu, registrado em `%TEMP%\osint-dev-server.json`. Os demais
+processos (a prévia do editor e os servidores de outra sessão) aparecem como
+`preservados` na saída.
+
+`npm run dev:restart` é o atalho que sobe um servidor novo **desacoplado** (o
+processo sobrevive ao fim do comando), em **porta efêmera** — fora da lista
+que a prévia usa (3000, 5173, ...), para não disputar porta com ela —, espera
+a linha `NEXUS_PREVIEW_URL=`, confere que `/` responde 200 e imprime o
+resultado:
 
 ```json
-{"escopo":"LOCAL ONLY; servidor de desenvolvimento local","pid":688,"url":"http://localhost:3000","statusRaiz":200,"estaticos":{"/favicon.svg":200,"/robots.txt":200,"/sitemap.xml":200,"/.well-known/security.txt":200,"/obrigado.html":200},"encerradosAntes":[7900],"log":"C:\\Users\\USUARIO\\AppData\\Local\\Temp\\osint-dev-server.log"}
+{"escopo":"LOCAL ONLY; servidor de desenvolvimento local","pid":688,"url":"http://localhost:49840","porta":49840,"statusRaiz":200,"estaticos":{"/favicon.svg":200,"/robots.txt":200,"/sitemap.xml":200,"/.well-known/security.txt":200,"/obrigado.html":200},"encerradosAntes":[7900],"preservados":[6180],"log":"C:\\Users\\USUARIO\\AppData\\Local\\Temp\\osint-dev-server.log"}
 ```
 
 O log do servidor fica em `%TEMP%\osint-dev-server.log`.
@@ -188,6 +206,9 @@ O que **não** muda: `cloudflare-worker.mjs`, `wrangler.toml`, `public/` e as Ne
 - **XposedOrNot:** cerca de **100 chamadas/dia por IP** para os endpoints usados (além de limites por hora), conforme a [documentação oficial](https://xposedornot.com/api_doc).
 - **CNPJ.ws:** a base pública (`publica.cnpj.ws`) aceita **3 consultas por minuto/IP**; a 4ª devolve HTTP 429 com `retry-after: 60`. Por isso a fonte `cnpj_br` cai no Minha Receita quando o limite é atingido — o limite do provedor não vira relatório parcial. Com `CNPJWS_TOKEN` configurado, a consulta vai para `comercial.cnpj.ws`, que tem cota própria. Os dados do CNPJ.ws têm defasagem de cerca de um mês.
 - **GitHub:** a consulta só é feita quando `GITHUB_TOKEN` está configurado; sem ele, `availability.github` fica `false`. No Worker, o resumo é cacheado por e-mail na Cache API durante 24 horas para reduzir chamadas compartilhadas.
+- **Busca do GitHub (`npm run pesquisa:github`):** a API pública de busca permite **10 consultas por minuto sem token** e 30 com token. O script espera a janela abrir (`x-ratelimit-reset`) e repete; só depois de duas tentativas registra o aviso e segue com o que tem. O ranking é uma fotografia do momento da execução.
+- **Numverify:** a API pública responde **HTTP 401** sem `access_key`. Por isso a fonte `numverify` é declarada com **credencial obrigatória**: sem `NUMVERIFY_API_KEY` ela responde `sem_chave` e o relatório **não** fica parcial (a fonte não rodou). É a única fonte de telefone que depende de chave.
+- **Checagens de cadastro de e-mail (`email_registro`):** os 8 endpoints públicos respondem se o endereço está **em uso** naquele serviço — isso **não** identifica quem controla o e-mail, e o resultado muda conforme o serviço. Um site bloqueado vira "indisponível" isolado; se nenhum dos 8 responder, a fonte falha de verdade em vez de devolver "nada encontrado".
 - **"não encontrado" ≠ seguro**. Uma ausência de resultados não elimina risco, e falhas de APIs devem ser tratadas como resultados inconclusivos.
 - APIs de terceiros podem mudar formatos, preços, restrições de CORS, políticas de consulta ou disponibilidade. As chamadas externas de investigação são feitas pela Function (com exceção do teste anônimo de senha diretamente do navegador).
 - A CSP inclui `frame-src https://challenges.cloudflare.com`, ajuste necessário além do cabeçalho original para permitir o iframe do Turnstile, conforme a documentação oficial da Cloudflare.
@@ -211,9 +232,39 @@ Projeto está pronto para ser versionado e implantado **após configurar a Netli
 
 ## Motor de fontes
 
-`POST /api/scan` recebe `alvo` e token assinado de uso único emitido após Turnstile. Resultados em `caches.default`, com prefixo `https://ostnt.online/__cache/<id>/<alvo>` (componentes codificados); a rota pública desse prefixo responde 404. Sucesso usa o TTL da fonte; erros e timeouts usam 120 segundos. Cache é local ao datacenter e best-effort. KV (OSINT_KV, fallback CACHE) guarda somente limites: duas escritas por scan aceito. Tokens usam Durable Object SQLite para rejeitar replay atomicamente, sem escritas no KV. O orçamento é de 38 subrequests externos declarados; e-mail seleciona 12 fontes e custo 16. Telegram consulta somente telefone: o número vai para o formato internacional (código 55 em números nacionais de 10 ou 11 dígitos) e a fonte extrai o título e a descrição da página pública de `t.me`. O resultado é `paginaPublica`, **não** "a conta existe": o Telegram entrega a mesma página de contato para qualquer número, e a existência da conta só é resolvida no aplicativo — a fonte registra essa limitação em `observacao`. A migração `token-guard-v1` precisa acompanhar o deploy; conteúdo sem o binding TOKEN_GUARD falha de forma fechada.
+`POST /api/scan` recebe `alvo` e token assinado de uso único emitido após Turnstile. Resultados em `caches.default`, com prefixo `https://ostnt.online/__cache/<id>/<alvo>` (componentes codificados); a rota pública desse prefixo responde 404. Sucesso usa o TTL da fonte; erros e timeouts usam 120 segundos. Cache é local ao datacenter e best-effort. KV (OSINT_KV, fallback CACHE) guarda somente limites: duas escritas por scan aceito. Tokens usam Durable Object SQLite para rejeitar replay atomicamente, sem escritas no KV. O orçamento é de 38 subrequests externos declarados; e-mail seleciona 13 fontes e custo 24, telefone seleciona 4 fontes e custo 2 (`telegram` 1, `ddd` 0, `phone_footprint` 0, `numverify` 1). Telegram consulta somente telefone: o número vai para o formato internacional (código 55 em números nacionais de 10 ou 11 dígitos) e a fonte extrai o título e a descrição da página pública de `t.me`. O resultado é `paginaPublica`, **não** "a conta existe": o Telegram entrega a mesma página de contato para qualquer número, e a existência da conta só é resolvida no aplicativo — a fonte registra essa limitação em `observacao`. A migração `token-guard-v1` precisa acompanhar o deploy; conteúdo sem o binding TOKEN_GUARD falha de forma fechada.
 
 A nota de segurança do HTTPS vem do **Qualys SSL Labs** (`ssllabs`), que substituiu o Mozilla Observatory: a API pública do Observatory foi descontinuada e todas as rotas `/api/*` respondem 404. A API v3 do SSL Labs não traz nota no nível do host — ela vem por endpoint (`endpoints[].grade`) —, então a fonte publica a **pior nota entre os servidores avaliados**, que é a própria regra do provedor. Enquanto a avaliação não foi publicada, a fonte devolve `situacao: "em_andamento"` (sem nota e sem erro) com TTL próprio de 300 segundos, para que a consulta seguinte encontre a nota; com a avaliação pronta, vale o TTL da fonte (3600 s).
+
+### Fontes trazidas da pesquisa no GitHub (2026-11-11)
+
+`npm run pesquisa:github` consulta a API pública de busca do GitHub (10
+consultas, `sort=stars`) e devolve o ranking dos repositórios open source de
+OSINT por e-mail e telefone. Na última execução real: **220 repositórios
+únicos**, com `sundowndev/phoneinfoga` (18.526 estrelas), `laramies/theHarvester`
+(18.290), `megadose/holehe` (15.611) e `antoniaci/blackbird` (10.090) no topo.
+
+Os repositórios do topo são CLI em Go/Python, e o runtime de produção é um
+Cloudflare Worker. "Instalar" aqui foi **portar a técnica** em JavaScript
+próprio, sem copiar código nem dados (os portados são GPL ou não têm licença
+declarada):
+
+- `email_registro` (holehe + blackbird): consulta 8 endpoints públicos que
+  respondem se o e-mail está em uso — Duolingo, ProtonMail, WordPress,
+  Twitter, Spotify, Adobe, Firefox e Freelancer. Todos foram verificados ao
+  vivo nos dois sentidos. Um site bloqueado vira "indisponível" isolado; se
+  nenhum responder, a fonte falha de verdade.
+- `phone_footprint` (PhoneInfoga): normalização E.164, formato nacional com
+  DDD, país, links de WhatsApp/Telegram e as buscas públicas por categoria
+  (redes sociais, SMS descartável, reputação, pessoas). **Nenhuma chamada de
+  rede**: as buscas são links, não consultas.
+- `numverify` (PhoneInfoga): validade, operadora, país e tipo de linha do
+  número, via Numverify/APILayer. Precisa de `NUMVERIFY_API_KEY`; sem a chave
+  responde `sem_chave` e o relatório não fica parcial.
+
+O relatório completo da pesquisa — ranking, mapa repositório → técnica
+portada e o descarte de cada candidato com a medição — está em
+`verification/github-osint.md`.
 
 Chaves opcionais, somente no servidor:
 ```sh
@@ -222,6 +273,7 @@ wrangler secret put EMAILREP_KEY
 wrangler secret put TRANSPARENCIA_KEY
 wrangler secret put DATAJUD_API_KEY
 wrangler secret put CNPJWS_TOKEN
+wrangler secret put NUMVERIFY_API_KEY
 ```
 
 Sem essas chaves, as fontes correspondentes respondem com o código `sem_chave` ou `sem_token` e o relatório **não** é marcado como parcial: a fonte não rodou, o restante das consultas continua valendo.
@@ -264,7 +316,7 @@ falha. Códigos: `sem_chave`, `sem_token`, `erro_rede`, `timeout`, `http`,
 
 ### 2. Manifesto das fontes (`src/sources/registry.json`)
 
-Os metadados das 24 fontes (título, tipos, custo, TTL, proveniência, credencial
+Os metadados das 27 fontes (título, tipos, custo, TTL, proveniência, credencial
 opcional) vivem em um JSON legível. `scripts/build-registry.mjs` gera
 `src/sources/registry.meta.mjs` de forma determinística e
 `src/sources/registry.mjs` valida cada implementação contra o manifesto no
@@ -329,7 +381,7 @@ despacho manual, com confirmação digitada.
 
 `npm run check` na raiz verifica a sintaxe de todos os arquivos `.mjs`/`.js` do
 Worker **e** da variante Netlify (`osint-infoc-hacker/`), por meio de
-`scripts/check-syntax.mjs`. `npm test` roda onze checks offline; o
+`scripts/check-syntax.mjs`. `npm test` roda treze checks offline; o
 `dev-process-check` sobe o servidor local como processo filho e confirma que ele
 permanece vivo, imprime `NEXUS_PREVIEW_URL`, serve a interface com 200, cai
 para outra porta quando a pedida está ocupada e sai com 1 no modo estrito

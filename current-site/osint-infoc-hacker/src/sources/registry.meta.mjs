@@ -4,7 +4,7 @@
 
 export const REGISTRY_META = Object.freeze({
   versao: 1,
-  digest: "80d41247b75c6aabc28856ad9b2180a44ad530d7e80837839172ee82ff1c5ef7",
+  digest: "2677454782a49486064b8cd2e24485e4644ff5f470c2780677a072b7e39588b0",
   fontes: Object.freeze({
     "gravatar": Object.freeze({
       id: "gravatar",
@@ -105,6 +105,16 @@ export const REGISTRY_META = Object.freeze({
       provenance: "emailrep",
       chave: false,
       requer: Object.freeze({"tipo":"chave","env":"EMAILREP_KEY","opcional":false})
+    }),
+    "email_registro": Object.freeze({
+      id: "email_registro",
+      titulo: "Cadastro de e-mail",
+      tipos: Object.freeze(["email"]),
+      custo: 8,
+      ttl: 21600,
+      provenance: "holehe-blackbird-cadastro",
+      chave: false,
+      requer: null
     }),
     "dns": Object.freeze({
       id: "dns",
@@ -225,6 +235,26 @@ export const REGISTRY_META = Object.freeze({
       provenance: "anatel-pgcn-snapshot-2026-10-30",
       chave: false,
       requer: null
+    }),
+    "phone_footprint": Object.freeze({
+      id: "phone_footprint",
+      titulo: "Rastreio de telefone",
+      tipos: Object.freeze(["telefone"]),
+      custo: 0,
+      ttl: 0,
+      provenance: "phoneinfoga-local-dorks",
+      chave: false,
+      requer: null
+    }),
+    "numverify": Object.freeze({
+      id: "numverify",
+      titulo: "Validade do numero",
+      tipos: Object.freeze(["telefone"]),
+      custo: 1,
+      ttl: 43200,
+      provenance: "numverify-apilayer",
+      chave: false,
+      requer: Object.freeze({"tipo":"chave","env":"NUMVERIFY_API_KEY","opcional":false})
     }),
     "wikidata": Object.freeze({
       id: "wikidata",

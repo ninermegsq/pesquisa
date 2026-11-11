@@ -27,8 +27,9 @@ tem dependências de runtime (só Node 20+).
 ```bash
 npm run dev                # servidor local de desenvolvimento (prévia)
 npm run dev -- --port 4000 # porta fixa
-npm run dev:stop           # encerra servidores de desenvolvimento deixados no ar
-npm run dev:restart        # encerra os antigos e sobe um novo em segundo plano
+npm run dev:stop           # encerra o servidor de fundo que o dev:restart subiu
+npm run dev:stop -- --todos  # encerra todos os servidores (inclusive a prévia do editor)
+npm run dev:restart        # sobe um servidor novo em segundo plano (porta efêmera)
 npm run start              # alias de dev (usado por prévias automáticas)
 npm run preview            # alias de dev
 npm run check              # sintaxe de todos os arquivos .mjs/.js (walker)
@@ -49,21 +50,30 @@ termina: ele cai para outra porta livre e imprime a URL real
 (`NEXUS_PREVIEW_URL=`). Para exigir a porta pedida, use
 `npm run dev -- --port 4000 --sem-fallback`.
 
-Um servidor antigo em execução continua segurando a porta e mantém o código
-antigo em memória (os módulos ESM são carregados uma vez por processo). Para
-encerrá-lo: `npm run dev:stop` (ou `npm run dev:stop -- --listar` para só
-listar os processos).
+**A prévia do editor nunca é derrubada por engano.** A prévia é um
+`node scripts/dev-server.mjs` como qualquer outro: encerrá-la produz o erro
+"o servidor terminou antes de abrir a prévia". Por isso `npm run dev:stop`
+encerra **apenas** o servidor de fundo registrado por `npm run dev:restart`
+(%TEMP%\osint-dev-server.json) e **preserva** a prévia e os servidores de
+outra sessão. Para encerrar tudo, inclusive a prévia, use
+`npm run dev:stop -- --todos`.
 
-Para resolver isso em um comando só — encerrar os servidores antigos, subir um
-novo desacoplado (sobrevive ao fim do comando), imprimir a URL e conferir que a
-página responde 200:
+Um servidor antigo em execução continua segurando a porta e mantém o código
+antigo em memória (os módulos ESM são carregados uma vez por processo), mas
+isso já não derruba a prévia: o servidor cai para outra porta livre. Para
+listar os processos sem encerrar nada: `npm run dev:stop -- --listar`.
+
+Para subir um servidor novo, desacoplado (sobrevive ao fim do comando), com o
+código da hora, imprimir a URL e conferir que a página responde 200:
 
 ```bash
 npm run dev:restart
-npm run dev:restart -- --port 4000   # porta fixa
+npm run dev:restart -- --porta 4000   # porta fixa
 ```
 
-A saída é um JSON com `url`, `pid`, `statusRaiz` e o status de cada ativo
+O servidor de fundo sobe em **porta efêmera**, fora da lista de portas que a
+prévia usa (3000, 5173, ...): os dois convivem sem disputar porta. A saída é
+um JSON com `url`, `pid`, `porta`, `statusRaiz` e o status de cada ativo
 estático. O log do servidor fica em `%TEMP%\osint-dev-server.log`.
 
 ## Verificação contínua

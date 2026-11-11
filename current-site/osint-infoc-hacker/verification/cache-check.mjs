@@ -19,7 +19,7 @@ for(const [id,status,ttl] of [['ok','ok',86400],['error','erro',120],['abort','t
 assert.equal(writes,0);
 assert.deepEqual(REGISTRY.find(s=>s.id==='telegram').tipos,['telefone']);
 const email=REGISTRY.filter(s=>s.tipos.includes('email'));
-assert.equal(email.length,12);assert.equal(email.reduce((n,s)=>n+s.custo,0),16);
+assert.equal(email.length,13);assert.equal(email.reduce((n,s)=>n+s.custo,0),24);
 globalThis.fetch=async()=>{throw Error('offline verification fixture');};
 const response=await handleScan(new Request('https://local.test/api/scan',{method:'POST',body:JSON.stringify({alvo:target.valor})}),env,'local-test');
 const report=await response.json();assert.equal(response.status,200);assert.equal(writes,2);assert.equal(report.score.parcial,true);

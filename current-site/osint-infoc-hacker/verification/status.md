@@ -1,6 +1,96 @@
-# Verificação — 2026-10-30 (última atualização: 2026-11-10)
+# Verificação — 2026-10-30 (última atualização: 2026-11-11)
 
 Estado: NÃO CONCLUÍDO. Código candidato, não promovido a produção.
+
+## A prévia do editor: a causa real do "o servidor terminou antes de abrir" (2026-11-11)
+
+O editor reportou a falha de novo, desta vez com a causa real **medida** na
+máquina, e não mais como hipótese de porta ocupada.
+
+### O que foi medido
+
+O editor abre a prévia com `npm run dev -- --port 3000` na raiz do repositório
+(confirmado na árvore de processos: `Nexus Desktop` → `npm` → `npm` →
+`node scripts/dev-server.mjs --port 3000`). Esse processo é um
+`dev-server.mjs` como qualquer outro — e o `scripts/stop-dev-servers.mjs`
+usado pelo `npm run dev:stop` / `npm run dev:restart` **encerrava todos** os
+processos `dev-server.mjs` da máquina, **inclusive o da prévia**.
+
+Ou seja: o `dev:restart` da sessão anterior matou o servidor da prévia do
+editor. O editor viu o processo morrer antes de abrir a URL e mostrou
+"o servidor terminou antes de abrir a prévia". O próprio `dev:restart`
+confirmou a sequência: o servidor de fundo subiu em porta **efêmera** (49762)
+porque a 3000 ainda estava presa pelo processo da prévia que ele acabara de
+encerrar.
+
+A árvore de processos medida (filtro `node.exe`):
+
+```text
+node.exe:6180  node scripts/dev-server.mjs --port 3000   <- prévia do editor
+  cmd.exe:9248
+    node.exe:1056   (npm)
+      cmd.exe:8136
+        node.exe:1148  (runtime do Nexus Desktop)
+node.exe:6368  node scripts/dev-server.mjs                <- servidor de fundo
+  cmd.exe:11764
+    node.exe:7560   (npm)
+      cmd.exe:10152
+        node.exe:10316 (runtime do Nexus Desktop)
+```
+
+### O que foi corrigido
+
+**1. Política de posse (`scripts/stop-dev-servers.mjs`).** O `dev:stop` sem
+opção passa a encerrar **apenas** o servidor de fundo registrado pelo
+`dev:restart` (`%TEMP%\osint-dev-server.json`, novo `scripts/dev-state.mjs`) e
+**preserva** a prévia do editor e os servidores de outra sessão. Opções:
+
+| Opção | Efeito |
+| --- | --- |
+| (padrão) | encerra só o servidor de fundo registrado |
+| `--pid <n>` | encerra o PID pedido (aceita lista separada por vírgula) |
+| `--todos` | encerra todos os `dev-server.mjs`, **inclusive a prévia** |
+| `--listar` | só lista, sem encerrar nada |
+| `--json` | saída estruturada |
+
+**2. Servidor de fundo em porta efêmera (`scripts/dev-restart.mjs` +
+`--efemera` no `scripts/dev-server.mjs`).** O servidor de fundo sobe fora da
+lista de portas que a prévia usa (3000, 5173, 8080, 4173, 5000, 3001, 5174,
+8000, 8888), então os dois convivem sem disputar porta e a prévia continua
+abrindo na porta que o editor pediu. O `--porta <n>` força uma porta fixa.
+
+**3. Verificação nova (`verification/dev-ownership-check.mjs`), na cadeia do
+`npm test`.** Ela prova, com processos reais e sem rede externa:
+
+- um servidor **não registrado** (como a prévia) **sobrevive** ao `dev:stop`
+  padrão e continua respondendo 200;
+- o `--pid <n>` encerra exatamente o PID pedido;
+- o `dev:restart` sobe o servidor de fundo em porta efêmera, **fora** da
+  lista da prévia, e grava o PID no arquivo de estado;
+- o `dev:stop` padrão encerra o servidor registrado e limpa o registro.
+
+Saída real:
+
+```json
+{"scope":"LOCAL ONLY; politica de posse dos servidores de desenvolvimento","previaPreservada":{"pid":10096,"modo":"registrado","protegidos":4,"vivo":true},"encerrarPorPid":{"pid":10096,"encerrado":true},"servidorDeFundo":{"url":"http://localhost:49840","porta":49840,"foraDaListaDaPrevia":true,"registrado":true,"trocouServidorAnterior":true},"servidorDeFundoEncerrado":{"pid":12068,"encerrado":true,"registroLimpo":true}}
+```
+
+O `--todos` **não** é exercitado na suíte: ele derrubaria a prévia do editor
+em uso. A limpeza real da máquina foi feita com `--pid`,imediatamente antes
+desta seção, e sobrou apenas o processo da prévia:
+
+```json
+{"escopo":"LOCAL ONLY; apenas processos node do servidor de desenvolvimento","modo":"pids","encontrados":3,"pids":[6368,4056,6180],"rastreado":null,"protegidos":[6180],"apenasListar":false,"encerrados":[6368,4056],"restantes":[],"erros":[]}
+```
+
+### O que não muda
+
+O caminho do editor continua igual e foi medido de ponta a ponta: `npm run dev`
+na raiz → `npm --prefix current-site/osint-infoc-hacker run dev --` →
+`node scripts/dev-server.mjs --port <n>`, com `NEXUS_PREVIEW_URL=` na saída e
+a página respondendo 200. A prévia aberta **agora** (porta 3000, PID 6180)
+serve o código com as 27 fontes: `data-stats` = `{"total":27,"email":13,
+"categorias":6,"keys":0}`.
 
 ## Sonda de rede real das 24 fontes (2026-11-10)
 
@@ -153,6 +243,81 @@ Limitações declaradas: o limite de 3/min/IP foi medido nesta máquina, e a
 saída do Worker é compartilhada — o 429 no edge é esperado e é o que a reserva
 resolve; a execução no edge (item 2 da lista “ainda obrigatório”) continua sem
 prova; e o token comercial não existe ainda, então a base paga segue sem uso.
+
+## OSINT do GitHub: holehe, blackbird e PhoneInfoga ports (2026-11-11)
+
+O pedido foi pesquisar no GitHub os repositórios de puxada de dados por e-mail
+e por número de celular com mais estrelas e "instalar" aqui. A pesquisa é
+reprodutível: `npm run pesquisa:github`
+(`current-site/osint-infoc-hacker/scripts/github-osint-pesquisa.mjs`), 10
+consultas na API pública de busca com `sort=stars`, consolidação por nome.
+Última execução real: `2026-11-11T10:07:47Z`, sem autenticação, **220
+repositórios únicos**, 140 com licença declarada, nenhum aviso pendente.
+
+Ranking medido (topo): `sundowndev/phoneinfoga` 18.526★ → `laramies/
+theHarvester` 18.290★ → `megadose/holehe` 15.611★ → `antoniaci/blackbird`
+10.090★ → `alpkeskin/mosint` 6.075★ → `kaifcodec/user-scanner` 5.605★ →
+`khast3x/h8mail` 5.375★ → `TermuxHackz/X-osint` 2.864★ → `bhavsec/reconspider`
+2.864★ → `martinvigo/email2phonenumber` 2.828★.
+
+Os repositórios do topo são CLI em Go/Python: o runtime de produção é um
+Cloudflare Worker, sem Python nem Go. "Instalar" aqui foi **portar a técnica**
+em JavaScript próprio, sem copiar código, listas de dados nem payload (todos
+os portados são GPL ou sem licença declarada). Três fontes novas:
+
+| Fonte | Origem | Custo | TTL | Credencial |
+| --- | --- | --- | --- | --- |
+| `email_registro` | holehe + blackbird | 8 | 21600 s | nenhuma |
+| `phone_footprint` | PhoneInfoga (`local` + `googlesearch`) | 0 | 0 | nenhuma |
+| `numverify` | PhoneInfoga (`numverify`) | 1 | 43200 s | `NUMVERIFY_API_KEY` (obrigatória) |
+
+Os 8 endpoints de cadastro (Duolingo, ProtonMail, WordPress, Twitter,
+Spotify, Adobe, Firefox, Freelancer) foram **verificados ao vivo nesta
+máquina nos dois sentidos** (e-mail cadastrado e inexistente), com o
+User-Agent de produção. Três armadilhas medidas e tratadas: WordPress
+responde **HTTP 200 nos dois sentidos** (sinal no corpo: `body.email_verified`
+vs `body.error`); Freelancer responde **409 no caso positivo** (com
+`EMAIL_TAKEN`), o que transformaria o achado em falha num `if(!r.ok)` ingênuo;
+ProtonMail responde **text/plain** (`info:1:1` vs `info:1:0`). Nenhum dos
+oito cria conta ou dispara e-mail de recuperação. Um site bloqueado vira
+`indisponivel` isolado; se nenhum responder, a fonte **falha de verdade**
+(`nenhuma checagem de cadastro respondeu`).
+
+`phone_footprint` não faz chamada de rede: devolve E.164, formato nacional
+com DDD, país, links de WhatsApp/Telegram e as 4 categorias de dork do
+upstream (Redes sociais, SMS descartável, Reputação, Pessoas) mais busca
+geral — como **links** de busca, não consultas.
+
+O que ficou de fora, com a medição: OVH (a API responde 400 para `es` e
+`br`; só fr/be/gb/ch), Google CSE (duas variáveis de ambiente), theHarvester
+(coleta por domínio, não por alvo), h8mail/pwnedOrNot (senha em breach), e os
+endpoints de cadastro que rejeitaram a máquina (vsco/tellonym/coroflot/
+envato/pinterest/diigo/codepen 403; rocketreach/patreon/strava 404;
+keybase 219; snapchat 405; vrbo 429; office365 autodiscover instável; wattpad
+e duckduckgo sem sinal). Endpoints que enviam e-mail de recuperação ou criam
+conta foram excluídos por decisão, para não gerar efeito colateral no alvo.
+
+Prova offline (`verification/osint-github-source-check.mjs`, na cadeia do
+`npm test`, sem rede): fixa metadados, as 8 URLs e os 8 métodos, positivo,
+negativo, site bloqueado isolado, falha total, zero chamada de rede em
+`phone_footprint` e `sem_chave`/`HTTP 401` no `numverify`.
+
+```json
+{"scope":"LOCAL ONLY; fixtures offline das respostas ao vivo","fontes":["email_registro","phone_footprint","numverify"],"email_registro":{"checagens":8,"positivo":"8 cadastrado","negativo":"0 cadastrado","bloqueado":"7 checagens seguem","todosBloqueados":"falha real"},"phone_footprint":{"chamadasDeRede":0,"e164":"+5511999999999","nacional":"(11) 99999-9999","categorias":5},"numverify":{"semChave":"sem_chave","comChave":"resposta valida","chaveInvalida":"HTTP 401"}}
+{"ok":true,"fontes":27,"email":13,"custo_email":24,"categorias":6,"chaves_visitante":0,"codigos":7,"credenciais_opcionais":["github","emailrep","cnpj_br","ceis","numverify","datajud"]}
+```
+
+O orçamento de 38 subrequests continua valendo: e-mail passa a 13 fontes e
+custo 24; telefone soma 4 fontes e custo 2 (`telegram` 1, `ddd` 0,
+`phone_footprint` 0, `numverify` 1).
+
+Limitações declaradas: a verificação ao vivo dos 8 endpoints foi feita nesta
+máquina, não pela saída do Worker no edge (item 2 da lista "ainda obrigatório"
+continua sem prova); o ranking é uma fotografia de 2026-11-11; "cadastrado"
+significa que o endereço está em uso naquele serviço, não quem o controla;
+`numverify` só funciona com `NUMVERIFY_API_KEY` configurada. O relatório
+completo, com o mapa repositório → técnica portada e o descarte de cada
+candidato, está em `verification/github-osint.md`.
 
 ## Evidência real obtida (2026-10-30)
 
@@ -472,7 +637,7 @@ da tabela (o `dev:stop`) é o acréscimo que fecha o erro de prévia do editor.
 | 4 | `npm run check` deixou de ser uma cadeia manual de 35 `node --check` e virou um verificador que percorre `src/`, `scripts/`, `verification/` e os arquivos da raiz | `scripts/check-syntax.mjs`, `package.json` |
 | 5 | `public/_headers` deixou de ser resíduo do fork Netlify e passou a espelhar os cabeçalhos reais do Worker (CSP, HSTS, cache por tipo) | `public/_headers` |
 | 6 | Rota legada `/.netlify/functions/scan` removida do Worker: o motor v1.2 foi removido e sobrou só `POST /api/scan` | `cloudflare-worker.mjs` |
-| 7 | Comando `npm run dev:stop` para encerrar servidores de desenvolvimento órfãos (era a causa do erro de prévia do editor) | `scripts/stop-dev-servers.mjs`, `package.json` |
+| 7 | Comando `npm run dev:stop` para encerrar servidores de desenvolvimento órfãos, com **política de posse** (só encerra o servidor de fundo registrado; a prévia do editor é preservada) | `scripts/stop-dev-servers.mjs`, `scripts/dev-state.mjs`, `package.json` |
 
 Efeito colateral asociado à correção 2: `scripts/dev-server.mjs` deixou de
 extrair os ativos do fonte do Worker por expressão regular (o round-trip
@@ -589,6 +754,19 @@ Ou seja: o processo órfão foi encerrado e hoje não sobra nenhum servidor de
 desenvolvimento rodando. O editor ainda precisa **reiniciar** a prévia para
 carregar o código novo.
 
+> **Atualização (2026-11-11): esta descrição ficou obsoleta.** O
+> `stop-dev-servers.mjs` desta fase encerrava **todos** os `dev-server.mjs` da
+> máquina — inclusive o processo da prévia do editor — e essa foi a causa real
+> de "o servidor terminou antes de abrir a prévia". Hoje o comando tem
+> **política de posse**: sem opção ele encerra só o servidor de fundo
+> registrado em `%TEMP%\osint-dev-server.json` (`scripts/dev-state.mjs`) e
+> preserva a prévia e os servidores de outra sessão; `--pid <n>` encerra o PID
+> pedido; `--todos` encerra todos (inclusive a prévia) e continua sendo o
+> escape manual. Ver a seção **"A prévia do editor: a causa real do 'o
+> servidor terminou antes de abrir'"**, no topo deste arquivo, e
+> `verification/dev-ownership-check.mjs`, que prova a política com processos
+> reais.
+
 ### `npm run dev:restart`
 
 Para resolver a prévia de uma vez, foi criado `scripts/dev-restart.mjs` (e o
@@ -605,6 +783,15 @@ Dois erros apareceram na implementação e foram corrigidos: o `stdio` do
 `spawn` não aceita um `WriteStream` (precisa do descritor numérico, com
 `openSync`), e a linha `NEXUS_PREVIEW_URL=` do log é impressa com dois
 espaços de indentação — a leitura precisa de `trim()` antes do `startsWith`.
+
+> **Atualização (2026-11-11):** o `dev:restart` desta fase subia em porta
+> efêmera **quando a 3000 estava ocupada** — e ele mesmo matava o dono da
+> 3000 (a prévia), o que produzia a mensagem de erro do editor. Hoje o
+> `dev:restart` só substitui o **próprio** servidor de fundo (registrado no
+> arquivo de estado), usa porta efêmera **fora** da lista de portas da prévia
+> (3000, 5173, 8080, 4173, 5000, 3001, 5174, 8000, 8888) por padrão, e a
+> `--porta <n>` força uma porta fixa. Detalhes e saídas reais na seção do topo
+> "A prévia do editor: a causa real do 'o servidor terminou antes de abrir'".
 
 ### O que a Fase 1 não faz
 

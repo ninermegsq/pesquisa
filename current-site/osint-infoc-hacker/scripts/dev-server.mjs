@@ -47,6 +47,10 @@ const opcaoCli = nome => {
 };
 const portaCli = Number(opcaoCli('port')) || null;
 const hostCli = opcaoCli('host').trim();
+// --efemera: pedir uma porta efemera ao sistema, fora da lista de portas
+// que a previa do editor usa. O servidor de fundo (`dev:restart`) sobe
+// assim, para nunca disputar a porta com a previa em andamento.
+const efemeraCli = argumentos.includes('--efemera');
 // --sem-fallback: nao cair para outra porta quando a pedida esta ocupada.
 // Sem a flag, o servidor tenta outras portas livres para que a previa do
 // editor abra mesmo com a porta preferida ja em uso.
@@ -499,33 +503,45 @@ async function main() {
     ? (semFallback ? [explicit] : [explicit, ...candidatas.filter(p => p !== explicit)])
     : candidatas;
   const groups = [];
-  // Uma porta so: a primeira que abre. Antes o servidor segurava todas as
-  // portas da lista ao mesmo tempo, o que deixava a proxima previa sem porta
-  // livre e fazia o processo terminar.
-  for (const port of candidates) {
-    const opened = await openPort(port, bindings);
-    if (!opened.length) continue;
-    groups.push({ port, opened });
-    break;
-  }
-  if (!groups.length) {
-    const attemptadas = candidates.join(', ');
-    if (semFallback) {
-      console.error(`[dev] nenhuma porta disponivel para o servidor local. Portas tentadas: ${attemptadas}. Defina PORT=<numero> ou use --port <numero> para escolher outra e tente novamente.`);
-      process.exitCode = 1;
-      return;
-    }
-    // Ultimo recurso: porta efemera do sistema. O servidor local nao pode
-    // terminar por causa de porta ocupada, senao o preview do editor abre com
-    // "o servidor terminou antes de abrir a previa".
+  // --efemera: porta escolhida pelo sistema, sem disputa com a previa.
+  if (efemeraCli) {
     const efemera = await openEphemeral(bindings);
     if (!efemera.length) {
-      console.error(`[dev] nenhuma porta disponivel para o servidor local. Portas tentadas: ${attemptadas}. Defina PORT=<numero> ou use --port <numero> para escolher outra e tente novamente.`);
+      console.error('[dev] nao foi possivel abrir uma porta efemera para o servidor local.');
       process.exitCode = 1;
       return;
     }
     groups.push({ port: efemera[0].port, opened: efemera, efemera: true });
-    console.error(`[dev] portas fixas ocupadas (${attemptadas}); abrindo na porta efemera ${efemera[0].port}.`);
+    console.error(`[dev] porta efemera ${efemera[0].port} (pedido: --efemera).`);
+  } else {
+    // Uma porta so: a primeira que abre. Antes o servidor segurava todas as
+    // portas da lista ao mesmo tempo, o que deixava a proxima previa sem porta
+    // livre e fazia o processo terminar.
+    for (const port of candidates) {
+      const opened = await openPort(port, bindings);
+      if (!opened.length) continue;
+      groups.push({ port, opened });
+      break;
+    }
+    if (!groups.length) {
+      const attemptadas = candidates.join(', ');
+      if (semFallback) {
+        console.error(`[dev] nenhuma porta disponivel para o servidor local. Portas tentadas: ${attemptadas}. Defina PORT=<numero> ou use --port <numero> para escolher outra e tente novamente.`);
+        process.exitCode = 1;
+        return;
+      }
+      // Ultimo recurso: porta efemera do sistema. O servidor local nao pode
+      // terminar por causa de porta ocupada, senao o preview do editor abre com
+      // "o servidor terminou antes de abrir a previa".
+      const efemera = await openEphemeral(bindings);
+      if (!efemera.length) {
+        console.error(`[dev] nenhuma porta disponivel para o servidor local. Portas tentadas: ${attemptadas}. Defina PORT=<numero> ou use --port <numero> para escolher outra e tente novamente.`);
+        process.exitCode = 1;
+        return;
+      }
+      groups.push({ port: efemera[0].port, opened: efemera, efemera: true });
+      console.error(`[dev] portas fixas ocupadas (${attemptadas}); abrindo na porta efemera ${efemera[0].port}.`);
+    }
   }
   const servers = groups.flatMap(g => g.opened.map(o => o.server));
   console.log('');

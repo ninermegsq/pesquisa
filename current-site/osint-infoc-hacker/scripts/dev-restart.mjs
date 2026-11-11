@@ -2,15 +2,21 @@
 //
 // Por que existe: o editor abre a previa com `npm run dev`. Um processo
 // antigo do servidor continua segurando a porta e mantendo o codigo velho em
-// memoria (os modulos ESM sao carregados uma vez por processo), e a proxima
-// previa falha com "o servidor terminou antes de abrir a previa".
+// memoria (os modulos ESM sao carregados uma vez por processo). Como o
+// servidor local cai para outra porta livre quando a pedida esta ocupada,
+// a previa nunca morre por causa de porta ocupada — e por isso este script
+// NAO precisa derrubar a previa do editor para liberar a porta.
 //
-// Este script encerra os processos antigos, sobe um servidor novo solto
-// (desacoplado deste processo, para sobreviver ao fim do script), espera a
-// linha NEXUS_PREVIEW_URL= e confere que a pagina responde 200.
+// Este script encerra apenas o servidor de fundo que ele mesmo subiu
+// (registrado em %TEMP%\osint-dev-server.json), sobe um servidor novo
+// solto (desacoplado deste processo, para sobreviver ao fim do script),
+// espera a linha NEXUS_PREVIEW_URL= e confere que a pagina responde 200.
 //
-//   npm run dev:restart                 # reinicia e imprime a URL
-//   npm run dev:restart -- --port 4000 # porta fixa
+// O servidor de fundo sobe em porta efemera, fora da lista de portas que a
+// previa usa (3000, 5173, ...). Assim os dois convivem sem disputar porta.
+//
+//   npm run dev:restart                  # reinicia e imprime a URL
+//   npm run dev:restart -- --porta 4000  # porta fixa
 //   npm run dev:restart -- --host 127.0.0.1
 //
 // Escopo: LOCAL ONLY. Nao toca em rede externa, em arquivos do projeto nem
@@ -18,13 +24,13 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { closeSync, existsSync, openSync, readFileSync, unlinkSync } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { caminhoLog, gravarEstado } from './dev-state.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const raiz = path.resolve(here, '..');
-const log = path.join(os.tmpdir(), 'osint-dev-server.log');
+const log = caminhoLog();
 
 const argumentos = process.argv.slice(2);
 const opcao = nome => {
@@ -34,20 +40,24 @@ const opcao = nome => {
   }
   return '';
 };
-const porta = opcao('port').trim();
+const porta = (opcao('porta') || opcao('port')).trim();
 const host = opcao('host').trim();
 
 const dormir = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function main() {
-  // 1. Encerrar os servidores de desenvolvimento que ficaram no ar.
+  // 1. Encerrar SO o servidor de fundo registrado no arquivo de estado. A
+  //    previa do editor e preservada: encerra-la derruba a previa aberta.
   const parada = spawnSync(process.execPath, [path.join(here, 'stop-dev-servers.mjs'), '--json'], {
     encoding: 'utf8',
     windowsHide: true
   });
   let encerrados = [];
+  let protegidos = [];
   try {
-    encerrados = JSON.parse(parada.stdout || '{}').encerrados || [];
+    const dados = JSON.parse(parada.stdout || '{}');
+    encerrados = dados.encerrados || [];
+    protegidos = dados.protegidos || [];
   } catch {
     // O relatorio e informativo: a parada acontece de todo jeito.
   }
@@ -57,6 +67,7 @@ async function main() {
   const descritor = openSync(log, 'a');
   const args = [path.join(here, 'dev-server.mjs')];
   if (porta) args.push('--port', porta);
+  else args.push('--efemera');
   if (host) args.push('--host', host);
   const filho = spawn(process.execPath, args, {
     cwd: raiz,
@@ -110,13 +121,25 @@ async function main() {
     console.error('[dev:restart] falha ao consultar o servidor local: ' + erro.message);
   }
 
+  // 5. Registrar o servidor de fundo, para o dev:stop saber o que encerrar
+  //    sem encostar na previa do editor.
+  const portaReal = Number(new URL(url).port || 0);
+  gravarEstado({
+    pid: filho.pid,
+    url,
+    porta: portaReal,
+    modo: porta ? 'porta-fixa' : 'efemera'
+  });
+
   console.log(JSON.stringify({
     escopo: 'LOCAL ONLY; servidor de desenvolvimento local',
     pid: filho.pid,
     url,
+    porta: portaReal,
     statusRaiz: status,
     estaticos: assets,
     encerradosAntes: encerrados,
+    preservados: protegidos,
     log
   }));
 }

@@ -1,22 +1,44 @@
-// Encerra os servidores de desenvolvimento deixados em segundo plano.
+// Encerra os servidores de desenvolvimento locais.
 //
-// Por que existe: o editor abre a previa com `npm run dev`. Se um processo
-// antigo continua no ar, ele segura a porta pedida e a proxima previa falha
-// com "o servidor terminou antes de abrir a previa". Este script localiza
-// apenas processos `node ... dev-server.mjs` e encerra a arvore de cada um.
+// Politica de encerramento (importante para a previa do editor):
 //
-// Escopo: LOCAL ONLY. Nao toca em rede, em arquivos nem em processos que
-// nao sejam o servidor de desenvolvimento deste projeto.
+//   - Por padrao, encerra APENAS o servidor de fundo registrado no arquivo
+//     de estado (%TEMP%\osint-dev-server.json) — o que o `dev:restart` subiu.
+//   - A previa do editor tambem e um `node scripts/dev-server.mjs`. Encerrar
+//     esse processo derruba a previa com "o servidor terminou antes de abrir
+//     a previa". Por isso ele NAO e encerrado por padrao: com o servidor
+//     caindo para outra porta livre, um servidor antigo segurando a porta
+//     nao atrapalha mais a previa.
+//   - `--todos` encerra todos os servidores, inclusive a previa do editor.
+//     Use so quando quiser derrubar a previa de proposito.
 //
-//   npm run dev:stop            # encerra todos os dev-server deste projeto
-//   npm run dev:stop -- --listar  # so lista, sem encerrar nada
-//   npm run dev:stop -- --json  # saida em JSON (util em verificacoes)
+//   npm run dev:stop                # encerra o servidor de fundo registrado
+//   npm run dev:stop -- --todos     # encerra todos (inclusive a previa)
+//   npm run dev:stop -- --pid 1234  # encerra um PID especifico
+//   npm run dev:stop -- --listar    # so lista, sem encerrar nada
+//   npm run dev:stop -- --json      # saida em JSON (util em verificacoes)
+//
+// Escopo: LOCAL ONLY. Nao toca em rede, em arquivos do projeto nem em
+// processos que nao sejam o servidor de desenvolvimento deste projeto.
 
 import { spawnSync } from 'node:child_process';
+import { lerEstado, limparEstado } from './dev-state.mjs';
 
 const ALVO = 'dev-server.mjs';
 const json = process.argv.includes('--json');
 const apenasListar = process.argv.includes('--listar');
+const todos = process.argv.includes('--todos') || process.argv.includes('--all');
+const pidsPedidos = [];
+for (let i = 0; i < process.argv.length; i++) {
+  const arg = process.argv[i];
+  if (arg === '--pid' || arg === '--pids') {
+    const bruto = String(process.argv[i + 1] || '').split(',').map(v => v.trim()).filter(Boolean);
+    for (const p of bruto) if (/^\d+$/.test(p)) pidsPedidos.push(Number(p));
+  } else if (arg.startsWith('--pid=') || arg.startsWith('--pids=')) {
+    const bruto = arg.slice(arg.indexOf('=') + 1).split(',').map(v => v.trim()).filter(Boolean);
+    for (const p of bruto) if (/^\d+$/.test(p)) pidsPedidos.push(Number(p));
+  }
+}
 const erros = [];
 
 function rodar(comando, args) {
@@ -31,7 +53,7 @@ function listar() {
   if (process.platform === 'win32') {
     const comando = [
       "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\"",
-      '| Where-Object { $_.CommandLine -like ' + "'*" + ALVO + "*'" + ' }',
+      '| Where-Object { $_.CommandLine -like ' + "'*" + ALVO + "*' }",
       '| Select-Object ProcessId,CommandLine',
       '| ConvertTo-Json -Compress'
     ].join(' ');
@@ -70,18 +92,51 @@ const alvos = listar()
   // Nunca encerra o proprio processo nem o pai: sao o runner do script.
   .filter(p => p.pid !== process.pid && p.pid !== process.ppid);
 
+const estado = lerEstado();
+const rastreado = estado && alvos.some(p => p.pid === estado.pid) ? estado.pid : null;
+
+// Escolha de quem encerrar: por padrao, somente o servidor de fundo
+// registrado; com `--pid`, os PIDs pedidos; com `--todos`, todos.
+let selecionados;
+let modo;
+if (todos) {
+  selecionados = alvos.map(p => p.pid);
+  modo = 'todos';
+} else if (pidsPedidos.length) {
+  selecionados = alvos.map(p => p.pid).filter(pid => pidsPedidos.includes(pid));
+  modo = 'pids';
+} else if (rastreado) {
+  selecionados = [rastreado];
+  modo = 'registrado';
+} else {
+  selecionados = [];
+  modo = 'registrado';
+}
+
+const protegidos = alvos.map(p => p.pid).filter(pid => !selecionados.includes(pid));
+
 const encerrados = [];
 const restantes = [];
-for (const alvo of alvos) {
-  if (apenasListar) continue;
-  if (encerrar(alvo.pid)) encerrados.push(alvo.pid);
-  else restantes.push(alvo.pid);
+if (!apenasListar) {
+  for (const pid of selecionados) {
+    if (encerrar(pid)) encerrados.push(pid);
+    else restantes.push(pid);
+  }
+  // O arquivo de estado so vale enquanto o servidor registrado estiver no ar.
+  if (estado) {
+    const morreu = encerrados.includes(estado.pid);
+    const jaNaoExiste = !alvos.some(p => p.pid === estado.pid);
+    if (morreu || (modo === 'registrado' && jaNaoExiste)) limparEstado();
+  }
 }
 
 const resultado = {
   escopo: 'LOCAL ONLY; apenas processos node do servidor de desenvolvimento',
+  modo,
   encontrados: alvos.length,
   pids: alvos.map(a => a.pid),
+  rastreado,
+  protegidos,
   apenasListar,
   encerrados,
   restantes,
@@ -94,7 +149,14 @@ if (json) {
   console.log('nenhum servidor de desenvolvimento em execucao');
 } else if (apenasListar) {
   console.log('servidores de desenvolvimento em execucao: ' + alvos.map(a => a.pid).join(', '));
+  console.log('  (servidor de fundo registrado: ' + (rastreado ?? 'nenhum') + ')');
+  console.log('  (previa do editor e outros: ' + (protegidos.join(', ') || 'nenhum') + ')');
 } else {
+  console.log('modo: ' + modo);
   console.log('servidores encerrados: ' + (encerrados.join(', ') || 'nenhum'));
   if (restantes.length) console.log('nao foi possivel encerrar: ' + restantes.join(', '));
+  if (protegidos.length) {
+    console.log('preservados (previa do editor ou servidores de outra sessao): ' + protegidos.join(', '));
+    console.log('  para encerrar tambem: npm run dev:stop -- --todos');
+  }
 }

@@ -104,11 +104,11 @@ const comErro = pontuar([{ id: 'dns', status: 'erro', erro_codigo: 'erro_rede' }
 assert.equal(comErro.parcial, true, 'score tem que marcar parcial em falha real');
 
 // --- invariantes do registro ------------------------------------------------
-assert.equal(REGISTRY.length, 24);
+assert.equal(REGISTRY.length, 27);
 const email = REGISTRY.filter(s => s.tipos.includes('email'));
-assert.equal(email.length, 12);
-assert.equal(email.reduce((n, s) => n + s.custo, 0), 16);
-assert.deepEqual(statsDe(REGISTRY), { total: 24, email: 12, categorias: 6, keys: 0 });
+assert.equal(email.length, 13);
+assert.equal(email.reduce((n, s) => n + s.custo, 0), 24);
+assert.deepEqual(statsDe(REGISTRY), { total: 27, email: 13, categorias: 6, keys: 0 });
 assert.equal(REGISTRY.filter(s => s.chave === true).length, 0, 'o produto nao exige chave do visitante');
 
 // --- manifesto x implementacao ---------------------------------------------

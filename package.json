@@ -22,7 +22,8 @@
     "check:netlify": "npm --prefix osint-infoc-hacker run check",
     "check:build": "npm --prefix current-site/osint-infoc-hacker run check:build",
     "git": "git",
-    "gh": "gh"
+    "gh": "gh",
+    "pesquisa:github": "npm --prefix current-site/osint-infoc-hacker run pesquisa:github"
   },
   "dependencies": {},
   "devDependencies": {}

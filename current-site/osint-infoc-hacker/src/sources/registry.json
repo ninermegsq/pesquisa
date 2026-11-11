@@ -16,6 +16,7 @@
     { "id": "hudsonrock", "titulo": "Infostealer", "tipos": ["email"], "custo": 1, "ttl": 43200, "provenance": "hudson-rock-cavalier", "chave": false, "requer": null },
     { "id": "github", "titulo": "GitHub", "tipos": ["email"], "custo": 1, "ttl": 86400, "provenance": "github-users-api", "chave": false, "requer": { "tipo": "token", "env": "GITHUB_TOKEN" } },
     { "id": "emailrep", "titulo": "Reputacao", "tipos": ["email"], "custo": 1, "ttl": 43200, "provenance": "emailrep", "chave": false, "requer": { "tipo": "chave", "env": "EMAILREP_KEY" } },
+    { "id": "email_registro", "titulo": "Cadastro de e-mail", "tipos": ["email"], "custo": 8, "ttl": 21600, "provenance": "holehe-blackbird-cadastro", "chave": false, "requer": null },
     { "id": "dns", "titulo": "DNS e e-mail", "tipos": ["email", "dominio"], "custo": 4, "ttl": 300, "provenance": "google-doh", "chave": false, "requer": null },
     { "id": "crtsh", "titulo": "Subdominios", "tipos": ["email", "dominio"], "custo": 1, "ttl": 43200, "provenance": "subdomain-center", "chave": false, "requer": null },
     { "id": "wayback", "titulo": "URLs historicas", "tipos": ["email", "dominio"], "custo": 1, "ttl": 43200, "provenance": "wayback-cdx", "chave": false, "requer": null },
@@ -28,6 +29,8 @@
     { "id": "cnpj_br", "titulo": "Empresa", "tipos": ["cnpj"], "custo": 2, "ttl": 86400, "provenance": "cnpj-ws-publica+minha-receita-cnpj", "chave": false, "requer": { "tipo": "token", "env": "CNPJWS_TOKEN", "opcional": true } },
     { "id": "ceis", "titulo": "Sancoes", "tipos": ["cnpj"], "custo": 1, "ttl": 86400, "provenance": "portal-transparencia-ceis", "chave": false, "requer": { "tipo": "chave", "env": "TRANSPARENCIA_KEY" } },
     { "id": "ddd", "titulo": "Regiao", "tipos": ["telefone"], "custo": 0, "ttl": 0, "provenance": "anatel-pgcn-snapshot-2026-10-30", "chave": false, "requer": null },
+    { "id": "phone_footprint", "titulo": "Rastreio de telefone", "tipos": ["telefone"], "custo": 0, "ttl": 0, "provenance": "phoneinfoga-local-dorks", "chave": false, "requer": null },
+    { "id": "numverify", "titulo": "Validade do numero", "tipos": ["telefone"], "custo": 1, "ttl": 43200, "provenance": "numverify-apilayer", "chave": false, "requer": { "tipo": "chave", "env": "NUMVERIFY_API_KEY" } },
     { "id": "wikidata", "titulo": "Wikidata", "tipos": ["nome"], "custo": 1, "ttl": 604800, "provenance": "wikidata-sparql", "chave": false, "requer": null },
     { "id": "datajud", "titulo": "Processos", "tipos": ["nome"], "custo": 2, "ttl": 86400, "provenance": "cnj-datajud", "chave": false, "requer": { "tipo": "chave", "env": "DATAJUD_API_KEY" } }
   ]

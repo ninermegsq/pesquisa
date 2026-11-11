@@ -154,6 +154,160 @@ function pivosDeCnpj(dados){
   return pivos;
 }
 
+// ---------------------------------------------------------------------------
+// Cadastro de e-mail em sites publicos.
+//
+// Tecnica dos repositorios holehe e blackbird: cada site tem um endpoint
+// publico que responde se o e-mail ja esta em uso. Os oito endpoints abaixo
+// foram verificados ao vivo, nos dois sentidos (e-mail cadastrado e e-mail
+// inexistente), com o User-Agent de producao. Nenhum deles cria conta nem
+// dispara e-mail de recuperacao: sao consultas de disponibilidade.
+//
+// Um site bloqueado (403) ou quebrado vira "indisponivel" e os demais
+// continuam. Se nenhum dos oito responder, a fonte falha de verdade.
+// ---------------------------------------------------------------------------
+const CHECAGENS_CADASTRO=[
+ {site:'duolingo',roda:async(c,e)=>{
+   const r=await c.get(`https://www.duolingo.com/2017-06-30/users?email=${encodeURIComponent(e)}`,{timeout:6000});
+   if(!r.ok)throw falhar(r);
+   const n=lista((await J(r))?.users).length;
+   return n>0?{estado:'cadastrado',detalhe:`${n} conta(s) no Duolingo`}:{estado:'nao_cadastrado',detalhe:'nenhuma conta no Duolingo'};
+ }},
+ {site:'protonmail',roda:async(c,e)=>{
+   // Resposta em texto puro: "info:1:1 pub:... uid:..." quando o e-mail tem
+   // chave publica e "info:1:0" quando nao tem.
+   const r=await c.get(`https://api.protonmail.ch/pks/lookup?op=index&search=${encodeURIComponent(e)}`,{accept:'text/plain',timeout:6000});
+   if(!r.ok)throw falhar(r);
+   const t=await r.text();
+   if(/info:1:1/.test(t))return {estado:'cadastrado',detalhe:'chave publica PGP com este e-mail'};
+   if(/info:1:0/.test(t))return {estado:'nao_cadastrado',detalhe:'nenhuma chave publica com este e-mail'};
+   throw Error('resposta inesperada do ProtonMail');
+ }},
+ {site:'wordpress',roda:async(c,e)=>{
+   // O envelope responde HTTP 200 nos dois sentidos: o sinal esta no corpo,
+   // em body.email_verified (conta) e em body.error (sem conta).
+   const r=await c.get(`https://public-api.wordpress.com/rest/v1.1/users/${encodeURIComponent(e)}/auth-options?http_envelope=1`,{timeout:6000});
+   if(!r.ok)throw falhar(r);
+   const j=await J(r);
+   if(j?.body?.email_verified===true)return {estado:'cadastrado',detalhe:'conta verificada'};
+   if(j?.body?.error)return {estado:'nao_cadastrado',detalhe:`sem conta (${String(j.body.error).slice(0,40)})`};
+   throw Error('resposta inesperada do WordPress');
+ }},
+ {site:'twitter',roda:async(c,e)=>{
+   const r=await c.get(`https://api.twitter.com/i/users/email_available.json?email=${encodeURIComponent(e)}`,{timeout:6000});
+   if(!r.ok)throw falhar(r);
+   const j=await J(r);
+   if(j?.taken===true)return {estado:'cadastrado',detalhe:'e-mail em uso'};
+   if(j?.taken===false||j?.valid===true)return {estado:'nao_cadastrado',detalhe:'e-mail disponivel'};
+   throw Error('resposta inesperada do Twitter');
+ }},
+ {site:'spotify',roda:async(c,e)=>{
+   const r=await c.get(`https://spclient.wg.spotify.com/signup/public/v1/account?validate=1&email=${encodeURIComponent(e)}`,{timeout:6000});
+   if(!r.ok)throw falhar(r);
+   const j=await J(r);
+   if(j?.status===20)return {estado:'cadastrado',detalhe:String(j?.errors?.email||'e-mail ja registrado').slice(0,80)};
+   if(j?.status===1)return {estado:'nao_cadastrado',detalhe:'e-mail disponivel'};
+   throw Error('resposta inesperada do Spotify');
+ }},
+ {site:'adobe',roda:async(c,e)=>{
+   const r=await c.get('https://auth.services.adobe.com/signin/v2/users/accounts',{method:'POST',timeout:6000,
+     headers:{'content-type':'application/json','x-ims-clientid':'homepage_milo'},
+     body:JSON.stringify({username:e,usernameType:'EMAIL'})});
+   if(!r.ok)throw falhar(r);
+   const n=lista(await J(r)).length;
+   return n>0?{estado:'cadastrado',detalhe:`${n} conta(s) Adobe`}:{estado:'nao_cadastrado',detalhe:'nenhuma conta Adobe'};
+ }},
+ {site:'firefox',roda:async(c,e)=>{
+   const r=await c.get('https://api.accounts.firefox.com/v1/account/status',{method:'POST',timeout:6000,
+     headers:{'content-type':'application/json'},body:JSON.stringify({email:e})});
+   if(!r.ok)throw falhar(r);
+   const j=await J(r);
+   if(j?.exists===true)return {estado:'cadastrado',detalhe:'conta Mozilla'};
+   if(j?.exists===false)return {estado:'nao_cadastrado',detalhe:'nenhuma conta Mozilla'};
+   throw Error('resposta inesperada do Firefox');
+ }},
+ {site:'freelancer',roda:async(c,e)=>{
+   // O sinal positivo vem em HTTP 409 (conflito: e-mail em uso), nao em 200.
+   const r=await c.get('https://www.freelancer.com/api/users/0.1/users/check?compact=true&new_errors=true',{method:'POST',timeout:6000,
+     headers:{'content-type':'application/json'},body:JSON.stringify({user:{email:e}})});
+   if(r.status===409){
+     const j=await r.json().catch(()=>null);
+     const codigo=String(j?.error_code||j?.error?.code||'');
+     if(!/EMAIL_TAKEN|EMAIL_ALREADY_IN_USE/i.test(codigo))throw falhar(r);
+     return {estado:'cadastrado',detalhe:'e-mail ja registrado'};
+   }
+   if(!r.ok)throw falhar(r);
+   const j=await J(r);
+   if(j?.status==='success')return {estado:'nao_cadastrado',detalhe:'e-mail disponivel'};
+   throw Error('resposta inesperada do Freelancer');
+ }}
+];
+
+// Codigo de pais (E.164) e nome. O PhoneInfoga usa a biblioteca
+// phoneiso3166; aqui a tabela e a versao enxuta, com o Brasil (55) em
+// primeiro porque e o escopo do projeto.
+const CODIGO_PAIS={'1':'US','7':'RU','20':'EG','27':'ZA','30':'GR','31':'NL','32':'BE','33':'FR','34':'ES','36':'HU','39':'IT','40':'RO','41':'CH','43':'AT','44':'GB','45':'DK','46':'SE','47':'NO','48':'PL','49':'DE','51':'PE','52':'MX','53':'CU','54':'AR','55':'BR','56':'CL','57':'CO','58':'VE','60':'MY','61':'AU','62':'ID','63':'PH','64':'NZ','65':'SG','66':'TH','81':'JP','82':'KR','84':'VN','86':'CN','90':'TR','91':'IN','92':'PK','93':'AF','94':'LK','95':'MM','98':'IR','211':'SS','212':'MA','213':'DZ','216':'TN','218':'LY','220':'GM','221':'SN','233':'GH','234':'NG','235':'TD','249':'SD','251':'ET','254':'KE','255':'TZ','256':'UG','257':'BI','258':'MZ','260':'ZM','263':'ZW','351':'PT','352':'LU','353':'IE','354':'IS','355':'AL','356':'MT','357':'CY','358':'FI','359':'BG','370':'LT','371':'LV','372':'EE','375':'BY','380':'UA','381':'RS','385':'HR','386':'SI','389':'MK','420':'SA','421':'SK','852':'HK','853':'MO','855':'KH','856':'LA','880':'BD','886':'TW','960':'MV','961':'LB','962':'JO','963':'SY','964':'IQ','965':'KW','966':'SA','967':'YE','968':'OM','971':'AE','972':'IL','973':'BH','974':'QA','975':'BT','976':'MN','977':'NP','992':'TJ','993':'TM','994':'AZ','995':'GE','996':'KG','998':'UZ'};
+const NOME_PAIS={US:'Estados Unidos',RU:'Russia',EG:'Egito',ZA:'Africa do Sul',GR:'Grecia',NL:'Paises Baixos',BE:'Belgica',FR:'Franca',ES:'Espanha',HU:'Hungria',IT:'Italia',RO:'Romania',CH:'Suica',AT:'Austria',GB:'Reino Unido',DK:'Dinamarca',SE:'Suecia',NO:'Noruega',PL:'Polonia',DE:'Alemanha',PE:'Peru',MX:'Mexico',CU:'Cuba',AR:'Argentina',BR:'Brasil',CL:'Chile',CO:'Colombia',VE:'Venezuela',MY:'Malasia',AU:'Australia',ID:'Indonesia',PH:'Filipinas',NZ:'Nova Zelandia',SG:'Singapura',TH:'Thailandia',JP:'Japao',KR:'Coreia do Sul',VN:'Vietnam',CN:'China',TR:'Turquia',IN:'India',PK:'Paquistao',AF:'Afeganistao',LK:'Sri Lanka',MM:'Myanmar',IR:'Iran',SS:'Sudao do Sul',MA:'Marrocos',DZ:'Algeria',TN:'Tunisia',LY:'Libia',GM:'Gamba',SN:'Senegal',GH:'Gana',NG:'Nigeria',TD:'Chade',SD:'Sudao',ET:'Etiopia',KE:'Quenia',TZ:'Tanzania',UG:'Uganda',BI:'Burundi',MZ:'Mocambique',ZM:'Zambia',ZW:'Zimbabue',PT:'Portugal',LU:'Luxemburgo',IE:'Irlanda',IS:'Islandia',AL:'Albania',MT:'Malta',CY:'Chipre',FI:'Finlandia',BG:'Bulgaria',LT:'Lituania',LV:'Letonia',EE:'Estonia',BY:'Bielorrusia',UA:'Ucrania',RS:'Serbia',HR:'Croacia',SI:'Eslovenia',MK:'Macedonia do Norte',SA:'Arabia Saudita',SK:'Eslovaquia',HK:'Hong Kong',MO:'Macao',KH:'Camboja',LA:'Laos',BD:'Bangladesh',TW:'Taiwan',MV:'Maldivas',LB:'Libano',JO:'Jordania',SY:'Siria',IQ:'Iraque',KW:'Kuwait',YE:'Iemen',OM:'Oma',AE:'Emirados Arabes Unidos',IL:'Israel',BH:'Bahrein',QA:'Catar',BT:'Butao',MN:'Mongolia',NP:'Nepal',TJ:'Tajiquistao',TM:'Turcomenistao',AZ:'Azerbaijao',GE:'Georgia',KG:'Quirguistao',UZ:'Uzbequistao'};
+// Pais pelo prefixo do numero internacional: vale o codigo mais longo que
+// casa com o inicio do numero.
+function paisDoNumero(internacional){
+  const d=String(internacional??'').replace(/\D/g,'');
+  if(!d)return null;
+  for(let n=3;n>=1;n--){
+    const codigo=d.slice(0,n);
+    const iso=CODIGO_PAIS[codigo];
+    if(iso)return {codigo,iso,nome:NOME_PAIS[iso]||iso};
+  }
+  return null;
+}
+// Numero nacional brasileiro, com DDD.
+function formatarBr(local){
+  const d=String(local??'').replace(/\D/g,'');
+  if(d.length===11)return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
+  if(d.length===10)return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
+  return null;
+}
+// Categorias e sitios do scanner de busca do PhoneInfoga (googlesearch). A
+// lista do upstream e maior; aqui ficam os sitios de maior uso de cada
+// categoria, para o relatorio nao virar uma lista de centenas de linhas.
+const DORKS_TELEFONE=[
+ {categoria:'Redes sociais',modelo:'site:{site} intext:"{numero}"',
+  sitios:['facebook.com','twitter.com','linkedin.com','instagram.com','vk.com']},
+ {categoria:'SMS descartavel',modelo:'site:{site} intext:"{numero}"',
+  sitios:['receive-sms-online.info','receivesmsonline.com','receive-sms.com','receive-sms-online.com','smlive.co','freephonenum.com']},
+ {categoria:'Reputacao',modelo:'site:{site} intext:"{numero}"',
+  sitios:['whosenumber.info','findwhocallsme.com','who-calledme.com','usphonessearch.net','quinumero.info','phonenumbers.ie']},
+ {categoria:'Pessoas',modelo:'site:{site} intext:"{numero}"',
+  sitios:['numinfo.net','sync.me','whycall.me','locatefamily.com','spytox.com']}
+];
+// Busca geral: o numero solto e o numero com extensao de arquivo, como no
+// scanner "general" do PhoneInfoga.
+const DORKS_GERAIS=[
+ 'intext:"{numero}"',
+ 'intext:"{numero}" (ext:doc | ext:docx | ext:odt | ext:pdf | ext:rtf | ext:sxw | ext:psw | ext:ppt | ext:pptx | ext:pps | ext:csv | ext:txt | ext:xls)'
+];
+// As buscas viram links para o Google: a fonte nao consulta o Google e nao
+// executa nenhum passo de tomada de conta.
+function dorksDoTelefone(variantes){
+  const urlDe=q=>'https://www.google.com/search?q='+encodeURIComponent(q);
+  const saida={};
+  for(const grupo of DORKS_TELEFONE){
+    saida[grupo.categoria]=[];
+    for(const sitio of grupo.sitios){
+      const consulta=grupo.modelo.replaceAll('{site}',sitio).replaceAll('{numero}',variantes[0]);
+      saida[grupo.categoria].push({alvo:sitio,consulta,url:urlDe(consulta)});
+    }
+  }
+  saida['Busca geral']=[];
+  for(const modelo of DORKS_GERAIS){
+    for(const v of variantes){
+      const consulta=modelo.replaceAll('{numero}',v);
+      saida['Busca geral'].push({alvo:'google',consulta,url:urlDe(consulta)});
+    }
+  }
+  return saida;
+}
+
 export const REGISTRY=[
  {id:'gravatar',tipos:['email'],custo:1,ttl:86400,provenance:'gravatar-public-profile',
   async run(a,c){
@@ -283,6 +437,33 @@ export const REGISTRY=[
     if(!r.ok) throw falhar(r);
     const j=await J(r);
     return {dados:{reputacao:j.reputation,suspeito:j.suspicious,blacklist:j.details?.blacklisted,perfis:j.details?.profiles||[]}};
+  }},
+ // Disponibilidade do e-mail em sites publicos: a mesma tecnica do holehe e
+ // do blackbird, portada para o Worker. Oito endpoints, todos verificados ao
+ // vivo nos dois sentidos. Nenhum site bloqueia a fonte inteira: cada um vira
+ // "indisponivel" isoladamente e os demais continuam.
+ {id:'email_registro',tipos:['email'],custo:8,ttl:21600,provenance:'holehe-blackbird-cadastro',
+  async run(a,c){
+    const e=String(a.valor??'').trim();
+    const sites=await Promise.all(CHECAGENS_CADASTRO.map(async chec=>{
+      try{
+        const r=await chec.roda(c,e);
+        return {site:chec.site,estado:r.estado,detalhe:r.detalhe};
+      }catch(err){
+        return {site:chec.site,estado:'indisponivel',detalhe:String(err?.message||'erro').slice(0,90)};
+      }
+    }));
+    const responderam=sites.filter(s=>s.estado!=='indisponivel');
+    // Sem nenhuma resposta utilizavel a fonte falha de verdade: e melhor
+    // reportar falha do que entregar um "nada encontrado" sem evidence.
+    if(responderam.length===0)throw Error('nenhuma checagem de cadastro respondeu');
+    const cadastrados=responderam.filter(s=>s.estado==='cadastrado');
+    return {dados:{
+      total:cadastrados.length,
+      checagens:responderam.length,
+      sites,
+      observacao:`Disponibilidade do e-mail em ${responderam.length} de ${CHECAGENS_CADASTRO.length} sites publicos; ${cadastrados.length} com cadastro encontrado. "Cadastrado" quer dizer que o endereco esta em uso naquele servico, nao quem o controla.`
+    }};
   }},
  {id:'dns',tipos:['email','dominio'],custo:4,ttl:300,provenance:'google-doh',
   async run(a,c){
@@ -471,6 +652,46 @@ export const REGISTRY=[
     const registro=DDD[ddd];
     if(!registro)throw Error('DDD não encontrado na tabela local da Anatel');
     return {dados:{ddd,...registro}};
+  }},
+ // Formatos do numero e buscas publicas, sem chamada de rede: e o scanner
+ // local e o scanner de busca do PhoneInfoga (18,5 mil estrelas) portados
+ // para o Worker. As buscas sao links para o Google, nao consultas: nada
+ // e enviado a nenhum servico com o numero.
+ {id:'phone_footprint',tipos:['telefone'],custo:0,ttl:0,provenance:'phoneinfoga-local-dorks',
+  async run(a,c){
+    const digitos=so(a.valor);
+    if(digitos.length<8)throw Error('numero de telefone curto demais');
+    const internacional=telefoneE164(a.valor);
+    const pais=paisDoNumero(internacional);
+    const local=pais?internacional.slice(pais.codigo.length):internacional;
+    const variantes=local&&local!==internacional&&local.length>=8?[internacional,local]:[internacional];
+    return {dados:{
+      numero:String(a.valor??'').trim(),
+      internacional,
+      e164:'+'+internacional,
+      nacional:pais?.iso==='BR'?formatarBr(local):null,
+      pais:pais?`${pais.nome} (+${pais.codigo})`:null,
+      links:{whatsapp:'https://wa.me/'+internacional,telegram:'https://t.me/+'+internacional},
+      buscas:dorksDoTelefone(variantes),
+      observacao:'Formatos do numero e links para as buscas publicas por categoria (redes sociais, SMS descartavel, reputacao, pessoas), no mesmo estilo do PhoneInfoga. A fonte nao consulta o Google e nao executa nenhuma etapa de tomada de conta.'
+    }};
+  }},
+ // Validade, operadora e pais do numero. Endereco publico do Numverify
+ // (APILayer): sem credencial a API responde 401, entao a fonte e
+ // declarada com credencial obrigatoria no manifesto e responde sem_chave
+ // quando ela falta (falha de configuracao, nao resultado parcial).
+ {id:'numverify',tipos:['telefone'],custo:1,ttl:43200,provenance:'numverify-apilayer',
+  async run(a,c){
+    exigirCredencial(c.env,'numverify');
+    const numero=telefoneE164(a.valor);
+    const r=await c.get(`https://apilayer.net/api/validate?access_key=${encodeURIComponent(String(c.env.NUMVERIFY_API_KEY))}&number=${encodeURIComponent(numero)}`,{timeout:7000});
+    if(!r.ok) throw falhar(r);
+    const j=await J(r);
+    if(j?.success===false) throw Error(`numverify: ${String(j?.error?.type||'erro do provedor')}`);
+    return {dados:{valido:j?.valid===true,numero:j?.number??null,formatoLocal:j?.local_format??null,
+      formatoInternacional:j?.international_format??null,codigoPais:j?.country_code??null,pais:j?.country_name??null,
+      localizacao:j?.location??null,operadora:j?.carrier??null,tipoLinha:j?.line_type??null,
+      observacao:'Validade, operadora, pais e tipo de linha do numero (Numverify/APILayer).'}};
   }},
  {id:'wikidata',tipos:['nome'],custo:1,ttl:604800,provenance:'wikidata-sparql',
   async run(a,c){

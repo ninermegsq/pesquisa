@@ -28,6 +28,12 @@ import { detectar } from '../src/lib/alvo.mjs';
 import { aplicarStats } from './stats.mjs';
 import { REGISTRY } from '../src/sources/registry.mjs';
 import { verificarTokenCalor } from '../src/lib/warm.mjs';
+import {
+  liberarPortasCanicas,
+  portasCanonicas,
+  registrarInstancia,
+  removerInstancia
+} from './dev-instancia.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
@@ -496,7 +502,7 @@ async function openEphemeral(bindings = BINDINGS) {
 async function main() {
   const explicit = portaCli || (process.env.PORT ? Number(process.env.PORT) : null);
   const bindings = hostCli ? [hostCli] : BINDINGS;
-  const candidatas = [3000, 5173, 8080, 4173, 5000, 3001, 5174, 8000, 8888];
+  const candidatas = portasCanonicas();
   // Com porta explicita e sem --sem-fallback, as portas livres alternatives
   // entram na lista: a previa abre em vez de o processo terminar.
   const candidates = explicit
@@ -517,6 +523,16 @@ async function main() {
     // Uma porta so: a primeira que abre. Antes o servidor segurava todas as
     // portas da lista ao mesmo tempo, o que deixava a proxima previa sem porta
     // livre e fazia o processo terminar.
+    //
+    // Antes de tentar as portas, o servidor assume a porta canonica: as
+    // instancias antigas deste projeto que ainda a seguram (orfaos deixados
+    // pelo editor ao encerrar a arvore que iniciou) sao encerradas. Sem isso,
+    // cada tentativa de previa deixava um servidor orfao, a lista de portas
+    // acabava e o editor mostrava "o servidor terminou antes de abrir a previa".
+    const assumidas = await liberarPortasCanicas({ portas: candidatas, excetoPid: process.pid });
+    for (const assumida of assumidas) {
+      console.error(`[dev] porta ${assumida.porta} liberada: instancia anterior (pid ${assumida.pid}) encerrada.`);
+    }
     for (const port of candidates) {
       const opened = await openPort(port, bindings);
       if (!opened.length) continue;
@@ -559,8 +575,22 @@ async function main() {
   console.log(`  Server running on http://localhost:${groups[0].port}`);
   console.log(`  NEXUS_PREVIEW_URL=http://localhost:${groups[0].port}`);
   console.log('');
+  // Registro da instancia: permite que o proximo servidor assuma a porta
+  // canonica e que o `dev:stop` limpe os orfaos sem derrubar a previa viva.
+  const papel = efemeraCli ? 'fundo' : 'previa';
+  registrarInstancia({
+    pid: process.pid,
+    porta: groups[0].port,
+    papel,
+    url: `http://localhost:${groups[0].port}`
+  });
+  process.on('exit', () => removerInstancia(process.pid));
   for (const signal of ['SIGINT', 'SIGTERM']) {
-    process.on(signal, () => { for (const s of servers) s.close(() => {}); process.exit(0); });
+    process.on(signal, () => {
+      removerInstancia(process.pid);
+      for (const s of servers) s.close(() => {});
+      process.exit(0);
+    });
   }
 }
 

@@ -14,6 +14,7 @@
 //
 //   npm run dev:stop                # encerra o servidor de fundo registrado
 //   npm run dev:stop -- --todos     # encerra todos (inclusive a previa)
+//   npm run dev:stop -- --limpar    # encerra so os orfaos, preservando a previa mais recente
 //   npm run dev:stop -- --pid 1234  # encerra um PID especifico
 //   npm run dev:stop -- --listar    # so lista, sem encerrar nada
 //   npm run dev:stop -- --json      # saida em JSON (util em verificacoes)
@@ -23,11 +24,19 @@
 
 import { spawnSync } from 'node:child_process';
 import { lerEstado, limparEstado } from './dev-state.mjs';
+import {
+  listarInstancias,
+  limparRegistrosMortos,
+  portasCanonicas,
+  processoVivo,
+  removerInstancia
+} from './dev-instancia.mjs';
 
 const ALVO = 'dev-server.mjs';
 const json = process.argv.includes('--json');
 const apenasListar = process.argv.includes('--listar');
 const todos = process.argv.includes('--todos') || process.argv.includes('--all');
+const limpar = process.argv.includes('--limpar');
 const pidsPedidos = [];
 for (let i = 0; i < process.argv.length; i++) {
   const arg = process.argv[i];
@@ -95,13 +104,35 @@ const alvos = listar()
 const estado = lerEstado();
 const rastreado = estado && alvos.some(p => p.pid === estado.pid) ? estado.pid : null;
 
+// Modo `--limpar`: mantem a instancia mais recente de cada porta canonica
+// (a previa viva do editor) e encerra as mais antigas (os orfaos). E o que
+// impede o acúmulo de servidores que so falta de porta para a previa.
+const registradas = listarInstancias();
+const maisRecentes = new Map();
+for (const inst of registradas) {
+  if (inst.invalido || !processoVivo(inst.pid)) continue;
+  const porta = Number(inst.porta);
+  if (!Number.isFinite(porta) || !portasCanonicas().includes(porta)) continue;
+  const atual = maisRecentes.get(porta);
+  if (!atual || String(inst.iniciado_em || '') > String(atual.iniciado_em || '')) maisRecentes.set(porta, inst);
+}
+const preservadosPorLimpeza = new Set([...maisRecentes.values()].map(i => i.pid));
+const orfaos = registradas
+  .filter(inst => !inst.invalido && processoVivo(inst.pid) && !preservadosPorLimpeza.has(inst.pid))
+  .map(inst => inst.pid)
+  .filter(pid => pid !== process.pid && pid !== process.ppid);
+
 // Escolha de quem encerrar: por padrao, somente o servidor de fundo
-// registrado; com `--pid`, os PIDs pedidos; com `--todos`, todos.
+// registrado; com `--pid`, os PIDs pedidos; com `--todos`, todos;
+// com `--limpar`, apenas os orfaos (preservando a previa mais recente).
 let selecionados;
 let modo;
 if (todos) {
   selecionados = alvos.map(p => p.pid);
   modo = 'todos';
+} else if (limpar) {
+  selecionados = orfaos;
+  modo = 'limpar';
 } else if (pidsPedidos.length) {
   selecionados = alvos.map(p => p.pid).filter(pid => pidsPedidos.includes(pid));
   modo = 'pids';
@@ -122,6 +153,13 @@ if (!apenasListar) {
     if (encerrar(pid)) encerrados.push(pid);
     else restantes.push(pid);
   }
+  // O registro da instancia so vale enquanto o processo estiver no ar.
+  for (const inst of registradas) {
+    if (encerrados.includes(inst.pid)) removerInstancia(inst.pid);
+  }
+  if (modo === 'todos') {
+    for (const inst of registradas) removerInstancia(inst.pid);
+  }
   // O arquivo de estado so vale enquanto o servidor registrado estiver no ar.
   if (estado) {
     const morreu = encerrados.includes(estado.pid);
@@ -129,6 +167,7 @@ if (!apenasListar) {
     if (morreu || (modo === 'registrado' && jaNaoExiste)) limparEstado();
   }
 }
+const registrosMortos = apenasListar ? 0 : limparRegistrosMortos();
 
 const resultado = {
   escopo: 'LOCAL ONLY; apenas processos node do servidor de desenvolvimento',
@@ -140,6 +179,7 @@ const resultado = {
   apenasListar,
   encerrados,
   restantes,
+  registrosMortos,
   erros
 };
 
@@ -155,6 +195,7 @@ if (json) {
   console.log('modo: ' + modo);
   console.log('servidores encerrados: ' + (encerrados.join(', ') || 'nenhum'));
   if (restantes.length) console.log('nao foi possivel encerrar: ' + restantes.join(', '));
+  if (modo === 'limpar') console.log('previa preservada: ' + ([...preservadosPorLimpeza].join(', ') || 'nenhuma'));
   if (protegidos.length) {
     console.log('preservados (previa do editor ou servidores de outra sessao): ' + protegidos.join(', '));
     console.log('  para encerrar tambem: npm run dev:stop -- --todos');

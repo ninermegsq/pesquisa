@@ -25,6 +25,7 @@
     "check:dev-process": "npm --prefix current-site/osint-infoc-hacker run check:dev-process",
     "check:dev-ownership": "npm --prefix current-site/osint-infoc-hacker run check:dev-ownership",
     "check:stats": "npm --prefix current-site/osint-infoc-hacker run check:stats",
+    "check:novos-alvos": "npm --prefix current-site/osint-infoc-hacker run check:novos-alvos",
     "check:netlify": "npm --prefix osint-infoc-hacker run check",
     "check:build": "npm --prefix current-site/osint-infoc-hacker run check:build",
     "git": "git",

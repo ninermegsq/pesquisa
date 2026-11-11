@@ -72,7 +72,6 @@ export async function handleScan(request,env,ip,opcoes={}){
   const escopo=opcoes.escopo||'visitante';
   const body=await request.json().catch(()=>null);const bruto=body?.alvo;
   let alvo;try{alvo=detectar(bruto);}catch(e){return json({erro:e.message},400);}
-  if(alvo.tipo==='cpf')return json({erro:'Consulta de CPF fora do escopo.'},400);
   let rl;try{rl=await limite(env,ip);}catch{return json({erro:'Cache obrigatório indisponível.'},503);}
   if(!rl.ok) return json({erro:'Limite atingido.'},429,{'retry-after':String(rl.retry)});
   const origem=new URL(request.url).origin;

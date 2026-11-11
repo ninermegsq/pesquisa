@@ -32,6 +32,11 @@
     { "id": "phone_footprint", "titulo": "Rastreio de telefone", "tipos": ["telefone"], "custo": 0, "ttl": 0, "provenance": "phoneinfoga-local-dorks", "chave": false, "requer": null },
     { "id": "numverify", "titulo": "Validade do numero", "tipos": ["telefone"], "custo": 1, "ttl": 43200, "provenance": "numverify-apilayer", "chave": false, "requer": { "tipo": "chave", "env": "NUMVERIFY_API_KEY" } },
     { "id": "wikidata", "titulo": "Wikidata", "tipos": ["nome"], "custo": 1, "ttl": 604800, "provenance": "wikidata-sparql", "chave": false, "requer": null },
-    { "id": "datajud", "titulo": "Processos", "tipos": ["nome"], "custo": 2, "ttl": 86400, "provenance": "cnj-datajud", "chave": false, "requer": { "tipo": "chave", "env": "DATAJUD_API_KEY" } }
+    { "id": "datajud", "titulo": "Processos", "tipos": ["nome"], "custo": 2, "ttl": 86400, "provenance": "cnj-datajud", "chave": false, "requer": { "tipo": "chave", "env": "DATAJUD_API_KEY" } },
+    { "id": "cpf_valida", "titulo": "CPF", "tipos": ["cpf"], "custo": 0, "ttl": 0, "provenance": "cpf-dv-local", "chave": false, "requer": null },
+    { "id": "cpf_brasilapi", "titulo": "Cadastro de CPF", "tipos": ["cpf"], "custo": 1, "ttl": 86400, "provenance": "brasilapi-cpf-v1", "chave": false, "requer": null },
+    { "id": "placa_footprint", "titulo": "Rastreio de placa", "tipos": ["placa"], "custo": 0, "ttl": 0, "provenance": "placa-mercosul-local", "chave": false, "requer": null },
+    { "id": "placa_sinesp", "titulo": "Veiculo", "tipos": ["placa"], "custo": 1, "ttl": 86400, "provenance": "sinesp-apicarros", "chave": false, "requer": null },
+    { "id": "nome_perfil", "titulo": "Perfis", "tipos": ["nome"], "custo": 10, "ttl": 86400, "provenance": "maigret-perfil-publico", "chave": false, "requer": null }
   ]
 }

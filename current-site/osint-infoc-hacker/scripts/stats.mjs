@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-export const STATS_FALLBACK={total:27,email:13,categorias:6,keys:0};
+export const STATS_FALLBACK={total:32,email:13,categorias:8,keys:0};
 
 export function totalFontes(registry=[]){return registry.length;}
 export function fontesEmail(registry=[]){return registry.filter(s=>s.tipos.includes('email')).length;}

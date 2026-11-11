@@ -2,6 +2,60 @@
 
 Estado: código candidato; não promovido a produção. Nenhum novo scan foi executado no Worker bloqueado.
 
+## Provedores dos alvos novos: CPF, placa e nome (2026-11-11)
+
+As cinco fontes novas (CPF, placa e nome completo) foram escolhidas a partir
+da pesquisa em repositórios open source de OSINT e da sonda
+`verification/probe-novos-provedores.mjs` (`npm run probe:novas`), que mede
+os candidatos e **não** grava nada no projeto.
+
+| Provedor | Fonte | Papel | Estado do aceite |
+| --- | --- | --- | --- |
+| BrasilAPI `GET /api/cpf/v1/{cpf}` | `cpf_brasilapi` | cadastro público do CPF | **pendente** de rede real nesta rodada |
+| SINESP / API-Carros `GET https://apicarros.com/v1/consulta/{placa}/json` | `placa_sinesp` | cadastro público do veículo | **pendente** de rede real nesta rodada |
+| GitHub, GitLab, Hacker News, Keybase, Dev.to | `nome_perfil` | perfis por nome de usuário derivado (Maigret) | **pendente** de rede real nesta rodada |
+| FIPE `veiculos.fipe.org.br/api/veiculos/v1/placa/...` | — | — | **descartado** como provedor: as rotas responderam 404 |
+
+O provedor da placa é o **SINESP**, na rota usada pelo pacote open source
+`sinesp-api` (o mesmo endpoint que os repositórios de consulta de placa
+usam). O parser segue o formato documentado dessa API: o veículo vem em
+`data.vehicle` (com `vehicle` aceito como alternativa) e traz modelo, ano,
+cor, município e UF. O **FIPE foi medido** antes: `v1`, `v2`, com e sem
+hífen, e a rota de placa inexistente responderam **404**; as rotas de marca e
+modelo também. Ele ficou somente como link de consulta humana dentro de
+`placa_footprint`.
+
+O provedor do CPF é a **BrasilAPI**, que expõe `GET /api/cpf/v1/{cpf}` sem
+autenticação. O 404 da API significa "o CPF não consta na base consultada" e
+vira `existe:false` com observação explícita — **ausência na base não é
+prova de inexistência**. A fonte `cpf_valida` faz a validação dos dígitos
+verificadores localmente, sem rede, e é ela que sinaliza que um CPF é de
+teste.
+
+Para o nome, a técnica portada é a do **Maigret** (o repositório de busca por
+nome completo mais usado da comunidade): o nome vira candidatos de nome de
+usuário e cada candidato é consultado em cinco sites públicos. Nenhum cadastro
+é feito e nenhuma conta é criada.
+
+O que os provedores **não** entregam, e o código declara no próprio resultado:
+
+- Nenhum provedor público de placa devolve o **titular** do veículo. A fonte
+  `placa_sinesp` entrega modelo, ano, cor e município/UF do registro e diz no
+  `observacao` que o provedor não informa o dono.
+- Um perfil com o mesmo nome **não** prova identidade. `nome_perfil` registra
+  isso no resultado.
+
+**Aceite pendente:** a máquina estava **sem internet** durante a implementação
+deste bloco. O contrato foi verificado offline
+(`verification/novos-alvos-check.mjs`, na cadeia do `npm test`), mas as
+respostas reais dos provedores acima **não** foram observadas nesta rodada.
+Para concluir o aceite:
+
+```bash
+npm run probe:novas   # sonda dos provedores candidatos (CPF, placa, nome, sites de perfil)
+npm run probe:live    # sonda de rede real de todas as 32 fontes (inclui cpf e placa)
+```
+
 ## Troca do provedor de CNPJ: CNPJ.ws na frente (2026-11-10)
 
 O provedor de CNPJ passou a ser o **CNPJ.ws**, com o Minha Receita de reserva.

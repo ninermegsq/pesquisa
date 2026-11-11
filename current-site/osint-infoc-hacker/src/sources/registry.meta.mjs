@@ -4,7 +4,7 @@
 
 export const REGISTRY_META = Object.freeze({
   versao: 1,
-  digest: "2677454782a49486064b8cd2e24485e4644ff5f470c2780677a072b7e39588b0",
+  digest: "c8cb3fa72aa1505e6b2cc83439d20efcc98ae96c828970bd2a63ca4e1600649d",
   fontes: Object.freeze({
     "gravatar": Object.freeze({
       id: "gravatar",
@@ -275,6 +275,56 @@ export const REGISTRY_META = Object.freeze({
       provenance: "cnj-datajud",
       chave: false,
       requer: Object.freeze({"tipo":"chave","env":"DATAJUD_API_KEY","opcional":false})
+    }),
+    "cpf_valida": Object.freeze({
+      id: "cpf_valida",
+      titulo: "CPF",
+      tipos: Object.freeze(["cpf"]),
+      custo: 0,
+      ttl: 0,
+      provenance: "cpf-dv-local",
+      chave: false,
+      requer: null
+    }),
+    "cpf_brasilapi": Object.freeze({
+      id: "cpf_brasilapi",
+      titulo: "Cadastro de CPF",
+      tipos: Object.freeze(["cpf"]),
+      custo: 1,
+      ttl: 86400,
+      provenance: "brasilapi-cpf-v1",
+      chave: false,
+      requer: null
+    }),
+    "placa_footprint": Object.freeze({
+      id: "placa_footprint",
+      titulo: "Rastreio de placa",
+      tipos: Object.freeze(["placa"]),
+      custo: 0,
+      ttl: 0,
+      provenance: "placa-mercosul-local",
+      chave: false,
+      requer: null
+    }),
+    "placa_sinesp": Object.freeze({
+      id: "placa_sinesp",
+      titulo: "Veiculo",
+      tipos: Object.freeze(["placa"]),
+      custo: 1,
+      ttl: 86400,
+      provenance: "sinesp-apicarros",
+      chave: false,
+      requer: null
+    }),
+    "nome_perfil": Object.freeze({
+      id: "nome_perfil",
+      titulo: "Perfis",
+      tipos: Object.freeze(["nome"]),
+      custo: 10,
+      ttl: 86400,
+      provenance: "maigret-perfil-publico",
+      chave: false,
+      requer: null
     }),
   })
 });

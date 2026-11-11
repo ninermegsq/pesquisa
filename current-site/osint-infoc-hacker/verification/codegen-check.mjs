@@ -54,7 +54,7 @@ assert.equal(
 
 // --- o manifesto passa na validacao -----------------------------------------
 const valido = validarManifesto(manifesto);
-assert.equal(valido.fontes.length, 27);
+assert.equal(valido.fontes.length, 32);
 assert.equal(valido.fontes.filter(f => f.tipos.includes('email')).length, 13);
 assert.equal(valido.fontes.filter(f => f.chave === true).length, 0);
 

@@ -26,6 +26,8 @@ const ALVOS = {
   dominio: 'ostnt.online',
   ip: '8.8.8.8',
   cnpj: '00000000000191',
+  cpf: '11144477735',
+  placa: 'ABC1D23',
   telefone: '11999999999',
   nome: 'São Paulo'
 };

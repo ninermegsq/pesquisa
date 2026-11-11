@@ -48,9 +48,9 @@ try {
   assert.ok(dataStats, `atributo data-stats ausente ou sem JSON valido. Trecho: ${JSON.stringify(trustTag[0])}`);
   const decodeAttr = v => v.replace(/&quot;/g, '"').replace(/&#34;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
   const stats = JSON.parse(decodeAttr(dataStats[1]));
-  assert.equal(stats.total, 27, 'stats.total deveria ser 27');
+  assert.equal(stats.total, 32, 'stats.total deveria ser 32');
   assert.equal(stats.email, 13, 'stats.email deveria ser 13');
-  assert.equal(stats.categorias, 6, 'stats.categorias deveria ser 6');
+  assert.equal(stats.categorias, 8, 'stats.categorias deveria ser 8');
   assert.equal(stats.keys, 0, 'stats.keys deveria ser 0');
   assert.ok(!html.includes('{{STATS_'), 'placeholder {{STATS_*}} nao substituido no HTML servido');
   const statIds = ['stat-total', 'stat-auto', 'stat-cats', 'stat-keys'];

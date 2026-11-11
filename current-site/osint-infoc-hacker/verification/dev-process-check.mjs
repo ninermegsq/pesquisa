@@ -56,7 +56,7 @@ try {
   assert.ok(dataStats, 'data-stats ausente');
   const decodeAttr = v => v.replace(/&quot;/g, '"').replace(/&#34;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
   const stats = JSON.parse(decodeAttr(dataStats[1]));
-  assert.deepEqual(stats, { total: 27, email: 13, categorias: 6, keys: 0 });
+  assert.deepEqual(stats, { total: 32, email: 13, categorias: 8, keys: 0 });
   assert.ok(/id="scan-log"/.test(html), '#scan-log ausente');
 
   // Portas esgotadas: PORT explicito ocupado em IPv4 e IPv6 deve listar as

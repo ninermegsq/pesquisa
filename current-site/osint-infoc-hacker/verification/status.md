@@ -319,6 +319,82 @@ significa que o endereço está em uso naquele serviço, não quem o controla;
 completo, com o mapa repositório → técnica portada e o descarte de cada
 candidato, está em `verification/github-osint.md`.
 
+## Alvos novos: CPF, placa e nome completo (2026-11-11, continuação)
+
+O pedido foi adicionar **consulta por nome completo, por CPF e por placa**,
+aproveitando o que a pesquisa em repositórios open source de OSINT rendeu.
+Cinco fontes novas entraram no registro (27 → 32) e o scanner deixou de
+aceitar apenas e-mail, domínio, IP, CNPJ e telefone.
+
+| Fonte | Tipo | Custo | TTL | Rede | O que devolve |
+| --- | --- | --- | --- | --- | --- |
+| `cpf_valida` | cpf | 0 | 0 | nenhuma | dígitos verificadores, formatação, links de consulta |
+| `cpf_brasilapi` | cpf | 1 | 86400 | 1 GET | cadastro público do CPF (BrasilAPI) |
+| `placa_footprint` | placa | 0 | 0 | nenhuma | modelo da placa e links das buscas públicas |
+| `placa_sinesp` | placa | 1 | 86400 | 1 GET | cadastro público do veículo (SINESP/apicarros) |
+| `nome_perfil` | nome | 10 | 86400 | até 10 GETs | perfis públicos por nome de usuário derivado (Maigret) |
+
+Mudanças no motor:
+
+- `src/lib/alvo.mjs`: nova detecção de placa nos dois formatos (Mercosul
+  `LLLNLNN` e anterior `LLLNNNN`), sem confundir telefone com placa; a
+  mensagem de erro passou a listar CPF e placa.
+- `src/scan.mjs` e `scripts/dev-server.mjs`: a rejeição "Consulta de CPF fora
+  do escopo" foi removida — o scan de CPF agora responde **200**.
+- `src/render.mjs`: títulos das cinco fontes novas.
+- `src/sources/registry.json` + `registry.mjs`: manifesto e implementações
+  validados um contra o outro no carregamento do módulo.
+
+Prova offline (`verification/novos-alvos-check.mjs`, na cadeia do `npm test`,
+sem rede):
+
+```json
+{"scope":"LOCAL ONLY; fixtures offline; aceitacao de rede real pendente (npm run probe:novas / npm run probe:live)","alvos":["cpf","placa","nome"],"fontesNovas":5,"cpf":{"detectado":true,"scan":200,"fontes":2},"placa":{"detectado":true,"scan":200,"fontes":2},"nome":{"scan":200,"perfis":6},"provedores":{"cpf":"brasilapi","placa":"sinesp-apicarros","perfis":"github/gitlab/hackernews/keybase/devto"}}
+```
+
+O que o check prova, sem rede: a detecção dos três alvos (e a recusa do
+inválido); as duas fontes locais (`cpf_valida`, `placa_footprint`) fazem
+**zero** chamada de rede; o 404 do provedor vira "ausência na base consultada";
+formato desconhecido vira erro ("formato inesperado"), nunca dado inventado;
+CPF de teste sai marcado como tal; e o scan completo (`handleScan`) responde
+**200** nos três alvos, com o HTML contendo "CADASTRO DE CPF" e o relatório de
+nome com `score.parcial === false` — a única fonte indisponível, o DataJud,
+fica em `por_configuracao` por falta da chave do operador, e não vira
+resultado inconclusivo.
+
+**Limite declarado:** a máquina estava **sem internet** durante esta etapa. O
+que está verificado é o **contrato**, não a disponibilidade: as respostas
+reais do BrasilAPI, do SINESP e dos sites de perfil **não** foram observadas
+nesta rodada. O aceite com rede real fica pendente, com dois comandos
+prontos — `npm run probe:novas` (sonda dos provedores candidatos, incluindo
+as rotas descartadas) e `npm run probe:live` (sonda de todas as 32 fontes,
+com `cpf` e `placa` agora na tabela de alvos).
+
+O que a placa **não** entrega: nenhum provedor público devolvido aqui traz o
+nome do titular do veículo. A fonte `placa_sinesp` entrega modelo, ano, cor e
+município/UF do registro e declara isso no `observacao`. O FIPE foi medido
+antes, em todas as rotas, e respondeu 404 — ficou só como link de consulta.
+
+O que o nome **não** prova: `nome_perfil` deriva candidatos de usuário do
+nome completo (técnica do Maigret) e consulta cinco sites públicos. Um perfil
+com o mesmo nome não prova que seja a pessoa do alvo, e a fonte registra a
+limitação no próprio resultado. Quando nenhum site responde, a fonte falha de
+verdade — "não consegui perguntar" não vira "não achei".
+
+## Envio para o GitHub: pendente por falta de rede (2026-11-11, continuação)
+
+O trabalho desta etapa **ainda não foi enviado** ao `origin`
+(`https://github.com/ninermegsq/pesquisa.git`, branch `main`). A máquina está
+sem internet: `git push origin main` falha com
+`Failed to connect to github.com:443`, e as sondas de rede real
+(`probe:live`, `probe:novas`) falham com `fetch failed`.
+
+Isso é o que mantém o aviso do editor — "**Sync automático — Desligado. Faça
+o primeiro envio a ninermegsq/pesquisa (main) para ligar.**" — que só se
+resolve com uma operação de rede: `git push origin main`. O workflow de
+deploy (`.github/workflows/deploy.yml`) é **manual** (`workflow_dispatch`), de
+modo que o envio dispara a CI e **não** publica nada em produção.
+
 ## Evidência real obtida (2026-10-30)
 
 - GET/HEAD https://ostnt.online/: 200, HSTS `max-age=31536000`.

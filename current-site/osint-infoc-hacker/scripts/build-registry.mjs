@@ -22,7 +22,7 @@ export const MANIFESTO = 'src/sources/registry.json';
 export const GERADO = 'src/sources/registry.meta.mjs';
 
 // Tipos de alvo suportados pelo scanner (src/lib/alvo.mjs).
-export const TIPOS_VALIDOS = Object.freeze(['email', 'telefone', 'dominio', 'ip', 'cnpj', 'nome']);
+export const TIPOS_VALIDOS = Object.freeze(['email', 'telefone', 'dominio', 'ip', 'cnpj', 'cpf', 'placa', 'nome']);
 export const TIPOS_DE_CREDENCIAL = Object.freeze(['chave', 'token']);
 
 const texto = value => JSON.stringify(value);

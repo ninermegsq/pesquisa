@@ -1,4 +1,5 @@
 import {DDD} from '../data/ddd.mjs';
+import {cpfOk,normalizarPlaca} from '../lib/alvo.mjs';
 import {falhar} from '../lib/http.mjs';
 import {md5} from '../lib/md5.mjs';
 import {REGISTRY_META} from './registry.meta.mjs';
@@ -307,6 +308,121 @@ function dorksDoTelefone(variantes){
   }
   return saida;
 }
+
+// ---------------------------------------------------------------------------
+// Alvos novos: CPF, placa de veiculo e nome completo.
+//
+// Divisao de trabalho entre as fontes:
+//   - as fontes locais (custo 0) nao chamam nenhum servico: elas validam o
+//     formato e montam os links das consultas publicas;
+//   - as fontes de rede tem parser estrito: formato desconhecido vira erro
+//     ("formato inesperado"), nunca dado inventado.
+//
+// As fontes de rede (cpf_brasilapi, placa_sinesp, nome_perfil) ainda nao
+// passaram pela aceitacao com internet real: a maquina ficou sem rede no
+// dia da implementacao. O que a verificacao offline prova e o contrato de
+// parsing, o tratamento de 404 e o comportamento quando o provedor falha.
+// ---------------------------------------------------------------------------
+// CPFs de exemplo, com digito verificador valido: 111.444.777-35 (o exemplo
+// classico da validacao de CPF, tambem o exemplo da documentacao da
+// BrasilAPI) e 123.456.789-09.
+const CPFS_DE_TESTE=new Set(['11144477735','12345678909']);
+const formatarCpf=c=>`${c.slice(0,3)}.${c.slice(3,6)}.${c.slice(6,9)}-${c.slice(9)}`;
+// Data de nascimento em ISO: alguns provedores entregam texto, outros
+// entregam o dia, o mes e o ano separados.
+const dataIso=v=>{
+  if(v==null)return null;
+  if(typeof v==='string')return texto(v);
+  if(typeof v==='object'){
+    const dia=texto(v.day),mes=texto(v.month),ano=texto(v.year);
+    if(dia&&mes&&ano)return `${ano}-${String(mes).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
+  }
+  return null;
+};
+// Categorias e sitios das buscas publicas por placa. O que aparece em
+// documento e em anuncio e, em regra, o proprio veiculo: a placa nao entrega
+// o titular.
+const DORKS_PLACA=[
+ {categoria:'Documentos e anuncios',modelo:'intext:"{placa}" (ext:doc | ext:docx | ext:odt | ext:pdf | ext:rtf | ext:ppt | ext:pptx | ext:csv | ext:txt | ext:xls)',
+  sitios:['google.com']},
+ {categoria:'Veiculos e Detran',modelo:'site:{site} intext:"{placa}"',
+  sitios:['mercosul.com.br','detran.sp.gov.br','detran.pr.gov.br','detran.rj.gov.br','gov.br']},
+ {categoria:'Anuncios e chaveiro',modelo:'site:{site} "{placa}"',
+  sitios:['olx.com.br','mercadolivre.com.br','webmotors.com.br','chaveiro.com.br']}
+];
+// As buscas viram links para o Google: a fonte nao consulta o Google.
+function dorksDoPlaca(placa){
+  const urlDe=q=>'https://www.google.com/search?q='+encodeURIComponent(q);
+  const saida={};
+  for(const grupo of DORKS_PLACA){
+    saida[grupo.categoria]=[];
+    for(const sitio of grupo.sitios){
+      const consulta=(grupo.modelo.includes('{site}')?grupo.modelo.replaceAll('{site}',sitio):grupo.modelo)
+        .replaceAll('{placa}',placa).trim();
+      saida[grupo.categoria].push({alvo:sitio,consulta,url:urlDe(consulta)});
+    }
+  }
+  return saida;
+}
+// Nome completo -> candidatos de nome de usuario. E a tecnica do Maigret (o
+// repositorio de busca por nome completo mais usado da comunidade): o nome
+// vira usuario e o usuario vira perfil. Nenhum cadastro e feito e nenhuma
+// conta e criada: sao apenas GETs publicos.
+const semAcento=s=>String(s??'').normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase();
+function usuariosDoNome(nome){
+  const partes=String(nome??'').trim().split(/\s+/).filter(Boolean);
+  if(partes.length<2)return [];
+  const primeiro=semAcento(partes[0]).replace(/[^a-z0-9]/g,'');
+  const ultimo=semAcento(partes[partes.length-1]).replace(/[^a-z0-9]/g,'');
+  const meio=partes.length>2?semAcento(partes[1]).replace(/[^a-z0-9]/g,''):'';
+  if(!primeiro||!ultimo)return [];
+  const lista=[
+    `${primeiro}${ultimo}`,
+    `${primeiro}${ultimo[0]}`,
+    `${primeiro}.${ultimo}`,
+    `${primeiro[0]}${ultimo}`,
+    `${primeiro}_${ultimo}`
+  ];
+  if(meio)lista.push(`${primeiro}${meio[0]}${ultimo}`,`${primeiro}.${meio[0]}${ultimo}`);
+  return [...new Set(lista.filter(s=>s.length>=3&&s.length<=30))];
+}
+// Buscas publicas pelo nome completo: o termo exato, o nome dentro do texto e
+// a busca em cada rede social.
+const DORKS_NOME=[
+ {categoria:'Busca geral',modelo:'"{nome}"',sitios:['google.com']},
+ {categoria:'Busca geral',modelo:'intext:"{nome}"',sitios:['google.com']},
+ {categoria:'Redes e perfis',modelo:'site:{site} "{nome}"',
+  sitios:['linkedin.com','instagram.com','facebook.com','twitter.com','x.com','github.com','gitlab.com','tiktok.com','youtube.com','reddit.com']},
+ {categoria:'Documentos',modelo:'"{nome}" (ext:pdf | ext:doc | ext:docx | ext:odt | ext:rtf | ext:xls | ext:csv)',sitios:['google.com']}
+];
+function dorksDoNome(nome){
+  const urlDe=q=>'https://www.google.com/search?q='+encodeURIComponent(q);
+  const saida={};
+  for(const grupo of DORKS_NOME){
+    saida[grupo.categoria]=saida[grupo.categoria]||[];
+    for(const sitio of grupo.sitios){
+      const consulta=(grupo.modelo.includes('{site}')?grupo.modelo.replaceAll('{site}',sitio):grupo.modelo)
+        .replaceAll('{nome}',nome).trim();
+      saida[grupo.categoria].push({alvo:sitio,consulta,url:urlDe(consulta)});
+    }
+  }
+  return saida;
+}
+// Sites publicos que respondem se um nome de usuario existe, com parser
+// proprio para cada um: um formato desconhecido vira "sem perfil", nunca
+// um perfil inventado.
+const SITES_PERFIL=[
+ {site:'github',url:u=>`https://api.github.com/users/${encodeURIComponent(u)}`,
+  perfil:j=>j&&typeof j==='object'&&j.login?{usuario:texto(j.login),nome:texto(j.name),url:texto(j.html_url)}:null},
+ {site:'gitlab',url:u=>`https://gitlab.com/api/v4/users?username=${encodeURIComponent(u)}`,
+  perfil:j=>{const a=lista(j);return a.length?{usuario:texto(a[0]?.username),nome:texto(a[0]?.name),url:texto(a[0]?.web_url)}:null;}},
+ {site:'hackernews',url:u=>`https://hacker-news.firebaseio.com/v0/user/${encodeURIComponent(u)}.json`,
+  perfil:j=>j&&typeof j==='object'&&j.id?{usuario:texto(j.id),nome:null,url:`https://news.ycombinator.com/user?id=${j.id}`}:null},
+ {site:'keybase',url:u=>`https://keybase.io/_api/1.0/user/lookup.json?username=${encodeURIComponent(u)}`,
+  perfil:j=>j&&j.status&&j.status.code===0&&j.user?{usuario:texto(j.user.username),nome:texto(j.user.full_name),url:`https://keybase.io/${j.user.username}`}:null},
+ {site:'devto',url:u=>`https://dev.to/api/users/by_username?url=${encodeURIComponent(u)}`,
+  perfil:j=>j&&typeof j==='object'&&j.username?{usuario:texto(j.username),nome:texto(j.name),url:`https://dev.to/${j.username}`}:null}
+];
 
 export const REGISTRY=[
  {id:'gravatar',tipos:['email'],custo:1,ttl:86400,provenance:'gravatar-public-profile',
@@ -716,6 +832,153 @@ export const REGISTRY=[
     const j=await J(r);
     const hits=lista(j?.hits?.hits);
     return {dados:{total:j?.hits?.total?.value||0,processos:hits.map(h=>({numero:h?._source?.numeroProcesso??null,classe:h?._source?.classe?.nome??null}))}};
+  }},
+ // -------------------------------------------------------------------------
+ // CPF: validacao local (sem rede) e consulta do cadastro publico.
+ // -------------------------------------------------------------------------
+ // A validacao local confere os digitos verificadores do CPF: ela diz se o
+ // numero tem a aritmetica correta, e nada mais. Nao diz quem e o titular,
+ // e nao substitui a consulta oficial da Receita (que exige captcha).
+ {id:'cpf_valida',tipos:['cpf'],custo:0,ttl:0,provenance:'cpf-dv-local',
+  async run(a,c){
+    const cpf=so(a.valor);
+    if(!cpfOk(cpf))throw Error('CPF invalido');
+    return {dados:{
+      cpf:formatarCpf(cpf),
+      valido:true,
+      digitos_verificadores:cpf.slice(9),
+      cpf_de_teste:CPFS_DE_TESTE.has(cpf),
+      links:{
+        receita_federal:'https://servicos.receita.fazenda.gov.br/servicos/cpf/comprovante-inscricao',
+        brasilapi:`https://brasilapi.com.br/api/cpf/v1/${cpf}`
+      },
+      observacao:'Validacao local dos digitos verificadores do CPF e links para as consultas publicas. A fonte nao consulta nenhum servico e nao informa titularidade.'
+    }};
+  }},
+ // Cadastro publico do CPF na BrasilAPI. O provedor responde 404 quando o
+ // CPF nao esta na base: a fonte reporta "existe:false" e lembra que
+ // ausencia na base nao prova inexistencia do CPF. Qualquer outro formato
+ // vira erro: nada de dado chumbado.
+ {id:'cpf_brasilapi',tipos:['cpf'],custo:1,ttl:86400,provenance:'brasilapi-cpf-v1',
+  async run(a,c){
+    const cpf=so(a.valor);
+    const r=await c.get(`https://brasilapi.com.br/api/cpf/v1/${encodeURIComponent(cpf)}`,{timeout:8000});
+    if(r.status===404)return {dados:{existe:false,provedor:'brasilapi',
+      observacao:'O CPF nao consta na base publica do provedor. Ausencia na base nao prova que o CPF nao exista.'}};
+    if(!r.ok)throw falhar(r);
+    const j=await J(r);
+    if(!j||typeof j!=='object'||Array.isArray(j))throw Error('formato inesperado de CPF');
+    const e=j.endereco&&typeof j.endereco==='object'?j.endereco:{};
+    const nome=texto(j.nome??j.name);
+    const nascimento=dataIso(j.nascimento??j.birthDate??j.dataNascimento);
+    if(!nome&&!nascimento)throw Error('formato inesperado de CPF');
+    return {dados:{
+      existe:true,provedor:'brasilapi',nome,nascimento,
+      sexo:texto(j.sexo??j.gender),
+      mae:texto(j.mae??j.mother),
+      pai:texto(j.pai??j.father),
+      email:texto(j.email),
+      telefone:texto(j.telefone??j.phone),
+      endereco:{
+        cep:texto(e.cep),
+        logradouro:texto(e.logradouro),
+        numero:texto(e.numero),
+        bairro:texto(e.bairro),
+        municipio:texto(e.localidade??e.cidade),
+        uf:texto(e.uf)
+      },
+      observacao:'Cadastro do CPF na base publica da BrasilAPI. A base e uma copia parcial do cadastro da Receita e nao cobre todos os CPFs emitidos.'
+    }};
+  }},
+ // -------------------------------------------------------------------------
+ // Placa de veiculo: formato e buscas publicas (sem rede) e cadastro do
+ // veiculo (com rede).
+ // -------------------------------------------------------------------------
+ // O que a placa entrega e o veiculo: modelo, ano, cor e o municipio/UF do
+ // registro. O titular do veiculo nao e dado publico: nenhuma fonte aqui
+ // promete achar o nome do dono.
+ {id:'placa_footprint',tipos:['placa'],custo:0,ttl:0,provenance:'placa-mercosul-local',
+  async run(a,c){
+    const p=normalizarPlaca(a.valor);
+    if(!p)throw Error('placa nao reconhecida');
+    return {dados:{
+      placa:p.valor,
+      modelo:p.modelo==='mercosul'?'Mercosul (LLLNLNN)':'anterior (LLLNNNN)',
+      buscas:dorksDoPlaca(p.valor),
+      links:{
+        sinesp:`https://apicarros.com/v1/consulta/${p.valor}/json`,
+        fipe:`https://veiculos.fipe.org.br/api/veiculos/v1/placa/${p.valor}.json`
+      },
+      observacao:'A fonte nao consulta nenhum servico: valida o formato da placa e entrega os links das consultas publicas. Os links sao as rotas conhecidas dos provedores e ainda nao foram verificadas com internet real.'
+    }};
+  }},
+ // Cadastro publico do veiculo (SINESP). O provedor responde 404 quando a
+ // placa nao consta: a fonte reporta "existe:false". Formato desconhecido
+ // vira erro, nunca um veiculo inventado.
+ {id:'placa_sinesp',tipos:['placa'],custo:1,ttl:86400,provenance:'sinesp-apicarros',
+  async run(a,c){
+    const placa=String(a.valor??'').toUpperCase();
+    const r=await c.get(`https://apicarros.com/v1/consulta/${encodeURIComponent(placa)}/json`,{timeout:8000});
+    if(r.status===404)return {dados:{existe:false,provedor:'sinesp-apicarros',
+      observacao:'A placa nao consta no cadastro consultado.'}};
+    if(!r.ok)throw falhar(r);
+    const j=await J(r);
+    const v=j?.data?.vehicle??j?.vehicle??null;
+    if(!v||typeof v!=='object'||Array.isArray(v))throw Error('formato inesperado de placa');
+    return {dados:{
+      existe:true,provedor:'sinesp-apicarros',
+      modelo:texto(v.modelo),
+      ano_modelo:v.anoModelo??v.ano_modelo??null,
+      ano_fabricacao:v.anoFabricacao??v.ano_fabricacao??null,
+      cor:texto(v.cor),
+      cidade:texto(v.cidade),
+      uf:texto(v.uf),
+      tipo_veiculo:texto(v.tipoVeiculo??v.tipo_veiculo),
+      observacao:'Dados do veiculo no cadastro publico consultado (modelo, ano, cor e municipio/UF do registro). O provedor nao informa o titular do veiculo.'
+    }};
+  }},
+ // -------------------------------------------------------------------------
+ // Nome completo: candidatos de usuario (tecnica do Maigret) e perfis
+ // publicos.
+ // -------------------------------------------------------------------------
+ // O nome vira usuario e o usuario vira perfil. Nenhum cadastro e feito e
+ // nenhuma conta e criada: sao GETs publicos que dizem se o usuario existe.
+ // Um perfil com o mesmo nome nao prova que seja a pessoa do alvo: a fonte
+ // diz isso no relatorio.
+ {id:'nome_perfil',tipos:['nome'],custo:10,ttl:86400,provenance:'maigret-perfil-publico',
+  async run(a,c){
+    const nome=String(a.valor??'').trim();
+    const candidatos=usuariosDoNome(nome);
+    if(!candidatos.length)throw Error('nome sem partes suficientes para gerar usuario');
+    const testados=candidatos.slice(0,2);
+    const perfis=[];const falhas=[];let respondeu=0;
+    for(const usuario of testados){
+      for(const s of SITES_PERFIL){
+        try{
+          const r=await c.get(s.url(usuario),{timeout:6000});
+          if(!r.ok){falhas.push({site:s.site,usuario,status:r.status});continue;}
+          const j=await J(r);
+          respondeu++;
+          const p=s.perfil(j);
+          if(p)perfis.push({site:s.site,...p});
+        }catch(e){
+          falhas.push({site:s.site,usuario,detalhe:String(e?.message||'erro').slice(0,90)});
+        }
+      }
+    }
+    // Nenhum site respondeu: e falha real do provedor, e nao "nada
+    // encontrado". Com pelo menos uma resposta, a ausencia de perfil e um
+    // resultado legitimo.
+    if(!respondeu)throw Error(`nenhum site de perfil respondeu (${falhas.length} falhas)`);
+    return {dados:{
+      nome,
+      usuarios:candidatos,
+      testados:testados.length,
+      perfis,
+      falhas:falhas.length,
+      buscas:dorksDoNome(nome),
+      observacao:`Perfis publicos com nomes de usuario derivados do nome completo (tecnica do Maigret). ${perfis.length} perfil(is) em ${testados.length} usuario(s) testado(s) e ${SITES_PERFIL.length} sites; ${falhas.length} consulta(s) sem perfil ou indisponivel(is). Um perfil com o mesmo nome nao prova que a pessoa do alvo seja a dona do perfil.`
+    }};
   }}
 ];
 

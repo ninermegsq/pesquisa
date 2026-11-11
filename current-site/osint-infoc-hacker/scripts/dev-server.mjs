@@ -380,7 +380,6 @@ async function devToken(req, res) {
   try { body = JSON.parse((await readBody(req)) || '{}'); } catch { return sendJson(res, 400, { error: 'JSON invalido.' }); }
   let alvo;
   try { alvo = detectar(body?.alvo); } catch (e) { return sendJson(res, 400, { error: e.message }); }
-  if (alvo.tipo === 'cpf') return sendJson(res, 400, { error: 'Consulta de CPF fora do escopo.' });
   const cfToken = typeof body?.cfToken === 'string' ? body.cfToken : '';
   if (cfToken.length < 5 || cfToken.length > 4096) return sendJson(res, 400, { error: 'Verificacao obrigatoria.' });
   // O siteverify real exige TURNSTILE_SECRET; localmente o token do shim e aceito.
@@ -394,7 +393,6 @@ async function devScan(req, res) {
   try { body = JSON.parse((await readBody(req)) || '{}'); } catch { return sendJson(res, 400, { error: 'JSON invalido.' }); }
   let alvo;
   try { alvo = detectar(body?.alvo); } catch (e) { return sendJson(res, 400, { error: e.message }); }
-  if (alvo.tipo === 'cpf') return sendJson(res, 400, { error: 'Consulta de CPF fora do escopo.' });
   const ip = clientIp(req);
   // Token de operacao (escopo aquecimento): mesma porta de entrada do Worker.
   const calor = verificarTokenCalor(req.headers['x-warm-token'], { env: WARM_ENV, escopo: 'aquecimento', alvo: alvo.valor });

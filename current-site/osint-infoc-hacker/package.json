@@ -14,7 +14,7 @@
     "build": "node scripts/build-registry.mjs && node scripts/build-migrations.mjs && node scripts/build-worker.mjs",
     "build:registry": "node scripts/build-registry.mjs",
     "build:migrations": "node scripts/build-migrations.mjs",
-    "test": "node verification/cache-check.mjs && node verification/contract-check.mjs && node verification/codegen-check.mjs && node verification/migrations-check.mjs && node verification/telegram-source-check.mjs && node verification/ssllabs-source-check.mjs && node verification/osint-github-source-check.mjs && node verification/source-fix-check.mjs && node verification/warm-check.mjs && node verification/worker-regression.mjs && node verification/dev-server-check.mjs && node verification/dev-process-check.mjs && node verification/dev-ownership-check.mjs && node verification/dev-preview-check.mjs && node verification/stats-check.mjs",
+    "test": "node verification/cache-check.mjs && node verification/contract-check.mjs && node verification/codegen-check.mjs && node verification/migrations-check.mjs && node verification/telegram-source-check.mjs && node verification/ssllabs-source-check.mjs && node verification/osint-github-source-check.mjs && node verification/source-fix-check.mjs && node verification/novos-alvos-check.mjs && node verification/warm-check.mjs && node verification/worker-regression.mjs && node verification/dev-server-check.mjs && node verification/dev-process-check.mjs && node verification/dev-ownership-check.mjs && node verification/dev-preview-check.mjs && node verification/stats-check.mjs",
     "dev": "node scripts/dev-server.mjs",
     "dev:stop": "node scripts/stop-dev-servers.mjs",
     "dev:restart": "node scripts/dev-restart.mjs",
@@ -29,6 +29,7 @@
     "check:dev-process": "node verification/dev-process-check.mjs",
     "check:dev-ownership": "node verification/dev-ownership-check.mjs",
     "check:stats": "node verification/stats-check.mjs",
+    "check:novos-alvos": "node verification/novos-alvos-check.mjs",
     "dev:worker": "wrangler dev --config wrangler.toml",
     "dev:validation": "wrangler dev --config wrangler.validation.toml"
   },

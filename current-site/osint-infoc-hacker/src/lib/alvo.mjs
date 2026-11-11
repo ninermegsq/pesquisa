@@ -2,6 +2,10 @@ const RE_EMAIL=/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
 const RE_DOM=/^(?=.{4,253}$)([a-z0-9-]+\.)+[a-z]{2,}$/i;
 const RE_IP4=/^(\d{1,3}\.){3}\d{1,3}$/;
 const RE_IP6=/^[0-9a-f:]+$/i;
+// Placa de veiculo brasileira: padrao Mercosul (LLLNLNN, com letra no 5o
+// digito) ou anterior (LLLNNNN, so numeros depois das tres letras).
+const RE_PLACA_MERCOSUL=/^[A-Z]{3}[0-9][A-Z][0-9]{2}$/;
+const RE_PLACA_ANTIGA=/^[A-Z]{3}[0-9]{4}$/;
 const so=d=>String(d??'').replace(/\D/g,'');
 
 export function cpfOk(v){
@@ -17,6 +21,14 @@ export function cnpjOk(v){
   const d2=dv([...c.slice(0,12).split('').map(Number),d1],w2);
   return +c[12]===d1 && +c[13]===d2;
 }
+// Normaliza a placa: tira o separador ("ABC-1D23"), sobe para maiuscula e
+// devolve o padrao usado. Devolve null quando o texto nao e placa.
+export function normalizarPlaca(v){
+  const s=String(v??'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(RE_PLACA_MERCOSUL.test(s))return {valor:s,modelo:'mercosul'};
+  if(RE_PLACA_ANTIGA.test(s))return {valor:s,modelo:'antiga'};
+  return null;
+}
 export function detectar(bruto){
   const v=String(bruto??'').trim();
   if(RE_EMAIL.test(v)) return {tipo:'email',valor:v.toLowerCase()};
@@ -27,6 +39,8 @@ export function detectar(bruto){
   const d=so(v);
   if(d.length>=10&&d.length<=13&&!v.includes('@')) return {tipo:'telefone',valor:d};
   if(RE_DOM.test(v)) return {tipo:'dominio',valor:v.toLowerCase().replace(/^www\./,'')};
+  const placa=normalizarPlaca(v);
+  if(placa) return {tipo:'placa',valor:placa.valor};
   if(v.length>=4 && /^[\p{L}][\p{L} .'-]+\s+[\p{L} .'-]+$/u.test(v)) return {tipo:'nome',valor:v.replace(/\s+/g,' ')};
-  throw new Error('Alvo não reconhecido. Use e-mail, domínio, IP, CNPJ, CPF, telefone ou nome.');
+  throw new Error('Alvo não reconhecido. Use e-mail, domínio, IP, CNPJ, CPF, telefone, placa ou nome.');
 }

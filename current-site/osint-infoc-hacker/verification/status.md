@@ -1,8 +1,148 @@
-# Verificação — 2026-10-30 (última atualização: 2026-11-12)
+# Verificação — 2026-10-30 (última atualização: 2026-11-11)
 
 Estado: NÃO CONCLUÍDO. Código candidato, não promovido a produção.
 
-## A prévia do editor: manifesto gerado velho e porta reservada (2026-11-12)
+## Análise integral do sistema e das 32 fontes (2026-11-11)
+
+Auditoria do sistema inteiro, com **medição** e não estimativa. Três camadas:
+
+1. **Sintaxe** — `npm run check`: 81 arquivos, 0 falhas.
+2. **Suíte offline** — `npm test`: 18 verificações (contrato, cache, TTL, orçamento
+   de subrequests, codegen, migrações, regressão do Worker, servidor de
+   desenvolvimento, manifesto, posse de porta, prévia, estatísticas). Último
+   linha: `{"ok":true,"stats":{"total":32,"email":13,"categorias":8,"keys":0}}`.
+3. **Rede real** — `npm run probe:live` (`verification/live-source-probe.mjs`),
+   que chama cada fonte contra o provedor de verdade, fora da suíte.
+
+### Resultado da sonda de rede real (2026-11-11, 16:0x BRT)
+
+```json
+{"consultas":35,"responderam":29,"falharam":0,"bloqueadas_por_credencial":6}
+```
+
+35 consultas (fonte × tipo de alvo), **29 responderam, 0 falharam**. As 6
+bloqueadas são exatamente as fontes que declaram credencial do operador no
+manifesto: `github` (`sem_token`), `emailrep`, `ceis`, `numverify`, `datajud` e
+`placa_consultarplaca` (`sem_chave`). Sem nenhuma credencial configurada, um
+scan entrega **26 das 32 fontes**; com as 6 chaves, as 32.
+
+### Estado medido de cada uma das 32 fontes
+
+| # | Fonte | Tipo | Estado medido | Latência | HTTP |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `gravatar` | email | ok (sem avatar para o alvo de teste) | 583 ms | 404 |
+| 2 | `pgp` | email | ok (sem chave PGP publicada) | 744 ms | 404 |
+| 3 | `gitlab` | email | ok, 0 hits | 1.154 ms | 200 |
+| 4 | `npm` | email | ok, 0 mantenedores | 145 ms | 200 |
+| 5 | `bluesky` | email | ok, 3 perfis | 524 ms | 200 |
+| 6 | `xon` | email | ok, 9 registros | 120 ms | 200 |
+| 7 | `hudsonrock` | email | ok, dados recebidos | 115 ms | 200 |
+| 8 | `email_registro` | email | ok, 8 sites (7 responderam) | 967 ms | 200 (7) + 400 (1) |
+| 9 | `dns` | email/dominio | ok, A/TXT/MX + DMARC | 175/202 ms | 200 ×4 |
+| 10 | `crtsh` | email/dominio | ok, 60 subdomínios / 0 | 14.762/13.989 ms | 200 |
+| 11 | `wayback` | email/dominio | ok, 1 URL / 0 | 6.307/20.669 ms | 200 (CDX 503 caiu no `available`) |
+| 12 | `github` | email | **sem_token** (`GITHUB_TOKEN`) | — | — |
+| 13 | `emailrep` | email | **sem_chave** (`EMAILREP_KEY`) | — | — |
+| 14 | `rdap` | dominio | ok | 577 ms | 200 |
+| 15 | `ssllabs` | dominio | ok, situação pronta | 604 ms | 200 |
+| 16 | `urlscan` | dominio | ok, 0 | 799 ms | 200 |
+| 17 | `internetdb` | ip | ok | 112 ms | 200 |
+| 18 | `ipgeo` | ip | ok | 92 ms | 200 |
+| 19 | `asn` | ip | ok (Team Cymru via DoH) | 158 ms | 200 |
+| 20 | `cnpj_br` | cnpj | ok, situação Ativa (`publica.cnpj.ws`) | 409 ms | 200 |
+| 21 | `ceis` | cnpj | **sem_chave** (`TRANSPARENCIA_KEY`) | — | — |
+| 22 | `telegram` | telefone | ok, página pública | 718 ms | 200 |
+| 23 | `ddd` | telefone | ok, **local** (snapshot Anatel, sem rede) | 0 ms | — |
+| 24 | `phone_footprint` | telefone | ok, **local** (PhoneInfoga/Google dorks) | 1 ms | — |
+| 25 | `numverify` | telefone | **sem_chave** (`NUMVERIFY_API_KEY`) | — | — |
+| 26 | `wikidata` | nome | ok, 5 hits | 735 ms | 200 |
+| 27 | `datajud` | nome | **sem_chave** (`DATAJUD_API_KEY`) — com a chave, o CNJ devolveu 401 nesta sessão (ver limites) | — | — |
+| 28 | `nome_perfil` | nome | ok, 5 provedores (dev.to 404 = alvo sem perfil) | 2.717 ms | 200/404 |
+| 29 | `cpf_valida` | cpf | ok, **local** (dígitos verificadores) | 0 ms | — |
+| 30 | `cpf_brasilapi` | cpf | ok | 106 ms | 200 |
+| 31 | `placa_footprint` | placa | ok, **local** (Mercosul) | 1 ms | — |
+| 32 | `placa_consultarplaca` | placa | **sem_chave** (`CONSULTARPLACA_CREDENCIAL`) | — | — |
+
+As 4 fontes locais (`ddd`, `phone_footprint`, `cpf_valida`, `placa_footprint`)
+não fazem chamada de rede: são tabelas e algoritmos embarcados, por isso
+respondem em 0–1 ms e não podem "cair".
+
+### Bugs encontrados e corrigidos nesta auditoria
+
+**1. `datajud` — prazo de 9 s matava toda consulta (bug real, medido).**
+A API pública do CNJ respondeu **HTTP 200 em 26 s a 40 s** com a credencial
+(cinco medições). O mesmo pedido **sem** credencial respondeu 401 em 46 ms, o
+que prova que a chave era reconhecida. O prazo de 9 s que existia na fonte
+abortava a consulta antes de a API responder e a fonte virava `timeout` em
+*toda* busca. **Correção:** `timeout: 30000`, coerente com a latência real do
+CNJ.
+
+**2. `datajud` — consulta no campo e no índice errados (bug real, medido).**
+`match_phrase` em `partes.nome` no índice `api_publica_stj` devolvia
+`total: 0`, e a sonda de estrutura mostrou que o índice **não tem**
+`partes.nome` utilizável nesse caminho; o campo que existe e devolve
+documentos é `movimentos.orgaoJulgador.nome` (com `.keyword`). **Correção:**
+`bool.should` cobrindo `movimentos.orgaoJulgador.nome` **e** `partes.nome`,
+`_source` fechado (5 campos), `track_total_hits: false` (o total do CNJ é
+caríssimo), `terminate_after: 15000`, e o retorno informa `total`,
+`total_truncado`, `indice` e em qual campo cada processo casou
+(`casou_em`).
+
+**3. `email_registro` — 400 do Freelancer marcado como site quebrado (bug
+menor, medido).** O Freelancer responde **HTTP 400** com
+`error_code: UserExceptionCodes.EMAIL_BLOCKED` para domínios que ele bloqueia
+(medido com `teste@example.com`) e **HTTP 200 `{"status":"success"}`** para um
+e-mail gmail comum. O 400 caía em `falhar(r)` e o site aparecia como
+"indisponível" sem explicar o motivo. **Correção:** 400 com `EMAIL_BLOCKED`
+volta como `indisponivel` com o detalhe "dominio bloqueado pelo site
+(EMAIL_BLOCKED)" — a fonte continua valendo (7 de 8 sites) e o relatório fica
+honesto.
+
+### Limites desta auditoria (o que NÃO foi provado)
+
+- **A chave do DataJud está inválida ou bloqueada pelo CNJ.** Nesta sessão
+  **todas** as chamadas (índices `stj`, `tjsp` e `cnj`; grafias `APIKey`,
+  `Apikey`, `apiKey`, `ApiKey` e `Bearer`) voltaram **HTTP 401
+  `security_exception`** ("unable to authenticate with provided
+  credentials"), enquanto a mesma chave tinha devolvido 200 em 40.094 ms na
+  sessão anterior. Como o mesmo código de requisição já funcionou, isso **não
+  é bug de cabeçalho nem do código**: é a chave. Consequência honesta: a
+  **nova forma da query não pôde ser re-medida com a credencial** — o caminho
+  sem chave foi o que se validou. A fonte agora reporta "credencial recusada
+  pelo CNJ (HTTP 401)" em vez de um erro genérico.
+- **As 6 fontes com credencial do operador não foram exercitadas contra o
+  provedor** (o `probe:live` roda sem credenciais, por desenho: nenhuma chave
+  fica no código nem em arquivo). O que se sabe delas é o comportamento
+  **sem** chave (`sem_chave`/`sem_token`, sem marcar o relatório como
+  parcial) e, para `datajud`, o comportamento **com** chave medido na sessão
+  anterior.
+- **O `wrangler dev` não foi exercitado**: o servidor de desenvolvimento do
+  projeto é Node puro (`scripts/dev-server.mjs`), com shim de `HTMLRewriter`.
+  O Worker em si foi validado pela regressão offline, não no runtime do
+  Cloudflare.
+- **Nenhuma credencial foi gravada em nenhum arquivo** (verificado por busca
+  em todo o repositório: a chave em base64 e o valor decodificado não
+  aparecem em nenhum arquivo versionado). A chave do DataJud deve entrar em
+  produção com `wrangler secret put DATAJUD_API_KEY` e, localmente, só por
+  variável de ambiente em tempo de execução.
+- **Nenhum build foi publicado ou simulado.** O `npm run build` local é
+  idempotente (o `check:build` exige a árvore limpa depois do build).
+
+### A prévia do editor e o "Sync automático"
+
+- **Prévia:** a causa do "o servidor terminou antes de abrir a prévia" já está
+  corrigida e versionada (commit `a62f339`): o `registry.meta.mjs` gerado é
+  sincronizado **antes** do `import` do motor e a porta reservada pelo editor
+  é respeitada. As verificações `dev-manifesto-check`, `dev-process-check`,
+  `dev-ownership-check` e `dev-preview-check` passam todas neste ambiente
+  (saídas reais no fim desta página). Se a prévia ainda falhar, é porque o
+  editor está com um commit antigo: o conserto precisa estar no `main` que o
+  editor usa.
+- **Sync automático:** o painel do Nexus só liga o sync depois do **primeiro
+  envio** para `ninemegsq/pesquisa` (main). Este envio é o commit com as
+  correções de `datajud`/`email_registro` e os novos scripts de diagnóstico.
+
+## A prévia do editor: manifesto gerado velho e porta reservada (2026-11-11)
 
 A prévia voltou a falhar com "o servidor terminou antes de abrir a prévia". O
 log do editor trazia a causa: `A prévia não iniciou: fonte sem manifesto:

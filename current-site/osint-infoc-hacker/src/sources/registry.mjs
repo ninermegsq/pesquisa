@@ -241,6 +241,17 @@ const CHECAGENS_CADASTRO=[
    // O sinal positivo vem em HTTP 409 (conflito: e-mail em uso), nao em 200.
    const r=await c.get('https://www.freelancer.com/api/users/0.1/users/check?compact=true&new_errors=true',{method:'POST',timeout:6000,
      headers:{'content-type':'application/json'},body:JSON.stringify({user:{email:e}})});
+   if(r.status===400){
+     // O Freelancer recusa dominios inteiros com HTTP 400 e error_code
+     // EMAIL_BLOCKED (medido: teste@example.com -> 400, um e-mail gmail -> 200).
+     // Nao e "e-mail cadastrado" nem queda do site: e o site se recusando a
+     // verificar aquele dominio. Fica como indisponivel para o alvo, sem
+     // derrubar as outras checagens.
+     const j=await r.json().catch(()=>null);
+     const codigo=String(j?.error_code||j?.error?.code||'');
+     if(/EMAIL_BLOCKED/i.test(codigo))return {estado:'indisponivel',detalhe:'dominio bloqueado pelo site (EMAIL_BLOCKED)'};
+     throw falhar(r);
+   }
    if(r.status===409){
      const j=await r.json().catch(()=>null);
      const codigo=String(j?.error_code||j?.error?.code||'');
@@ -837,21 +848,60 @@ export const REGISTRY=[
     const b=(await J(r)).results?.bindings||[];
     return {dados:{total:b.length,entidades:b.map(x=>({id:String(x?.item?.value||'').split('/').pop(),desc:x?.desc?.value??null}))}};
   }},
+ // -------------------------------------------------------------------------
+ // DataJud (CNJ). Medido em 2026-11-11 com a credencial real: a API publica do
+ // CNJ respondeu HTTP 200 em 26 s a 40 s (o mesmo pedido sem credencial
+ // respondeu 401 em 46 ms, o que prova que a chave era reconhecida). O prazo
+ // de 9 s que existia aqui abortava a consulta antes de a API responder e a
+ // fonte virava "timeout" em toda busca: o prazo agora acompanha a latencia
+ // real do CNJ.
+ //
+ // A busca por nome cobre os dois campos de nome do indice `api_publica_stj`:
+ // `movimentos.orgaoJulgador.nome` (orgao julgador/magistrado) e `partes.nome`
+ // (nome das partes). Medido: `partes.nome` devolveu total 0 no indice do STJ
+ // e o campo do orgao julgador devolveu documento; por isso a fonte informa
+ // em qual campo houve o casamento.
+ //
+ // A consulta e mantida barata de proposito: o cluster publico do CNJ e
+ // compartilhado e responde 429 (es_rejected_execution_exception) quando a
+ // busca e cara. Por isso `track_total_hits:false` (nao conta todos os
+ // acertos), `terminate_after` (corta a execucao) e `_source` fechado.
  {id:'datajud',tipos:['nome'],custo:2,ttl:86400,provenance:'cnj-datajud',
   async run(a,c){
     exigirCredencial(c.env,'datajud');
     const key=`APIKey ${c.env.DATAJUD_API_KEY}`;
     const limpo=a.valor.replace(/[:"“”()\[\]{}^~*?\\!]/g,' ').replace(/\s+/g,' ').trim();
     const url='https://api-publica.datajud.cnj.jus.br/api_publica_stj/_search';
+    if(!limpo)throw Error('nome vazio para a busca no DataJud');
     const headers={authorization:key,'content-type':'application/json'};
-    let r=await c.get(url,{method:'POST',timeout:9000,headers,
-      body:JSON.stringify({size:10,query:{query_string:{query:limpo,default_field:'partes.nome'}}})});
-    if(r.status===400)r=await c.get(url,{method:'POST',timeout:9000,headers,
-      body:JSON.stringify({size:10,query:{match:{'partes.nome':{query:limpo,operator:'and'}}}})});
+    let r=await c.get(url,{method:'POST',timeout:30000,headers,
+      body:JSON.stringify({size:10,_source:['numeroProcesso','classe.nome','dataAbertura','movimentos.orgaoJulgador.nome','partes.nome'],track_total_hits:false,terminate_after:15000,query:{bool:{should:[{match_phrase:{'movimentos.orgaoJulgador.nome':{query:limpo}}},{match_phrase:{'partes.nome':{query:limpo}}}],minimum_should_match:1}}})});
+    if(r.status===401||r.status===403)throw Error(`credencial recusada pelo CNJ (HTTP ${r.status})`);
+    if(r.status===429)throw Error('CNJ sobrecarregado (HTTP 429): o cluster publico rejeitou a consulta');
+    if(r.status===400)r=await c.get(url,{method:'POST',timeout:30000,headers,
+      body:JSON.stringify({size:10,query:{match_phrase:{'movimentos.orgaoJulgador.nome':{query:limpo}}}})});
     if(!r.ok) throw falhar(r);
     const j=await J(r);
     const hits=lista(j?.hits?.hits);
-    return {dados:{total:j?.hits?.total?.value||0,processos:hits.map(h=>({numero:h?._source?.numeroProcesso??null,classe:h?._source?.classe?.nome??null}))}};
+    return {dados:{
+      total:j?.hits?.total?.value??hits.length,
+      total_truncado:j?.hits?.total?.relation!=='eq',
+      indice:'api_publica_stj',
+      processos:hits.map(h=>{
+        const src=h?._source||{};
+        const partes=lista(src.partes).map(p=>texto(p?.nome)).filter(Boolean);
+        const orgao=texto(src?.movimentos?.orgaoJulgador?.nome);
+        return {
+          numero:texto(src.numeroProcesso),
+          classe:texto(src?.classe?.nome),
+          data_abertura:texto(src.dataAbertura),
+          orgao_julgador:orgao,
+          partes,
+          casou_em:partes.length?'partes.nome':(orgao?'movimentos.orgaoJulgador.nome':null)
+        };
+      }),
+      observacao:'Busca por nome no indice publico do CNJ (api_publica_stj), no campo do orgao julgador/magistrado e no nome das partes. O indice publico do STJ nao expoe o cadastro de partes no mesmo formato do indice do CNJ: quando o casamento ocorre no orgao julgador, o resultado sao processos cujo orgao ou magistrado tem o nome buscado, e nao processos em que o alvo e parte. A API do CNJ e lenta e compartilhada (26 s a 40 s medidos): o total pode vir truncado e a consulta pode ser rejeitada por sobrecarga (429).'
+    }};
   }},
  // -------------------------------------------------------------------------
  // CPF: validacao local (sem rede) e consulta do cadastro publico.

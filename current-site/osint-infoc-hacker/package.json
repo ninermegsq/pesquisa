@@ -23,6 +23,9 @@
     "warm-token": "node scripts/warm-token.mjs",
     "pesquisa:github": "node scripts/github-osint-pesquisa.mjs",
     "probe:live": "node verification/live-source-probe.mjs",
+    "probe:live:credencial": "node verification/probe-live-credencial.mjs",
+    "probe:datajud": "node verification/probe-datajud.mjs",
+    "probe:datajud:doc": "node verification/probe-datajud-doc.mjs",
     "probe:novas": "node verification/probe-novos-provedores.mjs",
     "probe:placa": "node verification/probe-placa.mjs",
     "probe:placa-github": "node verification/probe-placa-github.mjs",
@@ -34,6 +37,7 @@
     "check:dev-process": "node verification/dev-process-check.mjs",
     "check:dev-ownership": "node verification/dev-ownership-check.mjs",
     "check:stats": "node verification/stats-check.mjs",
+    "check:credenciais": "node scripts/credenciais-check.mjs",
     "check:novos-alvos": "node verification/novos-alvos-check.mjs",
     "dev:worker": "wrangler dev --config wrangler.toml",
     "dev:validation": "wrangler dev --config wrangler.validation.toml"

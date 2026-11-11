@@ -329,9 +329,9 @@ aceitar apenas e-mail, domínio, IP, CNPJ e telefone.
 | Fonte | Tipo | Custo | TTL | Rede | O que devolve |
 | --- | --- | --- | --- | --- | --- |
 | `cpf_valida` | cpf | 0 | 0 | nenhuma | dígitos verificadores, formatação, links de consulta |
-| `cpf_brasilapi` | cpf | 1 | 86400 | 1 GET | cadastro público do CPF (BrasilAPI) |
+| `cpf_brasilapi` | cpf | 1 | 86400 | 1 GET | situação do CPF na base pública (BrasilAPI): dígitos verificadores, região fiscal e UFs |
 | `placa_footprint` | placa | 0 | 0 | nenhuma | modelo da placa e links das buscas públicas |
-| `placa_sinesp` | placa | 1 | 86400 | 1 GET | cadastro público do veículo (SINESP/apicarros) |
+| `placa_consultarplaca` | placa | 1 | 86400 | 1 GET | cadastro público do veículo (API Consultar Placa v2 — credencial do operador) |
 | `nome_perfil` | nome | 10 | 86400 | até 10 GETs | perfis públicos por nome de usuário derivado (Maigret) |
 
 Mudanças no motor:
@@ -349,7 +349,7 @@ Prova offline (`verification/novos-alvos-check.mjs`, na cadeia do `npm test`,
 sem rede):
 
 ```json
-{"scope":"LOCAL ONLY; fixtures offline; aceitacao de rede real pendente (npm run probe:novas / npm run probe:live)","alvos":["cpf","placa","nome"],"fontesNovas":5,"cpf":{"detectado":true,"scan":200,"fontes":2},"placa":{"detectado":true,"scan":200,"fontes":2},"nome":{"scan":200,"perfis":6},"provedores":{"cpf":"brasilapi","placa":"sinesp-apicarros","perfis":"github/gitlab/hackernews/keybase/devto"}}
+{"scope":"LOCAL ONLY; fixtures offline; aceitacao de rede real feita em 2026-11-11 (npm run aceite:novos-alvos)","alvos":["cpf","placa","nome"],"fontesNovas":5,"cpf":{"detectado":true,"scan":200,"fontes":2},"placa":{"detectado":true,"scan":200,"fontes":2},"nome":{"scan":200,"perfis":4},"provedores":{"cpf":"brasilapi","placa":"consultarplaca (credencial obrigatoria)","perfis":"github/gitlab/hackernews/keybase/devto"}}
 ```
 
 O que o check prova, sem rede: a detecção dos três alvos (e a recusa do
@@ -362,18 +362,53 @@ nome com `score.parcial === false` — a única fonte indisponível, o DataJud,
 fica em `por_configuracao` por falta da chave do operador, e não vira
 resultado inconclusivo.
 
-**Limite declarado:** a máquina estava **sem internet** durante esta etapa. O
-que está verificado é o **contrato**, não a disponibilidade: as respostas
-reais do BrasilAPI, do SINESP e dos sites de perfil **não** foram observadas
-nesta rodada. O aceite com rede real fica pendente, com dois comandos
-prontos — `npm run probe:novas` (sonda dos provedores candidatos, incluindo
-as rotas descartadas) e `npm run probe:live` (sonda de todas as 32 fontes,
-com `cpf` e `placa` agora na tabela de alvos).
+**Aceite com rede real (2026-11-11):** executado em
+`verification/aceite-novos-alvos.mjs` (`npm run aceite:novos-alvos`), que
+roda as fontes de rede pelo mesmo cliente HTTP do Worker e pelo mesmo código de
+`src/sources/registry.mjs`. Resultado medido: **9 de 9 alvos conformes, 0
+divergentes**. O que a rede mostrou:
 
-O que a placa **não** entrega: nenhum provedor público devolvido aqui traz o
-nome do titular do veículo. A fonte `placa_sinesp` entrega modelo, ano, cor e
-município/UF do registro e declara isso no `observacao`. O FIPE foi medido
-antes, em todas as rotas, e respondeu 404 — ficou só como link de consulta.
+| Fonte | Chamada real | Resultado medido |
+| --- | --- | --- |
+| `cpf_brasilapi` | `GET https://brasilapi.com.br/api/cpf/v1/11144477735` | 200 em 272 ms; o provedor devolve `{cpf, isValid, rf, ufs}` — **sem** nome, nascimento, filiação ou endereço. `existe` ficou **nulo**: o provedor valida os dígitos, mas não afirma se o CPF existe |
+| `cpf_brasilapi` | CPF `11111111111` | 200 em 44 ms com `isValid:false` → `existe:false`, `digitos_validos:false` |
+| `cpf_brasilapi` | CPF `52998224725` | 200 em 109 ms, mesmo formato `{cpf, isValid, rf, ufs}` |
+| `placa_consultarplaca` | sem credencial | `sem_chave: CONSULTARPLACA_CREDENCIAL`, **sem** chamada de rede (0 ms) |
+| `placa_consultarplaca` | credencial inválida | **HTTP 401** em 615 ms: `{"status":"error","message":"Usuário inválido! Nenhuma conta para o username e api_key informados."}` — prova que o Basic Auth chega ao provedor |
+| `placa_consultarplaca` | placa `AAA0000` com a credencial do operador | sem credencial de operador no ambiente → `sem_chave`; **o caminho de sucesso continua sem prova** |
+| `nome_perfil` | 2 usuários × 5 sites | 9 perfis em 2 usuários testados: 10 respostas válidas, 1 consulta sem perfil (dev.to 404) e 0 indisponível |
+
+Três defeitos **reais** apareceram no aceite e foram corrigidos:
+
+1. **BrasilAPI (parser):** a fonte exigia `nome`/`nascimento`, que o provedor
+   não publica — ela falhava em **toda** resposta real. O parser foi reescrito
+   para os três formatos medidos (`{cpf,isValid,rf,ufs}`, `{isValid:false}` e
+   404).
+2. **Provedor de veículo morto:** `apicarros.com` (apresentado como SINESP)
+   responde HTTP 200 sem JSON, com o domínio estacionado. A fonte trocou de
+   provedor para a **API Consultar Placa v2**, viva, que exige credencial do
+   operador (`CONSULTARPLACA_CREDENCIAL`, no formato `email:api_key`, Basic
+   Auth). Sem a credencial a fonte responde `sem_chave` e **não** marca o
+   relatório como parcial; o caminho público (`placa_footprint`, links de
+   consulta) continua disponível.
+3. **Rota do Keybase morta:** `/_api/1.0/user/lookup.json` respondia 404 em
+   toda requisição. A rota correta é `/_/api/1.0/user/lookup.json`;
+   `status.code` 205 significa usuário inexistente e 0 significa perfil
+   publicado.
+
+O que **continua sem prova**: o caminho de sucesso da API de placa (exige uma
+conta paga do operador; a placa de teste gratuita do provedor é `AAA0000`), a
+execução no edge da Cloudflare e a rota do SINESP oficial — o host
+`cidadao.sinesp.gov.br` resolve para 189.9.194.154, mas não aceitou conexão
+desta máquina nas portas 80, 443 e 8443, enquanto outros hosts `.gov.br`
+responderam normalmente (Receita 200, gov.br 301, Detran-SP 302). É limitação
+deste ambiente de teste, não prova de que o serviço esteja fora do ar.
+
+O que a placa **não** entrega: nenhum provedor devolvido aqui traz o nome do
+titular do veículo. A fonte `placa_consultarplaca` entrega modelo, marca, ano,
+cor, município/UF e dados técnicos, e declara no `observacao` que o provedor
+não informa o dono. O FIPE foi medido antes, em todas as rotas, e respondeu 404
+— ficou só como link de consulta dentro de `placa_footprint`.
 
 O que o nome **não** prova: `nome_perfil` deriva candidatos de usuário do
 nome completo (técnica do Maigret) e consulta cinco sites públicos. Um perfil
@@ -381,19 +416,22 @@ com o mesmo nome não prova que seja a pessoa do alvo, e a fonte registra a
 limitação no próprio resultado. Quando nenhum site responde, a fonte falha de
 verdade — "não consegui perguntar" não vira "não achei".
 
-## Envio para o GitHub: pendente por falta de rede (2026-11-11, continuação)
+## Envio para o GitHub e estado do aceite (2026-11-11)
 
-O trabalho desta etapa **ainda não foi enviado** ao `origin`
-(`https://github.com/ninermegsq/pesquisa.git`, branch `main`). A máquina está
-sem internet: `git push origin main` falha com
-`Failed to connect to github.com:443`, e as sondas de rede real
-(`probe:live`, `probe:novas`) falham com `fetch failed`.
+O trabalho desta etapa **foi enviado** ao `origin`
+(`https://github.com/ninermegsq/pesquisa.git`, branch `main`): o commit
+`cf8ab16` ("feat: adiciona alvos CPF, placa e nome completo com verificacao
+offline") está no `main` remoto. É esse envio que resolve o aviso do editor —
+"**Sync automático — Desligado. Faça o primeiro envio a ninermegsq/pesquisa
+(main) para ligar.**"
 
-Isso é o que mantém o aviso do editor — "**Sync automático — Desligado. Faça
-o primeiro envio a ninermegsq/pesquisa (main) para ligar.**" — que só se
-resolve com uma operação de rede: `git push origin main`. O workflow de
-deploy (`.github/workflows/deploy.yml`) é **manual** (`workflow_dispatch`), de
-modo que o envio dispara a CI e **não** publica nada em produção.
+O workflow de deploy (`.github/workflows/deploy.yml`) é **manual**
+(`workflow_dispatch`): o envio dispara a CI e **não** publica nada em
+produção.
+
+Depois do `cf8ab16` houve uma segunda rodada, com o aceite de rede real e as
+três correções que ele exigiu (parser da BrasilAPI, troca do provedor de
+placa, rota do Keybase). O resultado medido está na seção de aceite acima.
 
 ## Evidência real obtida (2026-10-30)
 

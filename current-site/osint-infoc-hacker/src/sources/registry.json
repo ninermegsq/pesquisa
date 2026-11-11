@@ -36,7 +36,7 @@
     { "id": "cpf_valida", "titulo": "CPF", "tipos": ["cpf"], "custo": 0, "ttl": 0, "provenance": "cpf-dv-local", "chave": false, "requer": null },
     { "id": "cpf_brasilapi", "titulo": "Cadastro de CPF", "tipos": ["cpf"], "custo": 1, "ttl": 86400, "provenance": "brasilapi-cpf-v1", "chave": false, "requer": null },
     { "id": "placa_footprint", "titulo": "Rastreio de placa", "tipos": ["placa"], "custo": 0, "ttl": 0, "provenance": "placa-mercosul-local", "chave": false, "requer": null },
-    { "id": "placa_sinesp", "titulo": "Veiculo", "tipos": ["placa"], "custo": 1, "ttl": 86400, "provenance": "sinesp-apicarros", "chave": false, "requer": null },
+    { "id": "placa_consultarplaca", "titulo": "Veiculo", "tipos": ["placa"], "custo": 1, "ttl": 86400, "provenance": "consultarplaca-v2", "chave": false, "requer": { "tipo": "chave", "env": "CONSULTARPLACA_CREDENCIAL" } },
     { "id": "nome_perfil", "titulo": "Perfis", "tipos": ["nome"], "custo": 10, "ttl": 86400, "provenance": "maigret-perfil-publico", "chave": false, "requer": null }
   ]
 }

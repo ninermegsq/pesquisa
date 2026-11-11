@@ -4,7 +4,7 @@
 
 export const REGISTRY_META = Object.freeze({
   versao: 1,
-  digest: "c8cb3fa72aa1505e6b2cc83439d20efcc98ae96c828970bd2a63ca4e1600649d",
+  digest: "6f2ee2a01ee57446ccb2452ca62e201f2589b71e7d1b95f0bd8a62f5a6410004",
   fontes: Object.freeze({
     "gravatar": Object.freeze({
       id: "gravatar",
@@ -306,15 +306,15 @@ export const REGISTRY_META = Object.freeze({
       chave: false,
       requer: null
     }),
-    "placa_sinesp": Object.freeze({
-      id: "placa_sinesp",
+    "placa_consultarplaca": Object.freeze({
+      id: "placa_consultarplaca",
       titulo: "Veiculo",
       tipos: Object.freeze(["placa"]),
       custo: 1,
       ttl: 86400,
-      provenance: "sinesp-apicarros",
+      provenance: "consultarplaca-v2",
       chave: false,
-      requer: null
+      requer: Object.freeze({"tipo":"chave","env":"CONSULTARPLACA_CREDENCIAL","opcional":false})
     }),
     "nome_perfil": Object.freeze({
       id: "nome_perfil",

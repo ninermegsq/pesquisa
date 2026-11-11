@@ -5,56 +5,83 @@ Estado: código candidato; não promovido a produção. Nenhum novo scan foi exe
 ## Provedores dos alvos novos: CPF, placa e nome (2026-11-11)
 
 As cinco fontes novas (CPF, placa e nome completo) foram escolhidas a partir
-da pesquisa em repositórios open source de OSINT e da sonda
-`verification/probe-novos-provedores.mjs` (`npm run probe:novas`), que mede
-os candidatos e **não** grava nada no projeto.
+da pesquisa em repositórios open source de OSINT e das sondas de rede
+(`verification/probe-novos-provedores.mjs` — `npm run probe:novas` —,
+`verification/probe-placa-rotas.mjs` — `npm run probe:placa-rotas` —,
+`verification/probe-alcance-gov.mjs` — `npm run probe:alcance` — e
+`verification/probe-consultarplaca-doc.mjs` — `npm run probe:placa-doc`).
+Nenhuma das sondas grava algo no projeto.
 
-| Provedor | Fonte | Papel | Estado do aceite |
+| Provedor | Fonte | Papel | Estado medido em 2026-11-11 |
 | --- | --- | --- | --- |
-| BrasilAPI `GET /api/cpf/v1/{cpf}` | `cpf_brasilapi` | cadastro público do CPF | **pendente** de rede real nesta rodada |
-| SINESP / API-Carros `GET https://apicarros.com/v1/consulta/{placa}/json` | `placa_sinesp` | cadastro público do veículo | **pendente** de rede real nesta rodada |
-| GitHub, GitLab, Hacker News, Keybase, Dev.to | `nome_perfil` | perfis por nome de usuário derivado (Maigret) | **pendente** de rede real nesta rodada |
-| FIPE `veiculos.fipe.org.br/api/veiculos/v1/placa/...` | — | — | **descartado** como provedor: as rotas responderam 404 |
+| BrasilAPI `GET /api/cpf/v1/{cpf}` | `cpf_brasilapi` | situação do CPF na base pública | **vivo e medido**: 200 em 272 ms (`11144477735`), 200 em 44 ms com `isValid:false` (`11111111111`), 200 em 109 ms (`52998224725`) |
+| GitHub, GitLab, Hacker News, Keybase, Dev.to | `nome_perfil` | perfis por nome de usuário derivado (Maigret) | **vivos e medidos**: 9 perfis em 2 usuários × 5 sites — 10 respostas válidas, 1 consulta sem perfil (dev.to 404), 0 indisponível |
+| Consultar Placa v2 `GET https://api.consultarplaca.com.br/v2/consultarPlaca?placa=…` | `placa_consultarplaca` | cadastro público do veículo | **vivo, com Basic Auth obrigatório**: 401 sem credencial e 401 com credencial inválida; a documentação é pública e responde 200 |
+| SINESP `cidadao.sinesp.gov.br` | — | — | **inacessível desta máquina**: resolve para 189.9.194.154, mas `UND_ERR_CONNECT_TIMEOUT` nas portas 443, 80 e 8443, enquanto Receita (200), gov.br (301) e Detran-SP (302) respondem |
+| API-Carros `apicarros.com` (rota do pacote `sinesp-api`) | `placa_sinesp` (desativada) | cadastro público do veículo | **morta**: o domínio está estacionado (103.224.182.242) e responde HTTP 200 sem JSON |
+| FIPE `veiculos.fipe.org.br/api/veiculos/v1/placa/...` | — | — | **descartada como provedor**: as rotas de placa responderam 404 (a raiz do site responde 200) |
+| Tabela FIPE Brasil `www.tabelafipebrasil.com` | — | — | **descartada**: HTTP 403 atrás do desafio do Cloudflare ("Just a moment...") |
+| SOAP do SERPRO `soap.ws.placa.service.sinesp.serpro.gov.br` | — | — | **descartada**: o host não resolve (ENOTFOUND) |
 
-O provedor da placa é o **SINESP**, na rota usada pelo pacote open source
-`sinesp-api` (o mesmo endpoint que os repositórios de consulta de placa
-usam). O parser segue o formato documentado dessa API: o veículo vem em
-`data.vehicle` (com `vehicle` aceito como alternativa) e traz modelo, ano,
-cor, município e UF. O **FIPE foi medido** antes: `v1`, `v2`, com e sem
-hífen, e a rota de placa inexistente responderam **404**; as rotas de marca e
-modelo também. Ele ficou somente como link de consulta humana dentro de
-`placa_footprint`.
+O provedor da placa passou a ser a **API Consultar Placa v2**. O contrato foi
+lido na documentação oficial do próprio provedor
+(`https://docs.consultarplaca.com.br/llms.txt` e as páginas `.md`), não
+inferido: **Basic Auth**, com o **e-mail da conta como usuário e a api_key como
+senha**; `GET /v2/consultarPlaca?placa=…`; sucesso em HTTP 200 com
+`status:"ok"`, `data_solicitacao` e `dados.informacoes_veiculo.dados_veiculo`
+(placa, chassi, modelo, marca, anos, cor, segmento, espécie, combustível,
+procedência, município, UF) e `dados_tecnicos` (tipo de veículo, sub-segmento,
+potência, cilindradas). Erros vêm em `status:"erro"` com `tipo_do_erro`:
+`placa_nao_encontrada`, `chassi_nao_encontrado`, `informacao_nao_encontrada`,
+`servico_indisponivel` e `credito_insuficiente`. O limite declarado é de **120
+requisições por minuto** e a consulta avulsa de informações básicas custa
+**R$ 0,31** (1 a 1.000 consultas/mês; R$ 0,25 com pacote de créditos).
 
 O provedor do CPF é a **BrasilAPI**, que expõe `GET /api/cpf/v1/{cpf}` sem
-autenticação. O 404 da API significa "o CPF não consta na base consultada" e
-vira `existe:false` com observação explícita — **ausência na base não é
-prova de inexistência**. A fonte `cpf_valida` faz a validação dos dígitos
-verificadores localmente, sem rede, e é ela que sinaliza que um CPF é de
-teste.
+autenticação. O que ela **não** faz foi medido: o provedor devolve
+`{cpf, isValid, rf, ufs}` — **sem nome, nascimento, filiação ou endereço** — ou
+`{isValid:false}`, ou 404. A fonte publica exatamente o que recebeu: quando o
+provedor valida os dígitos mas não afirma se o CPF existe, `existe` fica
+**nulo**, e não vira "não existe" nem "existe". O 404 significa "o CPF não
+consta na base consultada" e vira `existe:false` com observação explícita —
+**ausência na base não é prova de inexistência**. A fonte `cpf_valida` faz a
+validação dos dígitos verificadores localmente, sem rede, e é ela que
+sinaliza que um CPF é de teste.
 
 Para o nome, a técnica portada é a do **Maigret** (o repositório de busca por
 nome completo mais usado da comunidade): o nome vira candidatos de nome de
 usuário e cada candidato é consultado em cinco sites públicos. Nenhum cadastro
-é feito e nenhuma conta é criada.
+é feito e nenhuma conta é criada. O limite é deliberado: **2 usuários × 5
+sites = 10 subrequests**, dentro do orçamento de 38 do scan.
 
 O que os provedores **não** entregam, e o código declara no próprio resultado:
 
-- Nenhum provedor público de placa devolve o **titular** do veículo. A fonte
-  `placa_sinesp` entrega modelo, ano, cor e município/UF do registro e diz no
-  `observacao` que o provedor não informa o dono.
+- Nenhum provedor de placa devolve o **titular** do veículo. A fonte
+  `placa_consultarplaca` entrega modelo, marca, ano, cor, município/UF e dados
+  técnicos, e diz no `observacao` que o provedor não informa o dono. (O
+  provedor tem uma rota separada de "proprietário atual", que custa R$ 6,90 e
+  não faz parte desta fonte.)
 - Um perfil com o mesmo nome **não** prova identidade. `nome_perfil` registra
   isso no resultado.
+- O provedor de placa só aceita os formatos `AAA0000` e `AAA09A00`. O
+  detector local reconhece `LLLNLNN` (Mercosul) e `LLLNNNN`; uma placa
+  Mercosul chega ao provedor e é recusada com HTTP 400 ("Placa informada é
+  invalida…"). A fonte repassa o erro do provedor, sem inventar dado.
 
-**Aceite pendente:** a máquina estava **sem internet** durante a implementação
-deste bloco. O contrato foi verificado offline
-(`verification/novos-alvos-check.mjs`, na cadeia do `npm test`), mas as
-respostas reais dos provedores acima **não** foram observadas nesta rodada.
-Para concluir o aceite:
+**Aceite com rede real (2026-11-11):** executado em
+`verification/aceite-novos-alvos.mjs` (`npm run aceite:novos-alvos`) — **9 de
+9 alvos conformes, 0 divergentes**. Ele mede os três caminhos da fonte de
+veículo: sem credencial (a fonte responde `sem_chave` **sem** chamar a rede),
+com credencial inválida (o provedor responde **HTTP 401**, o que prova que o
+Basic Auth chega nele) e com a credencial do operador (sem conta do operador
+neste ambiente, a fonte volta a responder `sem_chave` — o caminho de sucesso
+**segue sem prova**). A placa de teste gratuita do provedor é a `AAA0000`,
+que devolve dados fictícios sem consumir crédito.
 
-```bash
-npm run probe:novas   # sonda dos provedores candidatos (CPF, placa, nome, sites de perfil)
-npm run probe:live    # sonda de rede real de todas as 32 fontes (inclui cpf e placa)
-```
+Correções que o aceite obrigou: o parser da BrasilAPI (falha em toda resposta
+real, porque exigia `nome`/`nascimento`), a troca do provedor de placa (o
+anterior estava morto) e a rota do Keybase (`/_api/1.0/…` → `/_/api/1.0/…`).
+O detalhe está em `verification/status.md`.
 
 ## Troca do provedor de CNPJ: CNPJ.ws na frente (2026-11-10)
 

@@ -211,7 +211,9 @@ O que **não** muda: `cloudflare-worker.mjs`, `wrangler.toml`, `public/` e as Ne
 - **Busca do GitHub (`npm run pesquisa:github`):** a API pública de busca permite **10 consultas por minuto sem token** e 30 com token. O script espera a janela abrir (`x-ratelimit-reset`) e repete; só depois de duas tentativas registra o aviso e segue com o que tem. O ranking é uma fotografia do momento da execução.
 - **Numverify:** a API pública responde **HTTP 401** sem `access_key`. Por isso a fonte `numverify` é declarada com **credencial obrigatória**: sem `NUMVERIFY_API_KEY` ela responde `sem_chave` e o relatório **não** fica parcial (a fonte não rodou). É a única fonte de telefone que depende de chave.
 - **Checagens de cadastro de e-mail (`email_registro`):** os 8 endpoints públicos respondem se o endereço está **em uso** naquele serviço — isso **não** identifica quem controla o e-mail, e o resultado muda conforme o serviço. Um site bloqueado vira "indisponível" isolado; se nenhum dos 8 responder, a fonte falha de verdade em vez de devolver "nada encontrado".
-- **CPF e placa:** o BrasilAPI (`/api/cpf/v1/`) e o SINESP (`apicarros.com`) não têm cota declarada e podem responder 404 (ausência na base consultada) ou mudar de formato; formato desconhecido vira erro, nunca dado inventado. O **aceite com rede real** dessas fontes está pendente — só o contrato de parsing foi verificado offline.
+- **CPF (BrasilAPI):** medido ao vivo em 2026-11-11, o provedor **não publica o cadastro completo** (nome, nascimento, filiação, endereço): ele responde `{"cpf":"…","isValid":true,"rf":7,"ufs":["ES","RJ"]}`, ou `{"isValid":false}`, ou 404 quando o CPF não consta da base. A fonte publica exatamente o que recebeu, e `existe` fica **nulo** quando o provedor valida os dígitos mas não afirma se o CPF existe. Formato desconhecido vira erro, nunca dado inventado.
+- **Placa (Consultar Placa v2):** é a única API de placa **viva** medida em 2026-11-11, e ela **exige credencial do operador** (`CONSULTARPLACA_CREDENCIAL`, no formato `email:api_key`, Basic Auth). Sem a credencial a fonte responde `sem_chave` e o relatório **não** fica parcial. A consulta é paga (R$ 0,31 por placa na data da medição) e o provedor oferece uma placa de teste gratuita, `AAA0000`, com dados fictícios. O provedor anterior (`apicarros.com`, apresentado como SINESP) está **morto**: responde HTTP 200 sem JSON, com o domínio estacionado.
+- **SINESP oficial:** o host `cidadao.sinesp.gov.br` resolve (189.9.194.154), mas **não aceitou conexão a partir da máquina de verificação** nas portas 80, 443 e 8443, enquanto outros hosts `.gov.br` responderam normalmente (Receita 200, gov.br 301, Detran-SP 302). É uma limitação deste ambiente de teste, não prova de que o serviço esteja fora do ar.
 - **"não encontrado" ≠ seguro**. Uma ausência de resultados não elimina risco, e falhas de APIs devem ser tratadas como resultados inconclusivos.
 - APIs de terceiros podem mudar formatos, preços, restrições de CORS, políticas de consulta ou disponibilidade. As chamadas externas de investigação são feitas pela Function (com exceção do teste anônimo de senha diretamente do navegador).
 - A CSP inclui `frame-src https://challenges.cloudflare.com`, ajuste necessário além do cabeçalho original para permitir o iframe do Turnstile, conforme a documentação oficial da Cloudflare.
@@ -235,7 +237,7 @@ Projeto está pronto para ser versionado e implantado **após configurar a Netli
 
 ## Motor de fontes
 
-`POST /api/scan` recebe `alvo` e token assinado de uso único emitido após Turnstile. Resultados em `caches.default`, com prefixo `https://ostnt.online/__cache/<id>/<alvo>` (componentes codificados); a rota pública desse prefixo responde 404. Sucesso usa o TTL da fonte; erros e timeouts usam 120 segundos. Cache é local ao datacenter e best-effort. KV (OSINT_KV, fallback CACHE) guarda somente limites: duas escritas por scan aceito. Tokens usam Durable Object SQLite para rejeitar replay atomicamente, sem escritas no KV. O orçamento é de 38 subrequests externos declarados; e-mail seleciona 13 fontes e custo 24, telefone seleciona 4 fontes e custo 2 (`telegram` 1, `ddd` 0, `phone_footprint` 0, `numverify` 1), CPF seleciona 2 fontes e custo 1 (`cpf_valida` 0, `cpf_brasilapi` 1), placa seleciona 2 fontes e custo 1 (`placa_footprint` 0, `placa_sinesp` 1) e nome seleciona 3 fontes e custo 13 (`wikidata` 1, `datajud` 2, `nome_perfil` 10). Telegram consulta somente telefone: o número vai para o formato internacional (código 55 em números nacionais de 10 ou 11 dígitos) e a fonte extrai o título e a descrição da página pública de `t.me`. O resultado é `paginaPublica`, **não** "a conta existe": o Telegram entrega a mesma página de contato para qualquer número, e a existência da conta só é resolvida no aplicativo — a fonte registra essa limitação em `observacao`. A migração `token-guard-v1` precisa acompanhar o deploy; conteúdo sem o binding TOKEN_GUARD falha de forma fechada.
+`POST /api/scan` recebe `alvo` e token assinado de uso único emitido após Turnstile. Resultados em `caches.default`, com prefixo `https://ostnt.online/__cache/<id>/<alvo>` (componentes codificados); a rota pública desse prefixo responde 404. Sucesso usa o TTL da fonte; erros e timeouts usam 120 segundos. Cache é local ao datacenter e best-effort. KV (OSINT_KV, fallback CACHE) guarda somente limites: duas escritas por scan aceito. Tokens usam Durable Object SQLite para rejeitar replay atomicamente, sem escritas no KV. O orçamento é de 38 subrequests externos declarados; e-mail seleciona 13 fontes e custo 24, telefone seleciona 4 fontes e custo 2 (`telegram` 1, `ddd` 0, `phone_footprint` 0, `numverify` 1), CPF seleciona 2 fontes e custo 1 (`cpf_valida` 0, `cpf_brasilapi` 1), placa seleciona 2 fontes e custo 1 (`placa_footprint` 0, `placa_consultarplaca` 1) e nome seleciona 3 fontes e custo 13 (`wikidata` 1, `datajud` 2, `nome_perfil` 10). Telegram consulta somente telefone: o número vai para o formato internacional (código 55 em números nacionais de 10 ou 11 dígitos) e a fonte extrai o título e a descrição da página pública de `t.me`. O resultado é `paginaPublica`, **não** "a conta existe": o Telegram entrega a mesma página de contato para qualquer número, e a existência da conta só é resolvida no aplicativo — a fonte registra essa limitação em `observacao`. A migração `token-guard-v1` precisa acompanhar o deploy; conteúdo sem o binding TOKEN_GUARD falha de forma fechada.
 
 A nota de segurança do HTTPS vem do **Qualys SSL Labs** (`ssllabs`), que substituiu o Mozilla Observatory: a API pública do Observatory foi descontinuada e todas as rotas `/api/*` respondem 404. A API v3 do SSL Labs não traz nota no nível do host — ela vem por endpoint (`endpoints[].grade`) —, então a fonte publica a **pior nota entre os servidores avaliados**, que é a própria regra do provedor. Enquanto a avaliação não foi publicada, a fonte devolve `situacao: "em_andamento"` (sem nota e sem erro) com TTL próprio de 300 segundos, para que a consulta seguinte encontre a nota; com a avaliação pronta, vale o TTL da fonte (3600 s).
 
@@ -277,9 +279,9 @@ fontes novas (o total foi de 27 para 32):
 | Fonte | Tipo | Custo | TTL | Credencial | O que entrega |
 | --- | --- | --- | --- | --- | --- |
 | `cpf_valida` | cpf | 0 | 0 | nenhuma | Validação local dos dígitos verificadores; **nenhuma** chamada de rede |
-| `cpf_brasilapi` | cpf | 1 | 86400 | nenhuma | Cadastro público do CPF (BrasilAPI): nome, nascimento, filiação, endereço |
+| `cpf_brasilapi` | cpf | 1 | 86400 | nenhuma | Situação do CPF na base pública (BrasilAPI): dígitos verificadores, região fiscal e UFs — **sem** nome, nascimento, filiação ou endereço, que o provedor não publica |
 | `placa_footprint` | placa | 0 | 0 | nenhuma | Formato da placa (Mercosul/antiga) e links das buscas públicas; **nenhuma** chamada de rede |
-| `placa_sinesp` | placa | 1 | 86400 | nenhuma | Cadastro público do veículo (SINESP/apicarros): modelo, ano, cor, município/UF |
+| `placa_consultarplaca` | placa | 1 | 86400 | `CONSULTARPLACA_CREDENCIAL` | Cadastro público do veículo (API Consultar Placa v2): modelo, marca, ano, cor, município/UF e dados técnicos |
 | `nome_perfil` | nome | 10 | 86400 | nenhuma | Perfis públicos de nomes de usuário derivados do nome completo (técnica do Maigret) |
 
 O que essas fontes **não** dizem — e o relatório registra na fonte:
@@ -291,6 +293,9 @@ O que essas fontes **não** dizem — e o relatório registra na fonte:
 - **A placa identifica o veículo, não o titular.** Nenhum provedor público
   consultado aqui devolve o nome do proprietário; os links entregues são
   consultas manuais em documentos e anúncios.
+- A API de placa aceita apenas os formatos `AAA0000` e `AAA09A00`. Uma placa
+  Mercosul (`ABC1D23`) é recusada pelo provedor com HTTP 400; a fonte repassa
+  o erro, sem inventar dado.
 - Um perfil com o mesmo nome **não** prova identidade: homônimos são comuns,
   e a fonte diz isso no próprio resultado.
 
@@ -303,11 +308,16 @@ A detecção do alvo (`src/lib/alvo.mjs`) reconhece a placa nos dois formatos
 (LLLNLNN e LLLNNNN) e não confunde telefone com placa. Nenhum cadastro é feito
 e nenhuma conta é criada: são apenas GETs públicos.
 
-O aceite com **rede real** dessas fontes está **pendente**: a máquina estava
-sem internet durante a implementação. O que foi verificado offline é o
-contrato de parsing, o tratamento do 404 e a falha real — ver
-`verification/novos-alvos-check.mjs` (na cadeia do `npm test`) e
-`verification/probe-novos-provedores.mjs` (`npm run probe:novas`).
+O aceite com **rede real** foi feito em **2026-11-11** (`npm run aceite:novos-alvos`)
+e mudou três coisas: o parser da BrasilAPI passou a publicar os três formatos
+**medidos** (e não um cadastro completo que o provedor não entrega), a fonte de
+veículo trocou de provedor — o antigo estava morto — e a rota do Keybase foi
+corrigida de `/_api/1.0/…` (404 em toda requisição) para `/_/api/1.0/…`. O que
+**continua sem verificação**: o caminho de sucesso da API de placa (exige uma
+conta paga do operador), a execução no edge da Cloudflare e a rota do SINESP,
+que não aceitou conexão desta máquina. O contrato de parsing, o tratamento do
+404, do 401 e da falha real continuam verificados offline — ver
+`verification/novos-alvos-check.mjs` (na cadeia do `npm test`).
 
 Chaves opcionais, somente no servidor:
 ```sh
@@ -317,14 +327,18 @@ wrangler secret put TRANSPARENCIA_KEY
 wrangler secret put DATAJUD_API_KEY
 wrangler secret put CNPJWS_TOKEN
 wrangler secret put NUMVERIFY_API_KEY
+wrangler secret put CONSULTARPLACA_CREDENCIAL
 ```
+
+A credencial do Consultar Placa é o **e-mail da conta como usuário e a api_key
+como senha**, no formato `email:api_key` (Basic Auth).
 
 Sem essas chaves, as fontes correspondentes respondem com o código `sem_chave` ou `sem_token` e o relatório **não** é marcado como parcial: a fonte não rodou, o restante das consultas continua valendo.
 
 O `CNPJWS_TOKEN` é o caso diferente: ele **não** é necessário. A fonte `cnpj_br`
 consulta o CNPJ.ws pela base pública e usa o Minha Receita como reserva; o token
 comercial, quando existe, apenas tira a consulta do limite de 3 por minuto/IP
-da base pública e libera os endpoints extras do plano pago. CPF, placa e nome completo passaram a fazer parte do escopo (ver "Alvos novos: CPF, placa e nome completo" abaixo). Nomes são consultas públicas não conclusivas; o nome informado não confirma identidade. A placa identifica o veículo, não o titular: nenhum provedor público consultado aqui devolve o nome do proprietário. JSON e CSV incluem proveniência e timestamp.
+da base pública e libera os endpoints extras do plano pago. CPF, placa e nome completo passaram a fazer parte do escopo (ver "Alvos novos: CPF, placa e nome completo" acima). Nomes são consultas públicas não conclusivas; o nome informado não confirma identidade. A placa identifica o veículo, não o titular: nenhum provedor público consultado aqui devolve o nome do proprietário. JSON e CSV incluem proveniência e timestamp.
 
 ### Rotas expostas pelo Worker
 

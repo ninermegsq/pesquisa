@@ -62,6 +62,16 @@ function credencialOpcional(env,id){
   return valor?String(valor):null;
 }
 
+// Valor bruto da credencial declarada no manifesto, para a fonte que exige
+// credencial montar a requisicao com ela. O nome da variavel vem do
+// manifesto, e nao do codigo.
+function valorDaCredencial(env,id){
+  const requer=metaDe(id)?.requer;
+  if(!requer)return null;
+  const valor=env?env[requer.env]:null;
+  return valor?String(valor):null;
+}
+
 // Texto de um campo do cadastro: vazio e null (o relatorio omite o campo).
 const texto=v=>v==null?null:(String(v).trim()||null);
 // "Sim"/"Nao"/true/false -> true/false/null. O CNPJ.ws devolve "Sim"/"Nao"
@@ -318,10 +328,18 @@ function dorksDoTelefone(variantes){
 //   - as fontes de rede tem parser estrito: formato desconhecido vira erro
 //     ("formato inesperado"), nunca dado inventado.
 //
-// As fontes de rede (cpf_brasilapi, placa_sinesp, nome_perfil) ainda nao
-// passaram pela aceitacao com internet real: a maquina ficou sem rede no
-// dia da implementacao. O que a verificacao offline prova e o contrato de
-// parsing, o tratamento de 404 e o comportamento quando o provedor falha.
+// As tres fontes de rede passaram pela aceitacao com internet real em
+// 2026-11-11 (`npm run aceite:novos-alvos`). A medicao mudou tres coisas
+// que a verificacao offline nao podia ver:
+//   - `cpf_brasilapi`: o provedor NAO devolve o cadastro completo (nome,
+//     filiacao, endereco). Ele responde `{"cpf":"...","isValid":true,"rf":7,
+//     "ufs":["ES","RJ"]}` ou `{"isValid":false}`. O parser foi refeito para
+//     os dois formatos medidos;
+//   - a fonte de veiculo trocou de provedor: `apicarros.com` e um dominio
+//     estacionado (medido: HTTP 200 sem JSON) e o provedor vivo e o Consultar
+//     Placa, que exige Basic Auth do operador;
+//   - `nome_perfil`: a rota do Keybase mudou de `_api/1.0` para `/_/api/1.0`
+//     (a antiga responde 404) e o perfil vem em `them`, e nao em `user`.
 // ---------------------------------------------------------------------------
 // CPFs de exemplo, com digito verificador valido: 111.444.777-35 (o exemplo
 // classico da validacao de CPF, tambem o exemplo da documentacao da
@@ -418,8 +436,13 @@ const SITES_PERFIL=[
   perfil:j=>{const a=lista(j);return a.length?{usuario:texto(a[0]?.username),nome:texto(a[0]?.name),url:texto(a[0]?.web_url)}:null;}},
  {site:'hackernews',url:u=>`https://hacker-news.firebaseio.com/v0/user/${encodeURIComponent(u)}.json`,
   perfil:j=>j&&typeof j==='object'&&j.id?{usuario:texto(j.id),nome:null,url:`https://news.ycombinator.com/user?id=${j.id}`}:null},
- {site:'keybase',url:u=>`https://keybase.io/_api/1.0/user/lookup.json?username=${encodeURIComponent(u)}`,
-  perfil:j=>j&&j.status&&j.status.code===0&&j.user?{usuario:texto(j.user.username),nome:texto(j.user.full_name),url:`https://keybase.io/${j.user.username}`}:null},
+ // Rota medida ao vivo em 2026-11-11: `/_/api/1.0/user/lookup.json`. A rota
+ // antiga (`/_api/1.0/...`) responde 404. O perfil vem em `them` (o `them`
+ // do `status.code` 0); usuario inexistente vem com HTTP 200 e
+ // `status.code` 205 (NOT_FOUND).
+ {site:'keybase',url:u=>`https://keybase.io/_/api/1.0/user/lookup.json?username=${encodeURIComponent(u)}`,
+  perfil:j=>{const b=j?.them?.basics;
+   return j?.status?.code===0&&b?.username?{usuario:texto(b.username),nome:texto(j?.them?.profile?.full_name),url:`https://keybase.io/${b.username}`}:null;}},
  {site:'devto',url:u=>`https://dev.to/api/users/by_username?url=${encodeURIComponent(u)}`,
   perfil:j=>j&&typeof j==='object'&&j.username?{usuario:texto(j.username),nome:texto(j.name),url:`https://dev.to/${j.username}`}:null}
 ];
@@ -855,25 +878,35 @@ export const REGISTRY=[
       observacao:'Validacao local dos digitos verificadores do CPF e links para as consultas publicas. A fonte nao consulta nenhum servico e nao informa titularidade.'
     }};
   }},
- // Cadastro publico do CPF na BrasilAPI. O provedor responde 404 quando o
- // CPF nao esta na base: a fonte reporta "existe:false" e lembra que
- // ausencia na base nao prova inexistencia do CPF. Qualquer outro formato
- // vira erro: nada de dado chumbado.
+ // Cadastro publico do CPF na BrasilAPI. Respostas medidas ao vivo em
+ // 2026-11-11: `{"cpf":"111.444.777-35","isValid":true,"rf":7,"ufs":["ES","RJ"]}`
+ // (digitos validos, sem dados pessoais), `{"isValid":false}` (digitos
+ // invalidos) e 404 (CPF fora da base). O provedor NAO devolve nome,
+ // nascimento, filiacao nem endereco: a fonte publica o que recebeu e nada
+ // alem. Formato desconhecido vira erro: nada de dado chumbado.
  {id:'cpf_brasilapi',tipos:['cpf'],custo:1,ttl:86400,provenance:'brasilapi-cpf-v1',
   async run(a,c){
     const cpf=so(a.valor);
     const r=await c.get(`https://brasilapi.com.br/api/cpf/v1/${encodeURIComponent(cpf)}`,{timeout:8000});
     if(r.status===404)return {dados:{existe:false,provedor:'brasilapi',
+      digitos_validos:null,cadastro_disponivel:false,
       observacao:'O CPF nao consta na base publica do provedor. Ausencia na base nao prova que o CPF nao exista.'}};
     if(!r.ok)throw falhar(r);
     const j=await J(r);
     if(!j||typeof j!=='object'||Array.isArray(j))throw Error('formato inesperado de CPF');
+    const ufs=lista(j.ufs).map(texto).filter(Boolean);
+    const regiaoFiscal=texto(j.rf);
+    // Digitos invalidos: o provedor diz que o CPF nao passa no verificador.
+    if(j.isValid===false)return {dados:{existe:false,provedor:'brasilapi',
+      digitos_validos:false,cadastro_disponivel:false,regiao_fiscal:regiaoFiscal,ufs,
+      observacao:'O provedor respondeu que o CPF nao passa no digito verificador. A fonte repete a resposta do provedor e nao consulta a Receita.'}};
     const e=j.endereco&&typeof j.endereco==='object'?j.endereco:{};
     const nome=texto(j.nome??j.name);
     const nascimento=dataIso(j.nascimento??j.birthDate??j.dataNascimento);
-    if(!nome&&!nascimento)throw Error('formato inesperado de CPF');
-    return {dados:{
-      existe:true,provedor:'brasilapi',nome,nascimento,
+    // Cadastro completo: o provedor devolveu dados pessoais.
+    if(nome||nascimento)return {dados:{
+      existe:true,provedor:'brasilapi',digitos_validos:true,cadastro_disponivel:true,
+      nome,nascimento,
       sexo:texto(j.sexo??j.gender),
       mae:texto(j.mae??j.mother),
       pai:texto(j.pai??j.father),
@@ -887,8 +920,15 @@ export const REGISTRY=[
         municipio:texto(e.localidade??e.cidade),
         uf:texto(e.uf)
       },
+      regiao_fiscal:regiaoFiscal,ufs,
       observacao:'Cadastro do CPF na base publica da BrasilAPI. A base e uma copia parcial do cadastro da Receita e nao cobre todos os CPFs emitidos.'
     }};
+    // Digitos validos, mas sem dados pessoais publicados: `existe` fica nulo
+    // de proposito — o provedor nao disse que o CPF existe nem que nao existe.
+    if(j.isValid===true)return {dados:{existe:null,provedor:'brasilapi',
+      digitos_validos:true,cadastro_disponivel:false,regiao_fiscal:regiaoFiscal,ufs,
+      observacao:'O provedor validou os digitos do CPF e devolveu a regiao fiscal, mas nao publica dados pessoais deste CPF.'}};
+    throw Error('formato inesperado de CPF');
   }},
  // -------------------------------------------------------------------------
  // Placa de veiculo: formato e buscas publicas (sem rede) e cadastro do
@@ -906,35 +946,72 @@ export const REGISTRY=[
       modelo:p.modelo==='mercosul'?'Mercosul (LLLNLNN)':'anterior (LLLNNNN)',
       buscas:dorksDoPlaca(p.valor),
       links:{
-        sinesp:`https://apicarros.com/v1/consulta/${p.valor}/json`,
-        fipe:`https://veiculos.fipe.org.br/api/veiculos/v1/placa/${p.valor}.json`
+        sinesp_oficial:'https://cidadao.sinesp.gov.br/',
+        consultar_placa:`https://api.consultarplaca.com.br/v2/consultarPlaca?placa=${p.valor}`,
+        documentacao_consultar_placa:'https://docs.consultarplaca.com.br/',
+        detran:'https://www.detran.sp.gov.br/'
       },
-      observacao:'A fonte nao consulta nenhum servico: valida o formato da placa e entrega os links das consultas publicas. Os links sao as rotas conhecidas dos provedores e ainda nao foram verificadas com internet real.'
+      observacao:'A fonte nao consulta nenhum servico: valida o formato da placa e entrega os links das consultas publicas. As rotas foram medidas em 2026-11-11: a API do Consultar Placa respondeu (HTTP 401 sem credencial) e a documentacao e publica; o host do SINESP resolve (189.9.194.154) mas nao aceitou conexao a partir da maquina de verificacao, nas portas 80, 443 e 8443.'
     }};
   }},
- // Cadastro publico do veiculo (SINESP). O provedor responde 404 quando a
- // placa nao consta: a fonte reporta "existe:false". Formato desconhecido
- // vira erro, nunca um veiculo inventado.
- {id:'placa_sinesp',tipos:['placa'],custo:1,ttl:86400,provenance:'sinesp-apicarros',
+ // Cadastro publico do veiculo pela API do Consultar Placa (v2). Medido em
+ // 2026-11-11: o host `api.consultarplaca.com.br` responde e o contrato esta
+ // publicado em https://docs.consultarplaca.com.br (rota
+ // `GET /v2/consultarPlaca?placa=`). A API exige Basic Auth: o e-mail da
+ // conta como usuario e a api_key como senha. Sem essa credencial a fonte nao
+ // roda (`sem_chave`): nao existe caminho publico para a consulta, e o
+ // provedor responde 401. A placa de teste gratuita do provedor e `AAA0000`.
+ {id:'placa_consultarplaca',tipos:['placa'],custo:1,ttl:86400,provenance:'consultarplaca-v2',
   async run(a,c){
-    const placa=String(a.valor??'').toUpperCase();
-    const r=await c.get(`https://apicarros.com/v1/consulta/${encodeURIComponent(placa)}/json`,{timeout:8000});
-    if(r.status===404)return {dados:{existe:false,provedor:'sinesp-apicarros',
-      observacao:'A placa nao consta no cadastro consultado.'}};
+    exigirCredencial(c.env,'placa_consultarplaca');
+    const credencial=valorDaCredencial(c.env,'placa_consultarplaca')||'';
+    const corte=credencial.indexOf(':');
+    if(corte<1)throw Error('credencial do provedor invalida (esperado email:api_key)');
+    const usuario=credencial.slice(0,corte);
+    const senha=credencial.slice(corte+1);
+    const p=normalizarPlaca(a.valor);
+    if(!p)throw Error('placa nao reconhecida');
+    const r=await c.get(`https://api.consultarplaca.com.br/v2/consultarPlaca?placa=${encodeURIComponent(p.valor)}`,
+      {timeout:10000,headers:{authorization:`Basic ${btoa(`${usuario}:${senha}`)}`}});
     if(!r.ok)throw falhar(r);
     const j=await J(r);
-    const v=j?.data?.vehicle??j?.vehicle??null;
+    if(!j||typeof j!=='object'||Array.isArray(j))throw Error('formato inesperado de placa');
+    // O provedor responde 200 tambem nos casos de erro, com status "erro" e
+    // `tipo_do_erro` (placa_nao_encontrada, servico_indisponivel,
+    // credito_insuficiente).
+    if(j.status==='erro'){
+      const tipo=texto(j.tipo_do_erro);
+      if(tipo==='placa_nao_encontrada'||tipo==='informacao_nao_encontrada')
+        return {dados:{existe:false,provedor:'consultarplaca',motivo:tipo,
+          observacao:'O provedor nao tem informacao para esta placa. Ausencia na base do provedor nao prova que o veiculo nao exista.'}};
+      throw Error(`provedor respondeu erro: ${tipo||texto(j.mensagem)||'sem detalhe'}`);
+    }
+    if(j.status!=='ok')throw Error('formato inesperado de placa');
+    const info=j?.dados?.informacoes_veiculo;
+    const v=info?.dados_veiculo;
     if(!v||typeof v!=='object'||Array.isArray(v))throw Error('formato inesperado de placa');
+    const t=info?.dados_tecnicos&&typeof info.dados_tecnicos==='object'?info.dados_tecnicos:{};
     return {dados:{
-      existe:true,provedor:'sinesp-apicarros',
+      existe:true,provedor:'consultarplaca',
+      placa:texto(v.placa),
+      chassi:texto(v.chassi),
       modelo:texto(v.modelo),
-      ano_modelo:v.anoModelo??v.ano_modelo??null,
-      ano_fabricacao:v.anoFabricacao??v.ano_fabricacao??null,
+      marca:texto(v.marca),
+      ano_fabricacao:texto(v.ano_fabricacao),
+      ano_modelo:texto(v.ano_modelo),
       cor:texto(v.cor),
-      cidade:texto(v.cidade),
-      uf:texto(v.uf),
-      tipo_veiculo:texto(v.tipoVeiculo??v.tipo_veiculo),
-      observacao:'Dados do veiculo no cadastro publico consultado (modelo, ano, cor e municipio/UF do registro). O provedor nao informa o titular do veiculo.'
+      segmento:texto(v.segmento),
+      especie:texto(v.especie),
+      combustivel:texto(v.combustivel),
+      procedencia:texto(v.procedencia),
+      municipio:texto(v.municipio),
+      uf:texto(v.uf_municipio),
+      tipo_veiculo:texto(t.tipo_veiculo),
+      sub_segmento:texto(t.sub_segmento),
+      potencia:texto(t.potencia),
+      cilindradas:texto(t.cilindradas),
+      data_solicitacao:texto(j.data_solicitacao),
+      observacao:'Dados do veiculo no cadastro consultado (modelo, ano, cor e municipio/UF do registro). O provedor nao informa o titular do veiculo.'
     }};
   }},
  // -------------------------------------------------------------------------
@@ -951,16 +1028,20 @@ export const REGISTRY=[
     const candidatos=usuariosDoNome(nome);
     if(!candidatos.length)throw Error('nome sem partes suficientes para gerar usuario');
     const testados=candidatos.slice(0,2);
-    const perfis=[];const falhas=[];let respondeu=0;
+    const perfis=[];const falhas=[];let respondeu=0;let semPerfil=0;
     for(const usuario of testados){
       for(const s of SITES_PERFIL){
         try{
           const r=await c.get(s.url(usuario),{timeout:6000});
+          // 404 e resposta valida do site: o usuario nao existe ali. Isso e
+          // "sem perfil", nao falha do provedor.
+          if(r.status===404){respondeu++;semPerfil++;continue;}
           if(!r.ok){falhas.push({site:s.site,usuario,status:r.status});continue;}
           const j=await J(r);
           respondeu++;
           const p=s.perfil(j);
           if(p)perfis.push({site:s.site,...p});
+          else semPerfil++;
         }catch(e){
           falhas.push({site:s.site,usuario,detalhe:String(e?.message||'erro').slice(0,90)});
         }
@@ -975,9 +1056,11 @@ export const REGISTRY=[
       usuarios:candidatos,
       testados:testados.length,
       perfis,
+      respostas:respondeu,
+      sem_perfil:semPerfil,
       falhas:falhas.length,
       buscas:dorksDoNome(nome),
-      observacao:`Perfis publicos com nomes de usuario derivados do nome completo (tecnica do Maigret). ${perfis.length} perfil(is) em ${testados.length} usuario(s) testado(s) e ${SITES_PERFIL.length} sites; ${falhas.length} consulta(s) sem perfil ou indisponivel(is). Um perfil com o mesmo nome nao prova que a pessoa do alvo seja a dona do perfil.`
+      observacao:`Perfis publicos com nomes de usuario derivados do nome completo (tecnica do Maigret). ${perfis.length} perfil(is) em ${testados.length} usuario(s) testado(s) e ${SITES_PERFIL.length} sites; ${respondeu} resposta(s) valida(s), ${semPerfil} consulta(s) sem perfil e ${falhas.length} indisponivel(is). Um perfil com o mesmo nome nao prova que a pessoa do alvo seja a dona do perfil.`
     }};
   }}
 ];

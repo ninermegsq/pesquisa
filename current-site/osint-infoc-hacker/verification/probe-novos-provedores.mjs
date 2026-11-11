@@ -117,7 +117,20 @@ const EXTRA = [
   { grupo: 'usuario2', nome: 'hackernews-pg', url: 'https://hacker-news.firebaseio.com/v0/user/pg.json' },
   { grupo: 'usuario2', nome: 'keybase-chris', url: 'https://keybase.io/_api/1.0/user/lookup.json?username=chris' },
   { grupo: 'usuario2', nome: 'steam-gaben', url: 'https://steamcommunity.com/id/gaben', accept: 'text/html' },
-  { grupo: 'usuario2', nome: 'github-busca-nome', url: 'https://api.github.com/search/users?q=%22Maria+Silva%22+in:fullname&per_page=5' }
+  { grupo: 'usuario2', nome: 'github-busca-nome', url: 'https://api.github.com/search/users?q=%22Maria+Silva%22+in:fullname&per_page=5' },
+
+  // --- Keybase: a rota antiga (_api) responde 404; a atual usa /_/api ---
+  { grupo: 'usuario3', nome: 'keybase-novo-pg', url: 'https://keybase.io/_/api/1.0/user/lookup.json?username=pg' },
+  { grupo: 'usuario3', nome: 'keybase-novo-mariassilva', url: 'https://keybase.io/_/api/1.0/user/lookup.json?username=mariassilva' },
+  { grupo: 'usuario3', nome: 'keybase-novo-chris', url: 'https://keybase.io/_/api/1.0/user/lookup.json?username=chris' },
+  { grupo: 'usuario3', nome: 'keybase-antigo-pg', url: 'https://keybase.io/_api/1.0/user/lookup.json?username=pg' },
+  { grupo: 'usuario3', nome: 'keybase-autocomplete', url: 'https://keybase.io/_/api/1.0/user/autocomplete.json?username=marias' },
+
+  // --- Dev.to: a rota por username responde 200 quando o usuario existe ---
+  { grupo: 'usuario3', nome: 'devto-mariassilva', url: 'https://dev.to/api/users/by_username?url=mariassilva' },
+  { grupo: 'usuario3', nome: 'hackernews-marias', url: 'https://hacker-news.firebaseio.com/v0/user/marias.json' },
+  { grupo: 'usuario3', nome: 'github-marias', url: 'https://api.github.com/users/marias' },
+  { grupo: 'usuario3', nome: 'gitlab-marias', url: 'https://gitlab.com/api/v4/users?username=marias' }
 ];
 
 async function main() {

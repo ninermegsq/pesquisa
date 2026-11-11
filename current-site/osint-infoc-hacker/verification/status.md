@@ -419,19 +419,19 @@ verdade — "não consegui perguntar" não vira "não achei".
 ## Envio para o GitHub e estado do aceite (2026-11-11)
 
 O trabalho desta etapa **foi enviado** ao `origin`
-(`https://github.com/ninermegsq/pesquisa.git`, branch `main`): o commit
-`cf8ab16` ("feat: adiciona alvos CPF, placa e nome completo com verificacao
-offline") está no `main` remoto. É esse envio que resolve o aviso do editor —
-"**Sync automático — Desligado. Faça o primeiro envio a ninermegsq/pesquisa
-(main) para ligar.**"
+(`https://github.com/ninermegsq/pesquisa.git`, branch `main`), em duas
+rodadas: `cf8ab16` ("feat: adiciona alvos CPF, placa e nome completo com
+verificacao offline") e `d3cbb9e` ("fix(alvos): corrige parser do BrasilAPI,
+troca o provedor de placa e arruma a rota do Keybase") — a segunda traz o
+aceite de rede real e as três correções que ele exigiu. É esse envio que
+resolve o aviso do editor — "**Sync automático — Desligado. Faça o primeiro
+envio a ninermegsq/pesquisa (main) para ligar.**"
 
 O workflow de deploy (`.github/workflows/deploy.yml`) é **manual**
 (`workflow_dispatch`): o envio dispara a CI e **não** publica nada em
 produção.
 
-Depois do `cf8ab16` houve uma segunda rodada, com o aceite de rede real e as
-três correções que ele exigiu (parser da BrasilAPI, troca do provedor de
-placa, rota do Keybase). O resultado medido está na seção de aceite acima.
+O resultado medido do aceite está na seção de aceite acima.
 
 ## Evidência real obtida (2026-10-30)
 

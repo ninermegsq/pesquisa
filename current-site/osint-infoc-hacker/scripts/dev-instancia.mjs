@@ -47,13 +47,17 @@ const dormir = ms => new Promise(r => setTimeout(r, ms));
 
 export const caminhoInstancia = (pid) => path.join(os.tmpdir(), `${PREFIXO}${pid}${SUFIXO}`);
 
-export function registrarInstancia({ pid, porta, papel, url }) {
+export function registrarInstancia({ pid, porta, papel, url, ppid } = {}) {
   const dados = {
     projeto: PROJETO,
     pid: Number(pid),
     porta: Number(porta) || null,
     papel: papel || 'previa',
     url: url || '',
+    // O processo que iniciou este servidor. Serve para saber se ele virou
+    // orfao: o editor encerra a arvore que subiu, mas o `node scripts/dev-server.mjs`
+    // sobrevive e continua segurando a porta.
+    ppid: Number(ppid ?? process.ppid) || null,
     iniciado_em: new Date().toISOString()
   };
   try {
@@ -130,7 +134,28 @@ export function encerrarProcesso(pid) {
 // Encera as instancias do projeto que ainda seguram uma porta canonica,
 // liberando a porta para o servidor que esta subindo agora.
 // O servidor de fundo usa porta efemera e, por isso, nunca e atingido.
-export async function liberarPortasCanicas({ portas = portasCanonicas(), excetoPid = process.pid } = {}) {
+// Uma instancia e ORFA quando o processo que a iniciou ja morreu. E o unico
+// caso em que um servidor pode assumir a porta de outro: um servidor VIVO
+// (a previa do editor, ou o servidor de fundo de outra sessao) nunca e
+// derrubado por outro servidor. Derrubar uma previa viva e o que produz
+// "o servidor terminou antes de abrir a previa".
+export function instanciaOrfa(instancia) {
+  const ppid = Number(instancia?.ppid);
+  if (!Number.isFinite(ppid) || ppid <= 0) return false;
+  // Linux: o processo orfao e reparentado para o init (pid 1).
+  if (ppid === 1) return true;
+  return !processoVivo(ppid);
+}
+
+// Encerra as instancias do projeto que ainda seguram uma porta canonica,
+// liberando a porta para o servidor que esta subindo agora.
+//
+// Politica de posse (por padrao, `apenasOrfas = true`): so uma instancia
+// orfa e encerrada. Com `apenasOrfas = false`, o operador esta assumindo a
+// porta de proposito (flag `--assumir` do servidor) e a instancia registrada
+// e encerrada mesmo que esteja viva.
+// O servidor de fundo usa porta efemera e, por isso, nunca e atingido.
+export async function liberarPortasCanicas({ portas = portasCanonicas(), excetoPid = process.pid, apenasOrfas = true } = {}) {
   const encerrados = [];
   for (const instancia of listarInstancias()) {
     if (instancia.invalido) {
@@ -144,13 +169,15 @@ export async function liberarPortasCanicas({ portas = portasCanonicas(), excetoP
     }
     const porta = Number(instancia.porta);
     if (!Number.isFinite(porta) || !portas.includes(porta)) continue;
+    const orfa = instanciaOrfa(instancia);
+    if (apenasOrfas && !orfa) continue;
     if (!encerrarProcesso(instancia.pid)) continue;
     for (let i = 0; i < 60; i++) {
       if (!processoVivo(instancia.pid)) break;
       await dormir(50);
     }
     removerInstancia(instancia.pid);
-    encerrados.push({ pid: instancia.pid, porta, papel: instancia.papel || 'previa' });
+    encerrados.push({ pid: instancia.pid, porta, papel: instancia.papel || 'previa', orfa });
   }
   return encerrados;
 }

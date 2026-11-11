@@ -1,27 +1,46 @@
 // Verificacao de regressao da previa do editor.
 //
 // Sintoma original: "A previa nao iniciou: o servidor terminou antes de abrir
-// a previa". Causa: cada tentativa de preview deixava um servidor orfao
-// segurando uma das portas da lista da previa (o editor encerra a arvore que
-// iniciou, mas o `node scripts/dev-server.mjs` sobrevive). Com a lista
-// esgotada, o servidor novo terminava.
+// a previa". Causa real: todo servidor novo derrubava QUALQUER instancia
+// registrada que segurasse uma porta canonica — inclusive a previa viva do
+// editor. Bastava um `npm test` (que sobe um servidor) para derrubar a
+// previa, e a arvore de orfaos deixados pelo editor acabava com a lista de
+// portas.
+//
+// Politica de posse implementada em scripts/dev-instancia.mjs:
+//   - Um servidor so assume a porta de outro quando o dono e um ORFAO (o
+//     processo que o iniciou ja morreu) ou quando o operador manda assumir
+//     (`--assumir`).
+//   - Um dono VIVO nunca e derrubado por outro servidor.
 //
 // O que esta verificacao prova (LOCAL ONLY, sem rede externa):
-//   1. Uma instancia nova ASSUME a porta canonica: a instancia antiga que a
-//      segurava e encerrada e a nova responde 200 na MESMA porta.
-//   2. O servidor de fundo (porta efemera, fora da lista) NAO e atingido.
-//   3. A interface responde 200 na porta canonica apos a troca.
-//   4. O registro de instancias fica com um unico dono por porta canonica.
-//   5. Ao encerrar, o registro e removido (nada fica pendurado em %TEMP%).
+//   1. Um dono VIVO nao e derrubado: o servidor novo sobe em outra porta e o
+//      dono continua respondendo 200. (Regressao do bug do editor.)
+//   2. Um dono ORFAO tem a porta assumida: o servidor novo sobe na MESMA
+//      porta, com o aviso "porta <n> liberada".
+//   3. O servidor de fundo (porta efemera, fora da lista) NAO e atingido.
+//   4. A interface responde 200 na porta assumida e o registro fica com um
+//      unico dono por porta.
+//
+// O estado de orfao e reproduzido como ele acontece na pratica: o registro
+// da instancia aponta para um pai que ja morreu. O arquivo de registro esta
+// em %TEMP% e e apenas uma pista local (o proprio servidor o escreve e o
+// apaga), por isso o teste pode reescreve-lo para simular a morte do pai.
 //
 // As portas usadas aqui sao proprias (NEXUS_PORTAS_PREVIA), para nao
 // disputar a porta com a previa viva do editor durante `npm test`.
 
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { listarInstancias, processoVivo } from '../scripts/dev-instancia.mjs';
+import {
+  caminhoInstancia,
+  instanciaOrfa,
+  listarInstancias,
+  processoVivo
+} from '../scripts/dev-instancia.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
@@ -63,9 +82,21 @@ async function encerrar(filho) {
   await dormir(200);
 }
 
+// Reescreve o registro da instancia com um pai morto: e o estado que o
+// servidor encontra quando o processo que subiu a previa foi encerrado e o
+// `node scripts/dev-server.mjs` sobreviveu.
+function marcarComoOrfao(pid) {
+  const arquivo = caminhoInstancia(pid);
+  const registro = JSON.parse(readFileSync(arquivo, 'utf8'));
+  registro.ppid = 999999; // pid que nao existe na maquina
+  writeFileSync(arquivo, JSON.stringify(registro, null, 2), 'utf8');
+  return registro;
+}
+
 const instA = subir(['--port', String(PORTA)]);
 const instFundo = subir(['--efemera']);
 let instB = null;
+let instC = null;
 let resultado = {};
 
 try {
@@ -76,19 +107,36 @@ try {
   assert.ok(urlFundo > 0, `o servidor de fundo nao subiu. Saida:\n${instFundo.saida()}`);
   assert.notEqual(urlFundo, PORTA, 'o servidor de fundo deveria usar porta efemera');
 
-  // Instancia nova na mesma porta: deve assumir a porta e encerrar a antiga.
+  // Regra de orfao, isolada: pai vivo = nao orfao; pai morto = orfao.
+  assert.equal(instanciaOrfa({ ppid: process.ppid }), false, 'um pai vivo nao pode ser lido como orfao');
+  assert.equal(instanciaOrfa({ ppid: 999999 }), true, 'um pai morto tem de ser lido como orfao');
+
+  // 1. Dono VIVO: um servidor novo nao pode derrubar a previa do editor.
   instB = subir(['--port', String(PORTA)]);
   const urlB = await esperarUrl(instB);
-  assert.equal(urlB, PORTA, `a nova instancia nao assumiu a porta canonica. Saida:\n${instB.saida()}`);
-  assert.ok(
-    instB.saida().includes(`porta ${PORTA} liberada`),
-    `sem aviso de assuncao de porta. Saida:\n${instB.saida()}`
-  );
+  assert.ok(urlB > 0, `o servidor novo nao subiu. Saida:\n${instB.saida()}`);
+  assert.notEqual(urlB, PORTA, 'a porta ocupada nao podia ser assumida: o dono esta vivo');
+  assert.equal(instA.exitCode, null, 'o dono VIVO da porta foi derrubado: isso derruba a previa do editor');
+  assert.ok(!instB.saida().includes(`porta ${PORTA} liberada`), 'o servidor novo nao deveria ter assumido a porta de um dono vivo');
+  const vivoA = await fetch(`http://127.0.0.1:${PORTA}/`, { headers: { origin: `http://127.0.0.1:${PORTA}` } });
+  await vivoA.text();
+  assert.equal(vivoA.status, 200, 'o dono vivo da porta parou de responder');
+  const donoVivoPreservado = { porta: PORTA, pid: instA.pid, vivo: true, status: vivoA.status };
 
-  // A instancia antiga tem de estar morta: e ela que segurava a porta.
+  // 2. Dono ORFAO: a porta e assumida pelo servidor novo, na MESMA porta.
+  const registro = marcarComoOrfao(instA.pid);
+  assert.equal(registro.ppid, 999999, 'o registro nao foi reescrito com o pai morto');
+
+  instC = subir(['--port', String(PORTA)]);
+  const urlC = await esperarUrl(instC);
+  assert.equal(urlC, PORTA, `a nova instancia nao assumiu a porta do orfao. Saida:\n${instC.saida()}`);
+  assert.ok(
+    instC.saida().includes(`porta ${PORTA} liberada`),
+    `sem aviso de assuncao de porta. Saida:\n${instC.saida()}`
+  );
   const deadline = Date.now() + 8000;
   while (Date.now() < deadline && instA.exitCode === null) await dormir(120);
-  assert.notEqual(instA.exitCode, null, 'a instancia antiga continuou viva segurando a porta');
+  assert.notEqual(instA.exitCode, null, 'o servidor orfao continuou vivo segurando a porta');
 
   // O servidor de fundo (porta efemera) continua vivo: a limpeza nao pode
   // derrubar o servidor de fundo do `dev:restart`.
@@ -107,28 +155,30 @@ try {
   // Registro: um unico dono por porta canonica, e o de fundo intacto.
   const registradas = listarInstancias().filter(i => !i.invalido && processoVivo(i.pid));
   const donosCanonicas = registradas.filter(i => Number(i.porta) === PORTA);
-  assert.equal(donosCanonicas.length, 1, `esperado um unico dono da porta canonica;utto: ${JSON.stringify(registradas)}`);
-  assert.equal(donosCanonicas[0].pid, instB.pid, 'o registro nao aponta para a instancia nova');
+  assert.equal(donosCanonicas.length, 1, `esperado um unico dono da porta canonica; visto: ${JSON.stringify(registradas)}`);
+  assert.equal(donosCanonicas[0].pid, instC.pid, 'o registro nao aponta para a instancia nova');
   const donoFundo = registradas.find(i => Number(i.porta) === urlFundo);
   assert.ok(donoFundo, 'o servidor de fundo sumiu do registro');
 
   resultado = {
-    escopo: 'LOCAL ONLY; assuncao da porta canonica da previa',
+    escopo: 'LOCAL ONLY; politica de posse da porta da previa',
     portaCanonica: PORTA,
     portaEfemera: urlFundo,
-    instanciaAntigaEncerrada: true,
+    donoVivoNaoFoiDerrubado: donoVivoPreservado,
+    donoOrfaoFoiAssumido: true,
     servidorDeFundoPreservado: true,
     interfaceNaPortaCanonica: pagina.status,
     donosDaPortaCanonica: donosCanonicas.length
   };
 } finally {
+  await encerrar(instC);
   await encerrar(instB);
   await encerrar(instA);
   await encerrar(instFundo);
   await dormir(300);
   // Nada pendurado: nenhum processo vivo continua registrado.
   const vivos = listarInstancias().filter(i => !i.invalido && processoVivo(i.pid));
-  const pendurados = vivos.filter(i => i.pid === instB?.pid || i.pid === instFundo?.pid || i.pid === instA?.pid);
+  const pendurados = vivos.filter(i => i.pid === instC?.pid || i.pid === instFundo?.pid || i.pid === instA?.pid || i.pid === instB?.pid);
   assert.equal(pendurados.length, 0, `instancia viva continua registrada: ${JSON.stringify(pendurados)}`);
   // No Windows o encerramento e abrupto (TerminateProcess) e o arquivo de
   // registro fica pendurado; o proximo servidor remove o registro do processo

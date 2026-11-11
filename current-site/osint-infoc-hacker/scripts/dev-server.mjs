@@ -61,6 +61,11 @@ const efemeraCli = argumentos.includes('--efemera');
 // Sem a flag, o servidor tenta outras portas livres para que a previa do
 // editor abra mesmo com a porta preferida ja em uso.
 const semFallback = argumentos.includes('--sem-fallback');
+// --assumir: assumir a porta pedida mesmo que o dono registrado esteja VIVO
+// (encerra o dono). Por padrao o servidor so assume a porta de um orfao
+// (processo que o iniciou ja morreu): derrubar uma previa viva do editor
+// e o que produzia "o servidor terminou antes de abrir a previa".
+const assumirCli = argumentos.includes('--assumir');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -524,17 +529,27 @@ async function main() {
     // portas da lista ao mesmo tempo, o que deixava a proxima previa sem porta
     // livre e fazia o processo terminar.
     //
-    // Antes de tentar as portas, o servidor assume a porta canonica: as
-    // instancias antigas deste projeto que ainda a seguram (orfaos deixados
-    // pelo editor ao encerrar a arvore que iniciou) sao encerradas. Sem isso,
-    // cada tentativa de previa deixava um servidor orfao, a lista de portas
-    // acabava e o editor mostrava "o servidor terminou antes de abrir a previa".
-    const assumidas = await liberarPortasCanicas({ portas: candidatas, excetoPid: process.pid });
-    for (const assumida of assumidas) {
-      console.error(`[dev] porta ${assumida.porta} liberada: instancia anterior (pid ${assumida.pid}) encerrada.`);
-    }
+    // Politica de posse da porta: a porta so e ASSUMIDA quando o dono
+    // registrado e um orfao (o processo que o iniciou ja morreu) ou quando
+    // o operador pediu explicitamente (`--assumir`). Uma previa viva do
+    // editor nunca e derrubada por outro servidor: e exatamente isso que
+    // produzia "o servidor terminou antes de abrir a previa" (qualquer
+    // `npm test` derrubava a previa ao subir o proprio servidor).
     for (const port of candidates) {
-      const opened = await openPort(port, bindings);
+      let opened = await openPort(port, bindings);
+      if (!opened.length) {
+        // A porta esta ocupada. Se o dono registrado for um orfao (ou se o
+        // operador mandou assumir), ele e encerrado e a porta e liberada.
+        const assumidas = await liberarPortasCanicas({
+          portas: [port],
+          excetoPid: process.pid,
+          apenasOrfas: !assumirCli
+        });
+        for (const assumida of assumidas) {
+          console.error(`[dev] porta ${assumida.porta} liberada: instancia anterior (pid ${assumida.pid}) encerrada.`);
+        }
+        if (assumidas.length) opened = await openPort(port, bindings);
+      }
       if (!opened.length) continue;
       groups.push({ port, opened });
       break;

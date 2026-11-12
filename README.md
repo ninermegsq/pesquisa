@@ -36,6 +36,7 @@ npm run check              # sintaxe de todos os arquivos .mjs/.js (walker)
 npm test                   # verificações offline (contrato, cache, dev-server, CI)
 npm run build              # gera registro e migrações e injeta public/ no Worker
 npm run check:build        # prova que o build é idempotente (árvore limpa)
+npm run mapa:sync          # gera o public/mapa.js do pacote Netlify a partir do canônico
 npm run warm-token -- --escopo operador   # emite um token de operação
 npm run mestre             # chave mestra do painel (arquivo local + secret do Worker + hash no banco)
 npm run check:admin        # contrato offline do painel admin
@@ -96,6 +97,16 @@ relatório em PDF (`public/relatorio.js`) usa a mesma paleta e é montado à mã
 Os detalhes por fonte continuam acessíveis, recolhidos em um único acordeão
 ("DETALHES DAS FONTES"). A verificação offline está em
 `verification/mapa-pdf-check.mjs` (`npm run check:mapa`).
+
+**As linhas saem separadas, não empilhadas.** Cada arco nasce num ponto
+diferente do anel de despacho ao redor da origem; fontes que saem quase na
+mesma direção formam um leque, e dentro do leque cada linha recebe uma faixa
+lateral própria (deslocada perpendicularmente ao cordão). Uma passada final
+afasta qualquer curva que ainda encoste na vizinha. O check fixo esse
+comportamento: nenhuma célula de 4×4 px pode ter mais de 4 arcos e nenhuma
+dupla de linhas pode andar colada. O `public/mapa.js` do pacote Netlify é
+gerado a partir deste arquivo (`npm run mapa:sync`); o check falha se as duas
+cópias divergirem.
 
 ## Painel admin
 

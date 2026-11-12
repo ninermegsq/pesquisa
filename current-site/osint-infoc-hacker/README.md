@@ -35,6 +35,16 @@ O relatório em PDF (`public/relatorio.js`) é montado à mão (sem biblioteca d
 PDF no projeto) e usa a mesma paleta. `verification/mapa-pdf-check.mjs`
 confere os dois offline, carregando os scripts em um sandbox `node:vm`.
 
+**As linhas saem separadas, não empilhadas.** Cada arco nasce num ponto
+diferente do anel de despacho ao redor da origem; fontes que saem quase na
+mesma direção formam um leque, e dentro do leque cada linha ganha uma faixa
+lateral própria (deslocada perpendicularmente ao cordão), com uma passada
+final que afasta qualquer curva ainda encostada na vizinha. O check fixa esse
+comportamento: nenhuma célula de 4×4 px pode ter mais de 4 arcos e nenhuma
+dupla de linhas anda colada. O `public/mapa.js` do pacote Netlify
+(`../../osint-infoc-hacker/public/mapa.js`) é gerado a partir deste arquivo com
+`npm run mapa:sync`; o check falha se as duas cópias divergirem.
+
 O Worker serve `/mapa.js` e `/relatorio.js` como estáticos e o `index.html`
 carrega os dois com `defer`.
 

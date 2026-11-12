@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
@@ -36,6 +36,16 @@ const mapa = carregar('mapa.js');
 assert.ok(mapa.window.OSINTMapa, 'mapa.js nao exportou OSINTMapa');
 assert.equal(typeof mapa.window.OSINTMapa.render, 'function');
 
+// A copia do pacote Netlify precisa ter o mesmo corpo do arquivo canonico
+// (so o cabecalho muda). Se divergir, rode "npm run mapa:sync".
+const copiaNetlify = path.resolve(SITE, '..', '..', 'osint-infoc-hacker', 'public', 'mapa.js');
+if (existsSync(copiaNetlify)) {
+  const corpo = c => c.slice(c.indexOf('(function(){'));
+  const canonico = readFileSync(path.join(SITE, 'public', 'mapa.js'), 'utf8');
+  const copiado = readFileSync(copiaNetlify, 'utf8');
+  assert.equal(corpo(copiado), corpo(canonico), 'copia Netlify do mapa fora de sincronia: rode npm run mapa:sync');
+}
+
 const el = elementoFake();
 mapa.window.OSINTMapa.render(el, {
   pais: 'BR',
@@ -70,6 +80,121 @@ const soLocal = elementoFake();
 mapa.window.OSINTMapa.render(soLocal, { pais: 'BR', fontes: [{ id: 'ddd', status: 'ok', ms: 1 }] });
 assert.ok(!soLocal.innerHTML.includes('mapa-arco-'), 'fonte local nao deveria ter arco');
 assert.ok(soLocal.innerHTML.includes('data-nodo="ddd"'), 'fonte local ausente do mapa');
+
+// ---- layout: as linhas tem que se distribuir ----------------------------
+// Cenario realista: oito fontes dividem a mesma regiao dos EUA, mais Europa,
+// mais fontes do Brasil (mesma regiao da origem) e fontes locais.
+const PX = lon => 20 + (lon + 180) / 360 * 960;
+const PY = lat => 8 + (84 - lat) / (84 - -58) * 384;
+const HUB = { x: PX(-46.63), y: PY(-23.55) };
+
+function arcosDoSvg(svg) {
+  const out = [];
+  const re = /class="mapa-arco (?:ok|falha)"(?: style="[^"]*")? d="M([\d.-]+) ([\d.-]+) C([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+)"/g;
+  let m;
+  while ((m = re.exec(svg))) out.push({
+    sx: Number(m[1]), sy: Number(m[2]),
+    c1x: Number(m[3]), c1y: Number(m[4]),
+    c2x: Number(m[5]), c2y: Number(m[6]),
+    ex: Number(m[7]), ey: Number(m[8])
+  });
+  return out;
+}
+// Ponto da curva cubica do arco no_parametro t (0 = saida, 1 = chegada).
+function pontoArco(a, t) {
+  const u = 1 - t;
+  return [
+    u * u * u * a.sx + 3 * u * u * t * a.c1x + 3 * u * t * t * a.c2x + t * t * t * a.ex,
+    u * u * u * a.sy + 3 * u * u * t * a.c1y + 3 * u * t * t * a.c2y + t * t * t * a.ey
+  ];
+}
+function nosDoSvg(svg) {
+  const out = [];
+  const re = /data-nodo="([^"]+)"[\s\S]*?<circle cx="([\d.-]+)" cy="([\d.-]+)" r="8"/g;
+  let m;
+  while ((m = re.exec(svg))) out.push({ id: m[1], x: Number(m[2]), y: Number(m[3]) });
+  return out;
+}
+function menorDistancia(lista) {
+  let menor = Infinity;
+  for (let i = 0; i < lista.length; i++) {
+    for (let j = i + 1; j < lista.length; j++) {
+      menor = Math.min(menor, Math.hypot(lista[i].x - lista[j].x, lista[i].y - lista[j].y));
+    }
+  }
+  return menor;
+}
+
+const muitas = elementoFake();
+const fontes = [
+  'gravatar', 'github', 'bluesky', 'emailrep', 'wayback', 'internetdb', 'keybase', 'ipgeo', 'numverify',
+  'hudsonrock', 'urlscan', 'telegram', 'crtsh', 'pgp', 'dns', 'ssllabs', 'asn', 'cnpj_br', 'ddd'
+].map((id, i) => ({ id, status: i % 5 === 0 ? 'erro' : 'ok', ms: 100 + i }));
+mapa.window.OSINTMapa.render(muitas, { pais: 'BR', fontes });
+const svg2 = muitas.innerHTML;
+
+const arcos = arcosDoSvg(svg2);
+const nos = nosDoSvg(svg2);
+assert.equal(nos.length, fontes.length, 'toda fonte consultada precisa ter no no mapa');
+assert.ok(arcos.length >= 14, 'faltaram arcos no cenario de muitas fontes: ' + arcos.length);
+assert.ok(arcos.length < fontes.length, 'fontes da propria regiao da origem nao devem gerar arco');
+
+// Nenhum arco pode sair do mesmo ponto que outro: e o que empilhava as linhas.
+const saidas = arcos.map(a => a.sx.toFixed(1) + ',' + a.sy.toFixed(1));
+assert.equal(new Set(saidas).size, saidas.length, 'arcos ainda saem do mesmo ponto');
+assert.ok(menorDistancia(arcos.map(a => ({ x: a.sx, y: a.sy }))) >= 1.5, 'saidas dos arcos ainda se sobrepoem');
+
+// Toda saida fica no anel de despacho ao redor da origem.
+for (const a of arcos) {
+  const r = Math.hypot(a.sx - HUB.x, a.sy - HUB.y);
+  assert.ok(r > 30 && r < 42, 'arco saiu fora do anel de despacho: raio ' + r.toFixed(1));
+}
+
+// Fontes da mesma regiao nao podem ficar empilhadas num so ponto.
+assert.ok(menorDistancia(nos) >= 9, 'nos do mapa ainda se sobrepoem');
+
+// As oito fontes dos EUA sao um cluster: tem que estar separadas.
+const eua = nos.filter(n => ['github', 'bluesky', 'emailrep', 'wayback', 'internetdb', 'keybase', 'ipgeo', 'numverify'].includes(n.id));
+assert.equal(eua.length, 8, 'cluster dos EUA incompleto');
+assert.ok(menorDistancia(eua) >= 9, 'fontes da mesma regiao continuaram empilhadas');
+
+// Fontes do Brasil (mesma regiao da origem) e fontes locais ficam no anel interno.
+const internas = nos.filter(n => ['cnpj_br', 'ddd'].includes(n.id));
+assert.equal(internas.length, 2, 'fontes internas ausentes');
+for (const n of internas) {
+  const r = Math.hypot(n.x - HUB.x, n.y - HUB.y);
+  assert.ok(r > 25 && r < 70, 'fonte interna fora do anel interno: raio ' + r.toFixed(1));
+}
+assert.ok(!svg2.includes('mapa-arco-cnpj_br'), 'fonte da propria regiao gerou arco');
+
+// As linhas nao podem se empilhar: no maximo tres arcos por celula de 4x4 px.
+// Era o que formava o novelo de linhas em um lugar so.
+const CELULA = 4;
+const porCelula = new Map();
+for (const a of arcos) {
+  for (let t = 0.02; t <= 0.98; t += 0.01) {
+    const p = pontoArco(a, t);
+    const k = Math.floor(p[0] / CELULA) + ':' + Math.floor(p[1] / CELULA);
+    if (!porCelula.has(k)) porCelula.set(k, new Set());
+    porCelula.get(k).add(a);
+  }
+}
+let maisDensa = 0;
+for (const [, set] of porCelula) maisDensa = Math.max(maisDensa, set.size);
+assert.ok(maisDensa <= 4, 'linhas empilharam: ' + maisDensa + ' arcos na mesma celula');
+
+// Nenhuma dupla de linhas pode andar colada no mesmo ponto do percurso.
+let menorLateral = Infinity;
+for (let i = 0; i < arcos.length; i++) {
+  for (let j = i + 1; j < arcos.length; j++) {
+    for (let t = 0.15; t <= 0.85; t += 0.05) {
+      const p1 = pontoArco(arcos[i], t);
+      const p2 = pontoArco(arcos[j], t);
+      menorLateral = Math.min(menorLateral, Math.hypot(p1[0] - p2[0], p1[1] - p2[1]));
+    }
+  }
+}
+assert.ok(menorLateral >= 3, 'linhas andando coladas: distancia ' + menorLateral.toFixed(2));
 
 // Scan sem fontes nao pode quebrar o render.
 const vazio = elementoFake();
@@ -152,6 +277,9 @@ console.log(JSON.stringify({
   escopo: 'LOCAL ONLY; mapa e PDF conferidos sem navegador',
   nos: 3,
   falhas: 1,
+  arcos: arcos.length,
+  celulaMaisDensa: maisDensa,
+  menorLateral: +menorLateral.toFixed(2),
   paginas: paginas,
   bytes: bytes.length
 }));

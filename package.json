@@ -36,6 +36,7 @@
     "check:dev-ownership": "npm --prefix current-site/osint-infoc-hacker run check:dev-ownership",
     "check:stats": "npm --prefix current-site/osint-infoc-hacker run check:stats",
     "check:mapa": "npm --prefix current-site/osint-infoc-hacker run check:mapa",
+    "mapa:sync": "npm --prefix current-site/osint-infoc-hacker run mapa:sync",
     "check:live": "npm --prefix current-site/osint-infoc-hacker run check:live",
     "check:credenciais": "npm --prefix current-site/osint-infoc-hacker run check:credenciais",
     "check:admin": "npm --prefix current-site/osint-infoc-hacker run check:admin",

@@ -131,34 +131,220 @@ function tituloDe(id){
  if(no&&no.textContent.trim())return no.textContent.trim();
  return TITULOS[id]||id;
 }
-function arco(x1,y1,x2,y2){
- const dx=x2-x1,dy=y2-y1,d=Math.hypot(dx,dy);
- const k=Math.min(.4,.05+d/1100);
- const cx=(x1+x2)/2-dy*k,cy=(y1+y2)/2+dx*k;
- return 'M'+x1.toFixed(1)+' '+y1.toFixed(1)+' Q'+cx.toFixed(1)+' '+cy.toFixed(1)+' '+x2.toFixed(1)+' '+y2.toFixed(1);
+// ---------------------------------------------------------------------------
+// Layout do mapa.
+// Os nos sao posicionados em pixels (e nao em graus) para que fontes que
+// dividem a mesma regiao nao fiquem empilhadas num unico ponto. Os arcos saem
+// de um anel ao redor da origem, cada um por um angulo diferente, para que as
+// linhas se distribuam em vez de se empilharem.
+// ---------------------------------------------------------------------------
+const RAIO_PARTIDA=36,RAIO_REGIAO=42,DIST_MIN=26,LIMITE_REGIAO=26,SEP_ANG=0.16,SEP_ENTRADA=0.30,FAN=0.45,SEP_LEQUE=0.34,LANE=18,MIN_SEP=8,DESVIO_MAX=70;
+function arco(x1,y1,c1x,c1y,c2x,c2y,x2,y2){
+ return 'M'+x1.toFixed(1)+' '+y1.toFixed(1)+' C'+c1x.toFixed(1)+' '+c1y.toFixed(1)+' '+c2x.toFixed(1)+' '+c2y.toFixed(1)+' '+x2.toFixed(1)+' '+y2.toFixed(1);
 }
-function posicoes(fontes){
- const pos=new Map(),grupos=new Map(),locais=[];
+function layout(fontes,hx,hy){
+ const grupos=new Map(),regiao=[];
  for(const f of fontes){
   const g=GEO[f.id];
   if(!g)continue;
-  if(g.local){locais.push(f);continue;}
-  const k=g.lat.toFixed(1)+','+g.lon.toFixed(1);
+  if(g.local){regiao.push(f);continue;}
+  const gx=PX(g.lon),gy=PY(g.lat);
+  // Fonte da propria regiao da origem: fica no anel interno, sem arco.
+  if(Math.hypot(gx-hx,gy-hy)<LIMITE_REGIAO){regiao.push(f);continue;}
+  const k=g.lat.toFixed(2)+','+g.lon.toFixed(2);
   if(!grupos.has(k))grupos.set(k,[]);
-  grupos.get(k).push(f.id);
+  grupos.get(k).push(f);
  }
- for(const[k,ids]of grupos){
+ const nos=[];
+ let gid=0;
+ for(const[k,lista]of grupos){
   const[lat,lon]=k.split(',').map(Number);
-  ids.forEach((id,i)=>{
-   const ang=(i/ids.length)*Math.PI*2,r=ids.length>1?1.8:0;
-   pos.set(id,{lat:lat+Math.sin(ang)*r,lon:lon+Math.cos(ang)*r,host:GEO[id].host});
+  const bx=PX(lon),by=PY(lat),n=lista.length;
+  // Mesmo ponto: os nos ganham um circulo em volta, nunca por cima uns dos outros.
+  const r=n>1?DIST_MIN/(2*Math.sin(Math.PI/n)):0;
+  const id=gid++;
+  lista.forEach((f,i)=>{
+   const ang=(i/n)*Math.PI*2-Math.PI/2;
+   // cx/cy guardam o centro do agrupamento e gid o identifica: as linhas que
+   // vao para o mesmo ponto sao separadas em faixas, para nao se empilharem.
+   nos.push({fonte:f,id:f.id,host:GEO[f.id].host,gid:id,cx:bx,cy:by,grupo:n,x:bx+(n>1?Math.cos(ang)*r:0),y:by+(n>1?Math.sin(ang)*r:0)});
   });
  }
- locais.forEach((f,i)=>{
-  const ang=(i/Math.max(1,locais.length))*Math.PI*2;
-  pos.set(f.id,{lat:0,lon:0,local:true,nota:GEO[f.id].nota,desloc:{dlat:0,dlon:0},ang});
+ // Anel interno: fontes locais e fontes da propria regiao da origem.
+ const total=regiao.length;
+ regiao.forEach((f,i)=>{
+  const ang=(i/Math.max(1,total))*Math.PI*2-Math.PI/2;
+  nos.push({fonte:f,id:f.id,regiao:true,host:GEO[f.id].host,nota:GEO[f.id].nota,gid:-1,cx:hx,cy:hy,grupo:0,x:hx+Math.cos(ang)*RAIO_REGIAO,y:hy+Math.sin(ang)*RAIO_REGIAO});
  });
- return pos;
+ // Regioes vizinhas ainda podem se encostar: afasta os nos uns dos outros.
+ for(let it=0;it<90;it++){
+  let moveu=false;
+  for(let i=0;i<nos.length;i++)for(let j=i+1;j<nos.length;j++){
+   const a=nos[i],b=nos[j];
+   let dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy);
+   if(d<1e-4){dx=(i%2?1:-1)*0.01;dy=(j%2?1:-1)*0.01;d=Math.hypot(dx,dy);}
+   if(d<DIST_MIN){
+    const p=(DIST_MIN-d)*0.3;
+    a.x-=dx/d*p;a.y-=dy/d*p;b.x+=dx/d*p;b.y+=dy/d*p;moveu=true;
+   }
+  }
+  if(!moveu)break;
+ }
+ return nos;
+}
+// Distribui as saidas e as curvas dos arcos.
+//
+// O problema: as fontes se agrupam (sete nos na mesma coordenada dos EUA,
+// cinco na Europa) e as linhas que saem da origem para o mesmo grupo andavam
+// uma por cima da outra -- o novelo que o mapa mostrava. A solucao e em
+// tres passos:
+//  1. as saidas nascem em angulos diferentes (nenhuma duas linhas saem do
+//     mesmo ponto do anel);
+//  2. dentro de um leque (fontes que saem quase na mesma direcao) cada linha
+//     ganha uma faixa lateral propria, deslocada perpendicularmente ao
+//     cordao: e o deslocamento que abre o novelo no meio do caminho;
+//  3. uma passada final afasta qualquer curva que ainda encoste na vizinha.
+function partirArcos(nos,hx,hy){
+ const lista=[];
+ for(const no of nos){
+  if(no.regiao)continue;
+  const dx=no.x-hx,dy=no.y-hy;
+  lista.push({no:no,dist:Math.hypot(dx,dy),bearing:Math.atan2(dy,dx)});
+ }
+ if(!lista.length)return lista;
+ // Gira a lista para que o maior vazio angular fique no fim (mantem juntos o
+ // que esta em torno de +/-180 graus).
+ let maiorGap=-1,corte=0;
+ for(let i=0;i<lista.length;i++){
+  const a=lista[i].bearing,b=lista[(i+1)%lista.length].bearing;
+  const gap=(i+1===lista.length?b+2*Math.PI:b)-a;
+  if(gap>maiorGap){maiorGap=gap;corte=i+1;}
+ }
+ if(corte>0)lista.push(...lista.splice(0,corte));
+ let anterior=null;
+ for(const a of lista){
+  if(anterior!==null&&a.bearing-anterior>Math.PI)a.bearing-=2*Math.PI;
+  anterior=a.bearing;
+ }
+ // Leques: as fontes que saem praticamente na mesma direcao formam um leque.
+ const grupos=[];let atual=[];
+ for(const a of lista){
+  if(atual.length&&a.bearing-atual[atual.length-1].bearing>SEP_LEQUE){grupos.push(atual);atual=[];}
+  atual.push(a);
+ }
+ if(atual.length)grupos.push(atual);
+ for(const g of grupos){
+  const n=g.length;
+  const bs=g.map(a=>a.bearing);
+  const bMin=Math.min.apply(null,bs),bMax=Math.max.apply(null,bs);
+  const natural=bMax-bMin;
+  // O leque do grupo abre ate caber uma saida por fonte, sem encostar.
+  const spread=Math.max(natural,(n-1)*SEP_ANG);
+  const meio=(bMin+bMax)/2;
+  // Eixo do leque: a perpendicular media do leque e a direcao em que as
+  // faixas se abrem. Todas as linhas do leque deslizam para a mesma
+  // perpendicular, o que mantem o grupo paralelo (sem cruzamento) e o
+  // separa das demais linhas.
+  let cx=0,cy=0;
+  for(const a of g){cx+=a.no.x;cy+=a.no.y;}
+  cx/=n;cy/=n;
+  const dx=cx-hx,dy=cy-hy;
+  const dl=Math.hypot(dx,dy)||1;
+  const px=-dy/dl,py=dx/dl;
+  // Ordena pela projecao no eixo: a faixa de cada fonte acompanha a ordem
+  // dos alvos, entao as linhas do leque nao se cruzam.
+  const ordem=g.slice().sort((a,b)=>((a.no.x-hx)*px+(a.no.y-hy)*py)-((b.no.x-hx)*px+(b.no.y-hy)*py));
+  ordem.forEach((a,i)=>{
+   // A saida fica na mesma posicao relativa do alvo dentro do leque: a
+   // linha nao precisa dar volta para voltar a direcao do alvo.
+   const p=natural>0?(a.bearing-bMin)/natural:(i+0.5)/n-0.5;
+   a.angulo=meio-spread/2+p*spread;
+   // Posicao dentro do leque: define a faixa lateral da linha.
+   a.fatia=i-(n-1)/2;
+   a.px=px;
+   a.py=py;
+  });
+ }
+ // Passagem final: nenhuma saida pode encostar na anterior.
+ const ord=lista.slice().sort((a,b)=>a.bearing-b.bearing);
+ for(let i=1;i<ord.length;i++){
+  if(ord[i].angulo-ord[i-1].angulo<SEP_ANG)ord[i].angulo=ord[i-1].angulo+SEP_ANG;
+ }
+ for(const a of lista){
+  a.sx=hx+Math.cos(a.angulo)*RAIO_PARTIDA;
+  a.sy=hy+Math.sin(a.angulo)*RAIO_PARTIDA;
+ }
+ // Cada linha vira uma curva cubica com dois controles: um na saida (radial,
+ // para as linhas sairem ja abertas) e um na chegada (inclinado, para cada
+ // linha entrar no alvo por um lado diferente). Os dois controles recebem o
+ // mesmo deslocamento lateral (a faixa do leque): o cordao desliza para o
+ // lado e a linha deixa de andar por cima da vizinha.
+ for(const a of lista){
+  a.hx0=hx;
+  a.hy0=hy;
+  a.desvio=a.fatia*LANE;
+  montarControles(a);
+ }
+ // Passada final: se duas linhas ainda se tocam no meio do caminho, as faixas
+ // se afastam ate o ponto em que cada uma volta a ter o seu corredor.
+ afastaCurvas(lista);
+ for(const a of lista)montarControles(a);
+ return lista;
+}
+function montarControles(a){
+ const no=a.no;
+ const d=Math.hypot(no.x-a.sx,no.y-a.sy)||1;
+ // Angulo de chegada: a visada ate o alvo, corrigida pela faixa do leque.
+ let chegada=Math.atan2(no.y-a.hy0,no.x-a.hx0)+a.fatia*SEP_ENTRADA;
+ // Fontes do mesmo agrupamento entram pelo seu proprio lado do circulo.
+ if(no.grupo>1){
+  const radial=Math.atan2(no.y-no.cy,no.x-no.cx);
+  chegada+=(Math.cos(radial)>=0?1:-1)*FAN;
+ }
+ const l1=Math.min(d*0.45,240),l2=Math.min(d*0.42,220);
+ a.c1x=a.sx+Math.cos(a.angulo)*l1+a.px*a.desvio;
+ a.c1y=a.sy+Math.sin(a.angulo)*l1+a.py*a.desvio;
+ a.c2x=no.x-Math.cos(chegada)*l2+a.px*a.desvio;
+ a.c2y=no.y-Math.sin(chegada)*l2+a.py*a.desvio;
+}
+function pontoDaCurva(a,t){
+ const u=1-t;
+ return [
+  u*u*u*a.sx+3*u*u*t*a.c1x+3*u*t*t*a.c2x+t*t*t*a.no.x,
+  u*u*u*a.sy+3*u*u*t*a.c1y+3*u*t*t*a.c2y+t*t*t*a.no.y
+ ];
+}
+// Afasta as curvas que andam uma por cima da outra: as faixas laterais sao
+// empurradas para os lados ate cada linha ter o seu corredor limpo.
+function afastaCurvas(lista){
+ const passo=0.05;
+ const limita=v=>Math.max(-DESVIO_MAX,Math.min(DESVIO_MAX,v));
+ for(let it=0;it<60;it++){
+  let mexeu=false;
+  for(let i=0;i<lista.length;i++){
+   for(let j=i+1;j<lista.length;j++){
+    const a=lista[i],b=lista[j];
+    let menor=Infinity,pa=null,pb=null;
+    for(let t=0.12;t<=0.88;t+=passo){
+     const p=pontoDaCurva(a,t),q=pontoDaCurva(b,t);
+     const d=Math.hypot(p[0]-q[0],p[1]-q[1]);
+     if(d<menor){menor=d;pa=p;pb=q;}
+    }
+    if(menor>=MIN_SEP||!pa)continue;
+    // Empurra cada linha para o lado que afasta as duas.
+    const ux=pa[0]-pb[0],uy=pa[1]-pb[1];
+    const empurra=(MIN_SEP-menor)*0.5;
+    const sA=(a.px*ux+a.py*uy)>=0?1:-1;
+    const sB=(b.px*ux+b.py*uy)>=0?-1:1;
+    a.desvio=limita(a.desvio+sA*empurra);
+    b.desvio=limita(b.desvio+sB*empurra);
+    montarControles(a);
+    montarControles(b);
+    mexeu=true;
+   }
+  }
+  if(!mexeu)break;
+ }
 }
 function render(el,opts){
  if(!el)return;
@@ -166,40 +352,43 @@ function render(el,opts){
  const ok=fontes.filter(f=>f.status==='ok'),falhas=fontes.filter(f=>f.status!=='ok');
  const hub=PAISES[String(opts.pais||'').toUpperCase()]||PAISES.BR;
  const hx=PX(hub[1]),hy=PY(hub[0]);
- const pos=posicoes(fontes);
  const pontos=terra();
- const arcos=[],nos=[],rotulos=[];
- const local=[];
- for(const f of fontes){
-  const p=pos.get(f.id);
-  if(!p)continue;
+ const nos=layout(fontes,hx,hy);
+ const arcos=partirArcos(nos,hx,hy);
+ const arcosSvg=[],nosSvg=[];
+ arcos.forEach((a,i)=>{
+  const f=a.no.fonte;
   const falhou=f.status!=='ok';
   const cor=falhou?C_RED:C_EMBER;
-  let x,y;
-  if(p.local){x=hx+Math.cos(p.ang)*16;y=hy+Math.sin(p.ang)*16;}
-  else{x=PX(p.lon);y=PY(p.lat);}
-  if(!p.local){
-   arcos.push('<path id="mapa-arco-'+esc(f.id)+'" class="mapa-arco '+(falhou?'falha':'ok')+'" d="'+arco(hx,hy,x,y)+'"/>');
-   arcos.push('<circle class="mapa-pacote" r="1.8" fill="'+cor+'"><animateMotion dur="'+(falhou?'2.2':'3.4')+'s" repeatCount="indefinite" begin="'+(rotulos.length*.28)+'s"><mpath href="#mapa-arco-'+esc(f.id)+'" xlink:href="#mapa-arco-'+esc(f.id)+'"/></animateMotion></circle>');
-  }
-  if(falhou)nos.push('<circle class="mapa-halo" cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="4" fill="none" stroke="'+C_RED+'" stroke-width="1"><animate attributeName="r" values="4;13" dur="2s" repeatCount="indefinite"/><animate attributeName="opacity" values=".8;0" dur="2s" repeatCount="indefinite"/></circle>');
-  nos.push('<g class="mapa-no" data-nodo="'+esc(f.id)+'" tabindex="0" role="button" aria-label="'+esc(tituloDe(f.id)+' · '+(falhou?'falhou':'respondeu'))+'">'+
-   '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="8" fill="transparent"/>'+
-   '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="3.1" fill="'+cor+'" stroke="#050505" stroke-width="1"/>'+
-   '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="5.4" fill="none" stroke="'+cor+'" stroke-width=".6" opacity=".5"/>'+
+  const tracejado=(2.5+(i%3)*0.5).toFixed(1)+' '+(9-(2.5+(i%3)*0.5)).toFixed(1);
+  arcosSvg.push('<path id="mapa-arco-'+esc(f.id)+'" class="mapa-arco '+(falhou?'falha':'ok')+'" style="stroke-dasharray:'+tracejado+'" d="'+arco(a.sx,a.sy,a.c1x,a.c1y,a.c2x,a.c2y,a.no.x,a.no.y)+'"/>');
+  arcosSvg.push('<circle class="mapa-pacote" r="1.8" fill="'+cor+'"><animateMotion dur="'+(falhou?'2.2':'3.4')+'s" repeatCount="indefinite" begin="'+(i*.28)+'s"><mpath href="#mapa-arco-'+esc(f.id)+'" xlink:href="#mapa-arco-'+esc(f.id)+'"/></animateMotion></circle>');
+ });
+ for(const n of nos){
+  const f=n.fonte;
+  const falhou=f.status!=='ok';
+  const cor=falhou?C_RED:C_EMBER;
+  const x=n.x.toFixed(1),y=n.y.toFixed(1);
+  if(falhou)nosSvg.push('<circle class="mapa-halo" cx="'+x+'" cy="'+y+'" r="4" fill="none" stroke="'+C_RED+'" stroke-width="1"><animate attributeName="r" values="4;13" dur="2s" repeatCount="indefinite"/><animate attributeName="opacity" values=".8;0" dur="2s" repeatCount="indefinite"/></circle>');
+  nosSvg.push('<g class="mapa-no" data-nodo="'+esc(f.id)+'" tabindex="0" role="button" aria-label="'+esc(tituloDe(f.id)+' · '+(falhou?'falhou':'respondeu'))+'">'+
+   '<circle cx="'+x+'" cy="'+y+'" r="8" fill="transparent"/>'+
+   '<circle cx="'+x+'" cy="'+y+'" r="3.1" fill="'+cor+'" stroke="#050505" stroke-width="1"/>'+
+   '<circle cx="'+x+'" cy="'+y+'" r="5.4" fill="none" stroke="'+cor+'" stroke-width=".6" opacity=".5"/>'+
    '</g>');
-  local.push(f);
  }
  const svg='<svg class="mapa-svg" viewBox="0 0 1000 400" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" role="img" aria-label="Mapa das fontes consultadas no scan">'+
   '<g class="mapa-terra">'+pontos.map(p=>'<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="1.55"/>').join('')+'</g>'+
-  '<g class="mapa-arcos">'+arcos.join('')+'</g>'+
-  '<g class="mapa-nos"><g class="mapa-origem"><circle cx="'+hx.toFixed(1)+'" cy="'+hy.toFixed(1)+'" r="4.6" fill="none" stroke="'+C_CREAM+'" stroke-width="1" opacity=".9"><animate attributeName="r" values="4.6;12" dur="2.6s" repeatCount="indefinite"/><animate attributeName="opacity" values=".8;0" dur="2.6s" repeatCount="indefinite"/></circle><circle cx="'+hx.toFixed(1)+'" cy="'+hy.toFixed(1)+'" r="2.6" fill="'+C_CREAM+'"/></g>'+nos.join('')+'</g>'+
+  '<g class="mapa-arcos">'+arcosSvg.join('')+'</g>'+
+  '<g class="mapa-nos"><g class="mapa-origem">'+
+   '<circle cx="'+hx.toFixed(1)+'" cy="'+hy.toFixed(1)+'" r="'+RAIO_PARTIDA+'" fill="none" stroke="'+C_CREAM+'" stroke-width=".6" opacity=".28" stroke-dasharray="2 5"/>'+
+   '<circle cx="'+hx.toFixed(1)+'" cy="'+hy.toFixed(1)+'" r="4.6" fill="none" stroke="'+C_CREAM+'" stroke-width="1" opacity=".9"><animate attributeName="r" values="4.6;12" dur="2.6s" repeatCount="indefinite"/><animate attributeName="opacity" values=".8;0" dur="2.6s" repeatCount="indefinite"/></circle>'+
+   '<circle cx="'+hx.toFixed(1)+'" cy="'+hy.toFixed(1)+'" r="2.6" fill="'+C_CREAM+'"/></g>'+nosSvg.join('')+'</g>'+
   '</svg>';
  el.innerHTML='<div class="mapa-topo"><span class="eyebrow">MAPA DE CONEXOES · FONTES CONSULTADAS</span>'+
   '<span class="mapa-contagem"><b>'+ok.length+'</b> ok · <b class="mapa-falhas-n">'+falhas.length+'</b> falha'+(falhas.length===1?'':'s')+' · '+fontes.length+' no total</span></div>'+
   '<div class="mapa-livro">'+svg+'<div class="mapa-tip" role="status" aria-live="polite"></div></div>'+
   '<div class="mapa-legenda"><span><i style="background:'+C_EMBER+'"></i>respondeu</span><span><i style="background:'+C_RED+'"></i>falhou</span><span><i style="background:'+C_CREAM+'"></i>origem da consulta</span><span>clique em um no para abrir os detalhes da fonte</span></div>'+
-  '<p class="mapa-nota">Origem: '+(opts.pais?String(opts.pais).toUpperCase():'BR')+' · o arco mostra o caminho ate a fonte consultada.</p>';
+  '<p class="mapa-nota">Origem: '+(opts.pais?String(opts.pais).toUpperCase():'BR')+' · cada arco sai da origem por um angulo diferente e termina na fonte consultada; fontes da sua regiao ficam no anel interno.</p>';
  const tip=el.querySelector('.mapa-tip');
  const livro=el.querySelector('.mapa-livro');
  const mostrar=(f,nodo)=>{

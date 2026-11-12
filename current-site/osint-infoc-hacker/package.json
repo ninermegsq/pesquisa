@@ -40,6 +40,7 @@
     "check:dev-ownership": "node verification/dev-ownership-check.mjs",
     "check:stats": "node verification/stats-check.mjs",
     "check:mapa": "node verification/mapa-pdf-check.mjs",
+    "check:live": "node scripts/check-live.mjs",
     "check:credenciais": "node scripts/credenciais-check.mjs",
     "check:admin": "node verification/admin-check.mjs",
     "gateway": "node scripts/proxy-gateway.mjs",

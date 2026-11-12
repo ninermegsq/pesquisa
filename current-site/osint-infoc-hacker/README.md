@@ -19,6 +19,25 @@ O domínio `ostnt.online` é servido pelo Cloudflare Worker `ostnt-migration`. P
 
 Para hospedar pela Netlify, use `public/` e `netlify/functions/` e configure as variáveis listadas abaixo na conta Netlify correspondente. Essa é uma rota de hospedagem alternativa, não a publicação atual do domínio.
 
+## Mapa de conexões e relatório em PDF
+
+A visão principal do resultado é um **mapa-mundi em SVG puro**
+(`public/mapa.js`, sem framework e sem bundler). Cada fonte consultada vira um
+nó: ligado por um arco até o país do visitante (de `request.cf.country`),
+com a resposta no tooltip e o clique abrindo o detalhe da fonte
+(`data-fonte` no acordeão). Fonte que respondeu fica em brasa `#e6a274`;
+fonte que **falhou** fica em vermelho `#f87171` com halo pulsando. A paleta é
+a do site (fundo `#050505`, creme `#e7e6d9`, brasa, vermelho) — o mapa não
+divergi do resto da interface. Os detalhes por fonte continuam acessíveis,
+recolhidos em um único acordeão "DETALHES DAS FONTES".
+
+O relatório em PDF (`public/relatorio.js`) é montado à mão (sem biblioteca de
+PDF no projeto) e usa a mesma paleta. `verification/mapa-pdf-check.mjs`
+confere os dois offline, carregando os scripts em um sandbox `node:vm`.
+
+O Worker serve `/mapa.js` e `/relatorio.js` como estáticos e o `index.html`
+carrega os dois com `defer`.
+
 ## Arquivos
 
 ```text
@@ -26,6 +45,8 @@ Para hospedar pela Netlify, use `public/` e `netlify/functions/` e configure as 
 ├─ public/
 │  ├─ index.html
 │  ├─ app.js
+│  ├─ mapa.js
+│  ├─ relatorio.js
 │  ├─ obrigado.html
 │  ├─ favicon.svg
 │  ├─ og.png

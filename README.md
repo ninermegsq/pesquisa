@@ -79,6 +79,24 @@ prévia usa (3000, 5173, ...): os dois convivem sem disputar porta. A saída é
 um JSON com `url`, `pid`, `porta`, `statusRaiz` e o status de cada ativo
 estático. O log do servidor fica em `%TEMP%\osint-dev-server.log`.
 
+## Mapa de conexões
+
+A visão principal do resultado não é mais a lista de fontes: é um **mapa-mundi em
+SVG** (`current-site/osint-infoc-hacker/public/mapa.js`) onde cada fonte
+consultada vira um nó ligado por um arco até o país do visitante. Fonte que
+respondeu fica em brasa (`#e6a274`); fonte que **falhou** fica em vermelho
+(`#f87171`), com halo pulsando. Clicar no nó abre o detalhe da fonte; o país
+vem de `request.cf.country` no Worker.
+
+Sem framework: é SVG gerado em JavaScript puro, com a mesma paleta do site
+(fundo `#050505`, creme `#e7e6d9`, brasa `#e6a274`, vermelho `#f87171`). O
+relatório em PDF (`public/relatorio.js`) usa a mesma paleta e é montado à mão
+(sem biblioteca de PDF).
+
+Os detalhes por fonte continuam acessíveis, recolhidos em um único acordeão
+("DETALHES DAS FONTES"). A verificação offline está em
+`verification/mapa-pdf-check.mjs` (`npm run check:mapa`).
+
 ## Painel admin
 
 O operador tem um painel em `https://ostnt.online/admin` (interface em

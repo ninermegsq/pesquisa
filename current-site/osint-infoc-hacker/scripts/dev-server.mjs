@@ -539,6 +539,14 @@ async function route(req, res) {
   if (pathname === '/api/scan') return devScan(req, res);
   if (pathname === '/api/saude') return devSaude(req, res);
   if (pathname.startsWith('/api/admin')) return devAdmin(req, res);
+  // Funil de visitas: a exportacao acontece no browser e o aviso vai para o
+  // Worker. Localmente nao ha telemetria para gravar: a chamada e aceita e
+  // descartada, para que o aviso do browser nunca vire erro.
+  if (pathname === '/api/evento') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Metodo nao permitido.' });
+    await readBody(req);
+    return sendJson(res, 200, { ok: true });
+  }
   if (pathname === '/.netlify/functions/token') return devToken(req, res);
   if (pathname === '/' || pathname === '/index.html') return sendIndex(res);
   if (pathname === '/app.js') return sendFile(res, path.join(publicDir, 'app.js'));

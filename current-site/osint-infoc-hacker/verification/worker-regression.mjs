@@ -7,6 +7,13 @@ assert.ok(source.includes("url.pathname==='/api/scan'"),'rota /api/scan ausente'
 assert.ok(source.includes('handleScan(req,'),'rota /api/scan nao chama o motor v1.3');
 // A rota de token continua de pe: o app.js ainda pede /.netlify/functions/token.
 assert.ok(source.includes('/.netlify/functions/token'));
+// Funil de visitas: a exportacao acontece no navegador, entao o Worker precisa
+// da rota publica /api/evento, e ela aceita SOMENTE a etapa "exportacao".
+assert.ok(source.includes("url.pathname === '/api/evento'"),'rota /api/evento ausente');
+assert.ok(source.includes("body?.etapa !== 'exportacao'"),'/api/evento aceita outras etapas');
+// O painel admin: API em /api/admin e interface em /admin.
+assert.ok(source.includes('/api/admin'),'rota do painel admin ausente');
+assert.ok(source.includes("url.pathname.startsWith('/admin')")||source.includes("'/admin'"),'interface /admin ausente');
 const tokenSource=source.slice(source.indexOf('async function token('),source.indexOf('const headers ='));
 const reply=(data,status=200,headers={})=>Response.json(data,{status,headers});
 const token=new Function('reply','allowed','detectar','emailRegex','fetch','randomUUID','crypto','sha256',tokenSource+';return token;')(reply,()=>new Set(['https://validation.example']),v=>({valor:v}),/./,async()=>Response.json({success:true,hostname:'validation.example'}),randomUUID,webcrypto,v=>createHash('sha256').update(v).digest('hex'));

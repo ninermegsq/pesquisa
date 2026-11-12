@@ -203,6 +203,18 @@ try {
   assert.equal(errado.status, 429, 'token de aquecimento de outro alvo deveria ser recusado');
   checks.aquecimentoAlvoDivergente = { status: errado.status };
 
+  // 14. Aviso do funil de visitas: a exportacao acontece no navegador e o
+  // aviso chega ao Worker. Localmente a chamada e aceita e descartada.
+  const evento = await realFetch(`${base}/api/evento`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin },
+    body: JSON.stringify({ etapa: 'exportacao', formato: 'json' })
+  });
+  assert.equal(evento.status, 200, '/api/evento deveria aceitar o aviso de exportacao');
+  const eventoBody = await evento.json();
+  assert.equal(eventoBody.ok, true, '/api/evento sem ok:true');
+  checks.evento = { status: evento.status };
+
   console.log(JSON.stringify({
     scope: 'LOCAL ONLY; servidor de desenvolvimento, fontes externas simuladas offline',
     porta: port,

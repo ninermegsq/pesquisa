@@ -266,8 +266,18 @@ function reportRows(){
  for(const source of current.data.fontes||[]){if(source.status==='ok')flatten(source,'',source.dados);else rows.push([source.id,'status',source.erro||source.status,source.provenance||'',source.timestamp||current.data.gerado_em||'']);}
  return rows;
 }
-$('export-json').addEventListener('click',()=>{if(!current)return;const data={...current.data};delete data.fontes;delete data.sources;const report={schemaVersion:1,generatedAt:new Date().toISOString(),email:current.email,fontes:current.data.fontes||[],data};downloadReport(JSON.stringify(report,null,2),'application/json;charset=utf-8','json');});
-$('export-csv').addEventListener('click',()=>{if(!current)return;const csv='\uFEFF'+reportRows().map(row=>row.map(csvCell).join(',')).join('\r\n');downloadReport(csv,'text/csv;charset=utf-8','csv');});
+/* Funil de visitas: a exportacao acontece no browser, entao o aviso vai para o
+   Worker. Nao leva o e-mail nem o conteudo do relatorio: so o formato. */
+function marcarExportacao(formato){
+  try{
+    const payload=JSON.stringify({etapa:'exportacao',formato:formato});
+    const blob=new Blob([payload],{type:'application/json'});
+    if(navigator.sendBeacon&&navigator.sendBeacon('/api/evento',blob))return;
+    fetch('/api/evento',{method:'POST',headers:{'content-type':'application/json'},body:payload,keepalive:true}).catch(()=>{});
+  }catch(e){/* o funil e best effort */}
+}
+$('export-json').addEventListener('click',()=>{if(!current)return;const data={...current.data};delete data.fontes;delete data.sources;const report={schemaVersion:1,generatedAt:new Date().toISOString(),email:current.email,fontes:current.data.fontes||[],data};downloadReport(JSON.stringify(report,null,2),'application/json;charset=utf-8','json');marcarExportacao('json');});
+$('export-csv').addEventListener('click',()=>{if(!current)return;const csv='\uFEFF'+reportRows().map(row=>row.map(csvCell).join(',')).join('\r\n');downloadReport(csv,'text/csv;charset=utf-8','csv');marcarExportacao('csv');});
 $('password-toggle').addEventListener('click',()=>{const show=$('pass-panel').hidden;$('pass-panel').hidden=!show;$('password-toggle').setAttribute('aria-expanded',String(show));if(show)$('password').focus();});
 $('password-run').addEventListener('click',async()=>{const p=$('password').value;if(!p){$('password-result').textContent='Digite uma senha.';return;}const btn=$('password-run');btn.disabled=true;try{const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-1',new TextEncoder().encode(p)))).map(v=>v.toString(16).padStart(2,'0')).join('').toUpperCase();const prefix=hash.slice(0,5),suffix=hash.slice(5);const response=await fetch(`https://api.pwnedpasswords.com/range/${prefix}`,{cache:'no-store',headers:{'Add-Padding':'true'}});if(!response.ok)throw Error(`HTTP ${response.status}`);const body=await response.text();const match=body.split(/\r?\n/).find(line=>line.split(':')[0]===suffix);const hits=match?Number(match.split(':')[1]||0):0;$('password-result').textContent=hits?`Senha encontrada ${fmt(hits)} vezes em coleções de vazamentos. Não a reutilize.`:'não encontrada — isso não garante que a senha seja segura.';}catch(err){$('password-result').textContent='Não foi possível consultar a base de senhas: '+err.message;}finally{btn.disabled=false;}});
 

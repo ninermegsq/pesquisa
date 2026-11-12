@@ -9,11 +9,17 @@ id = "d83ef821c9b44516a7d0f163088cc484"
 binding = "OSINT_KV"
 id = "d83ef821c9b44516a7d0f163088cc484"
 [vars]
+APP_ENV = "production"
 UA_MODE = "identificado"
 UA_NAVEGADOR = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+UA_CONTATO = "ostnt.online/1.0 (+https://ostnt.online)"
 ALLOWED_ORIGINS = "https://ostnt.online"
 UA = "ostnt.online scanner (+https://ostnt.online)"
 BUDGET_SUBREQ = "38"
+# Chave publica do widget Turnstile (valor em uso na producao).
+# `wrangler deploy` substitui o conjunto inteiro de [vars]: sem esta linha a
+# chave cairia do Worker e o endpoint /token deixaria de devolver widget.
+TURNSTILE_SITE_KEY = "0x4AAAAAAFrmxEI1J4LCf279"
 # Painel admin: o endereco e a chave publicavel do Supabase. A chave
 # publicavel e publica por desenho (a protecao esta nas policies RLS e nas
 # funcoes SECURITY DEFINER); a chave de servico NUNCA entra aqui.
@@ -26,6 +32,14 @@ SUPABASE_PUBLISHABLE_KEY = "sb_publishable_6hszy3i4tCuIwlks6Cr94g_F1a6mosu"
 [[durable_objects.bindings]]
 name = "TOKEN_GUARD"
 class_name = "TokenGuard"
-[[migrations]]
-tag = "token-guard-v1"
-new_sqlite_classes = ["TokenGuard"]
+# Sem bloco [[migrations]]: a classe TokenGuard e reexportada pelo entrypoint
+# (cloudflare-worker.mjs: export {TokenGuard}), que e o fluxo declarativo de
+# exports. O Worker em producao ja foi publicado nesse fluxo e a Cloudflare
+# recusa a volta para migrations (codigo 100403). O storage SQLite vem da
+# classe estender DurableObject.
+# O bloco [exports] abaixo e obrigatorio nesse fluxo: sem ele a Cloudflare
+# acusa "provisioned_class_missing_from_config" (o namespace ja provisionado
+# 2b571eaf617445d18834c6d682b19ac6 precisa estar declarado).
+[exports.TokenGuard]
+type = "durable-object"
+storage = "sqlite"

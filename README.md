@@ -37,6 +37,9 @@ npm test                   # verificações offline (contrato, cache, dev-server
 npm run build              # gera registro e migrações e injeta public/ no Worker
 npm run check:build        # prova que o build é idempotente (árvore limpa)
 npm run warm-token -- --escopo operador   # emite um token de operação
+npm run mestre             # chave mestra do painel (arquivo local + secret do Worker + hash no banco)
+npm run check:admin        # contrato offline do painel admin
+npm run gateway            # gateway de proxy rotativo (local)
 ```
 
 O build é idempotente: rodá-lo duas vezes não altera nenhum arquivo, e a CI
@@ -75,6 +78,26 @@ O servidor de fundo sobe em **porta efêmera**, fora da lista de portas que a
 prévia usa (3000, 5173, ...): os dois convivem sem disputar porta. A saída é
 um JSON com `url`, `pid`, `porta`, `statusRaiz` e o status de cada ativo
 estático. O log do servidor fica em `%TEMP%\osint-dev-server.log`.
+
+## Painel admin
+
+O operador tem um painel em `https://ostnt.online/admin` (interface em
+`current-site/osint-infoc-hacker/public/admin.html`) com a API em
+`/api/admin/*`. Ele permite **configurar a chave de API de cada fonte**
+(cifrada com AES-256-GCM; precedência banco → variável de ambiente →
+`sem_chave`), **ver quais chaves estão ativas**, os **limites de requisição**
+por fonte, o **proxy rotativo** para as APIs limitadas por IP, o **funil de
+visitas** (`visita` → `scan` → `scan_concluido` → `falha` → `exportacao`) e a
+**explicação de cada falha**.
+
+A chave que cifra as credenciais (`CREDENCIAIS_MASTER_KEY`) vive como segredo
+do Worker e como arquivo local ignorado pelo git (`.local/mestre.key`); o banco
+guarda apenas o SHA-256 dela. `npm run mestre` configura as três pontas sem
+imprimir o valor.
+
+O detalhe completo (rotas, sessão, chave mestra, funil, proxy e as regras de
+publicação do Worker) está em
+[`current-site/osint-infoc-hacker/README.md`](./current-site/osint-infoc-hacker/README.md).
 
 ## Verificação contínua
 

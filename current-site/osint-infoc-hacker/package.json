@@ -42,6 +42,7 @@
     "check:credenciais": "node scripts/credenciais-check.mjs",
     "check:admin": "node verification/admin-check.mjs",
     "gateway": "node scripts/proxy-gateway.mjs",
+    "mestre": "node scripts/configurar-mestre.mjs",
     "check:novos-alvos": "node verification/novos-alvos-check.mjs",
     "dev:worker": "wrangler dev --config wrangler.toml",
     "dev:validation": "wrangler dev --config wrangler.validation.toml"

@@ -61,9 +61,102 @@ desses arquivos fica embutida em `cloudflare-worker.mjs`.
 | `TRANSPARENCIA_KEY` | Não | Chave opcional da API do Portal da Transparência (sanções/CEIS). Sem ela a fonte CEIS responde `sem_chave` e o relatório **não** fica parcial. |
 | `NUMVERIFY_API_KEY` | Não | Chave opcional da API Numverify/APILayer (fonte `numverify`, número de celular: validade, operadora, país, tipo de linha). **Sem ela a fonte não roda** e responde `sem_chave` — o relatório **não** fica parcial. Configure com `wrangler secret put NUMVERIFY_API_KEY`; **nenhuma chave fica no código**. |
 | `WARM_SECRET` | Não | Segredo do token de operação (aquecimento e painel de saúde). Tem precedência sobre `HMAC_SECRET`. Sem ele, `/api/saude` e o aquecimento respondem "não autorizado". |
+| `SUPABASE_URL` | Sim (painel) | Endereço do banco do painel. Sem ele o painel responde "banco não configurado". |
+| `SUPABASE_PUBLISHABLE_KEY` | Sim (painel) | Chave **publicável** do Supabase (`sb_publishable_...`). A proteção está nas policies RLS e nas funções `SECURITY DEFINER`; a chave de serviço **nunca** vai para o navegador nem para o Worker. |
+| `CREDENCIAIS_MASTER_KEY` | Sim (painel) | Segredo que cifra as credenciais gravadas no painel (AES-256-GCM). É **segredo do Worker** (`wrangler secret put`), nunca var do `wrangler.toml`. Sem ele o painel sobe, mas nenhuma credencial pode ser gravada e o funil de visitas não registra nada. Ver `npm run mestre`. |
+| `PROXY_GATEWAY_URL` | Não | Endereço do gateway de proxy rotativo. Sem ele o painel mostra `gateway_proxy: false` e as fontes marcadas como `usa_proxy` consultam direto. |
 | `AWS_LAMBDA_JS_RUNTIME` | Conforme plano/ambiente | Caso necessário na Netlify, valor `nodejs20.x` para selecionar explicitamente runtime das Functions. |
 
 **Nenhum segredo aparece no HTML.** A site key do Turnstile foi criada para divulgação pública; é impossível validar o Turnstile usando apenas o segredo no servidor sem configurar um widget no cliente.
+
+## Painel admin (`/admin`)
+
+O painel do operador fica em `https://ostnt.online/admin` (interface em
+`public/admin.html` + `public/admin.js`) e a API em `/api/admin/*`
+(`src/admin/`). Ele cobre os quatro requisitos do operador:
+
+| Recurso | O que resolve |
+| --- | --- |
+| **Credenciais** | Gravar a chave de API de cada fonte, cifrada com AES-256-GCM. Precedência: **banco → variável de ambiente → `sem_chave`** — o que está no painel vence o que está no Worker. |
+| **Fontes** | Ajustar por fonte: título, tipos, custo, TTL, proveniência, limite por minuto/dia, se usa proxy e o texto de **explicação de cada código de falha**. |
+| **Proxies** | Lista de proxies e o gateway rotativo para as APIs limitadas por IP. |
+| **Funil de visitas** | Contagem por etapa (`visita`, `scan`, `scan_concluido`, `falha`, `exportacao`), série por dia e a lista de falhas com a explicação de cada código. |
+
+### A chave mestra
+
+`CREDENCIAIS_MASTER_KEY` é o segredo que cifra as credenciais gravadas no
+painel. Ele vive em **dois** lugares, e em nenhum deles no repositório:
+
+1. como **segredo do Worker** (`wrangler secret put CREDENCIAIS_MASTER_KEY`),
+   para que o código de produção decifre e use as chaves durante um scan;
+2. como **arquivo local ignorado pelo git** (`.local/mestre.key`), para que o
+   operador não perca o valor.
+
+O banco **não** guarda a chave: guarda apenas o SHA-256 dela
+(`admin_config`, chave `mestre`), que prova que quem está falando é o mesmo
+Worker de antes. O script abaixo faz as duas coisas e **não imprime a chave** —
+apenas a impressão digital (SHA-256 em 12 caracteres):
+
+```bash
+npm run mestre                 # cria .local/mestre.key se preciso, registra o hash e grava o secret
+npm run mestre -- --so-chave   # só garante o arquivo local
+npm run mestre -- --forcar     # regrava o hash no banco (quando a chave local foi trocada)
+```
+
+Sem a chave mestra o painel **sobe**, mas nenhuma credencial pode ser gravada e
+a telemetria do funil não registra nada — é o motivo de o funil aparecer vazio.
+
+### Sessão e proteção
+
+O login (`POST /api/admin/login`) devolve um **token de sessão** (bearer) com
+validade de 12 h, guardado na tabela `admin_sessoes`. Não há cookie, portanto
+não há CSRF: o token fica na memória da página e vai no cabeçalho
+`Authorization` (ou `X-Admin-Token`). Cada IP tem no máximo **10 tentativas de
+login em 15 minutos**.
+
+A senha nunca é guardada em texto puro: o banco guarda o hash e a verificação
+acontece no servidor, em funções `SECURITY DEFINER` com
+`search_path = public, extensions`.
+
+### Rotas do painel
+
+| Rota | Método | Auth | Observação |
+| --- | --- | --- | --- |
+| `/admin` | GET | — | Interface do painel. |
+| `/api/admin/login` | POST | — | `{usuario, senha}` → token de sessão. |
+| `/api/admin/logout` | POST | token | Encerra a sessão. |
+| `/api/admin/painel` | GET | token | KPIs do funil, falhas, fontes, credenciais, proxies e o estado do ambiente (`banco`, `master_key`, `gateway_proxy`, `fontes_ajustadas`). |
+| `/api/admin/credenciais` | GET/POST/DELETE | token | Lista, grava (cifrada) e remove a credencial de uma fonte. |
+| `/api/admin/proxies` | GET/POST/DELETE | token | Lista, grava e remove proxies; `gateway` diz se o gateway rotativo está ativo. |
+| `/api/admin/fontes` | GET/POST | token | Catálogo efetivo e ajuste por fonte (limites e explicações de falha). |
+
+### Funil de visitas
+
+As quatro primeiras etapas (`visita`, `scan`, `scan_concluido`, `falha`) são
+registradas pelo próprio Worker. A quinta, **`exportacao`**, acontece no
+navegador — por isso existe a rota pública `POST /api/evento`:
+
+```bash
+curl -s -X POST https://ostnt.online/api/evento \
+  -H 'origin: https://ostnt.online' -H 'content-type: application/json' \
+  -d '{"etapa":"exportacao","formato":"json"}'
+```
+
+A rota aceita **somente** `etapa = "exportacao"`, exige origem autorizada e
+**não leva o alvo nem o conteúdo do relatório** — só o formato. O navegador
+envia o aviso com `navigator.sendBeacon` (e `fetch` com `keepalive` como
+alternativa), o que não interfere na experiência de quem exporta.
+
+O IP nunca é gravado em texto puro: o Worker guarda o **HMAC-SHA256** do IP,
+com sal (`HMAC_SECRET`/`WARM_SECRET`), e só os 32 primeiros caracteres hex.
+
+### Proxy rotativo
+
+`PROXY_GATEWAY_URL` aponta para o gateway que alterna o proxy a cada requisição
+(`npm run gateway`). Sem essa variável, `gateway_proxy` aparece como `false` no
+painel e as fontes marcadas como `usa_proxy` consultam direto. O
+`scripts/proxy-gateway.mjs` sobe o gateway local; para produção ele precisa
+rodar em um host alcançável a partir da Cloudflare.
 
 ## Publicação e deploy
 
@@ -108,6 +201,44 @@ netlify dev
 ```
 
 **Importante:** abrir `public/index.html` em `file://` exibe a interface, mas **não** torna o scan funcional: as duas Functions, os segredos, o Turnstile e o Netlify Blobs exigem `netlify dev` ou deploy real.
+
+### Publicação no Cloudflare Worker (produção atual)
+
+O domínio `ostnt.online` é servido pelo Worker `ostnt-migration`, descrito em
+`wrangler.toml`. Publicar é:
+
+```bash
+npm run build                                    # gera os artefatos derivados
+npm exec --yes wrangler@4 -- deploy --keep-vars
+```
+
+Duas regras evitam queda de produção:
+
+- **`--keep-vars`**: `wrangler deploy` substitui o conjunto inteiro de
+  `[vars]`. Tudo que existe no painel da Cloudflare e **não** está no
+  `wrangler.toml` se perde. As variáveis de produção estão no `wrangler.toml`
+  (`APP_ENV`, `UA_MODE`, `UA_NAVEGADOR`, `UA_CONTATO`, `ALLOWED_ORIGINS`, `UA`,
+  `BUDGET_SUBREQ`, `TURNSTILE_SITE_KEY`, `SUPABASE_URL`,
+  `SUPABASE_PUBLISHABLE_KEY`) e o `--keep-vars` é a segunda rede de proteção.
+- **Fluxo de `exports`, sem `[[migrations]]`**: a classe `TokenGuard` é
+  reexportada pelo entrypoint (`cloudflare-worker.mjs`:
+  `export {TokenGuard} from './src/lib/token-guard.mjs'`). O Worker já foi
+  publicado nesse fluxo e a Cloudflare **recusa** a volta para `migrations`
+  (erro `100403`). O bloco `[[migrations]]` **não** deve ser reintroduzido. No
+  lugar dele, o arquivo declara:
+
+  ```toml
+  [exports.TokenGuard]
+  type = "durable-object"
+  storage = "sqlite"
+  ```
+
+  Sem esse bloco a publicação falha com `provisioned_class_missing_from_config`
+  (o namespace `2b571eaf617445d18834c6d682b19ac6` precisa estar declarado).
+
+Os segredos (`HMAC_SECRET`, `TURNSTILE_SECRET`, `GITHUB_TOKEN`,
+`CREDENCIAIS_MASTER_KEY`, …) **não** ficam no `wrangler.toml`: são gravados com
+`wrangler secret put` e sobrevivem ao deploy.
 
 ## Desenvolvimento local (prévia sem Wrangler)
 
@@ -361,6 +492,9 @@ projeto). CPF, placa e nome completo passaram a fazer parte do escopo (ver "Alvo
 | --- | --- | --- |
 | `/api/scan` | POST | **Única** rota de scan. Motor v1.3 (`src/scan.mjs`). |
 | `/api/saude` | GET | Painel de saúde, exige token de operador. |
+| `/api/evento` | POST | Aviso do funil de visitas (`exportacao`). Exige origem autorizada e `etapa = "exportacao"`. |
+| `/api/admin/*` | GET/POST/DELETE | Painel do operador. Exige token de sessão, exceto o login. |
+| `/admin` | GET | Interface do painel do operador. |
 | `/.netlify/functions/token` | GET/POST | Emissão e consumo de token do Turnstile. Continua porque `public/app.js` ainda a chama. |
 | `/`, `/app.js`, `/og.png`, `/favicon.svg`, `/obrigado.html`, `/robots.txt`, `/sitemap.xml`, `/.well-known/security.txt` | GET | Estáticos e páginas. |
 

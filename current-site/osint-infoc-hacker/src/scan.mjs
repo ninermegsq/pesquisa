@@ -92,6 +92,16 @@ export async function rodar(s,a,c,opcoes={}){
     return {id:s.id,status,erro_codigo:codigo,ms:Date.now()-t0,provenance:s.provenance,erro:mensagem};
   }
 }
+// Pais do visitante (quando a Cloudflare informa). O mapa de conexoes usa
+// esse dado para posicionar a origem da consulta; fora da Cloudflare fica
+// nulo e o mapa assume o padrao do projeto.
+function paisDoVisitante(request){
+ try{
+  const pais=String(request?.cf?.country||'').toUpperCase();
+  return /^[A-Z]{2}$/.test(pais)?pais:null;
+ }catch{return null;}
+}
+
 export async function handleScan(request,env,ip,opcoes={}){
   const jobId=globalThis.crypto.randomUUID();
   const escopo=opcoes.escopo||'visitante';
@@ -136,5 +146,5 @@ export async function handleScan(request,env,ip,opcoes={}){
     disponibilidade:Object.fromEntries(res.map(r=>[r.id,r.status==='ok'])),
     score:pontuar(res),pivos,html:render(res),
     saude,fonte_saude:fonteSaude,
-    meta:{job_id:jobId,escopo,planejadas:fila.length,executadas:res.length,subrequests:gasto}},200,{'x-job-id':jobId});
+    meta:{job_id:jobId,escopo,planejadas:fila.length,executadas:res.length,subrequests:gasto,pais:paisDoVisitante(request)}},200,{'x-job-id':jobId});
 }

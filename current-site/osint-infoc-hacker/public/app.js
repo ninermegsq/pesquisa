@@ -227,6 +227,10 @@ function renderPivos(pivos){
  for(const p of pivos||[]){const btn=document.createElement('button');btn.type='button';btn.className='chip';btn.textContent=p.valor||'';btn.addEventListener('click',()=>{if(scanning)return;$('email').value=p.valor;form.requestSubmit();});box.append(btn);}
  $('stage').append(box);
 }
+function renderMapa(box,dados){
+ if(!box||!window.OSINTMapa||typeof window.OSINTMapa.render!=='function')return;
+ try{window.OSINTMapa.render(box,{fontes:dados.fontes||[],pais:dados.meta&&dados.meta.pais});}catch(e){box.remove();}
+}
 async function scan(event){
  event.preventDefault();if(scanning)return;
  const alvo=$('email').value.trim();$('form-error').textContent='';if(!alvo){$('form-error').textContent='Informe um alvo.';return;}
@@ -242,13 +246,23 @@ async function scan(event){
  pushLog(4,'Fontes públicas consultadas.','success');
  const card=document.createElement('section');card.className='scorecard';
  card.innerHTML=`<div class="eyebrow">RISCO DE EXPOSIÇÃO</div><span class="score-num">${escapeHTML(j.score?.valor??0)}</span><span class="score-suffix">/100 · ${escapeHTML(j.score?.nivel||'BAIXO')}${j.score?.parcial?' · PARCIAL':''}</span><p class="public-note">${escapeHTML((j.score?.motivos||[]).join(' · ')||'sem sinais relevantes')}</p>`;
- $('stage').append(card);const wrapper=document.createElement('div');wrapper.innerHTML=j.html||'';$('stage').append(...wrapper.childNodes);
+ $('stage').append(card);
+ // O mapa de conexoes substitui a grade de acordeoes: cada fonte consultada
+ // vira um no no mapa e as falhas ficam vermelhas. Os detalhes de cada fonte
+ // continuam acessiveis, agora recolhidos em um unico acordeao.
+ const mapaBox=document.createElement('section');mapaBox.className='mapa-bloco';mapaBox.id='mapa-bloco';$('stage').append(mapaBox);
+ const wrapper=document.createElement('div');wrapper.innerHTML=j.html||'';
+ const fontesBox=document.createElement('details');fontesBox.className='acc acc--wide mapa-fontes';
+ fontesBox.innerHTML='<summary><span class="arr">▶</span><span>DETALHES DAS FONTES</span><span class="count">'+(j.fontes?.length||0)+'</span></summary><div class="accbody"></div>';
+ fontesBox.querySelector('.accbody').append(...wrapper.childNodes);
+ $('stage').append(fontesBox);
+ renderMapa(mapaBox,j);
  const meta=document.createElement('p');meta.className='muted';meta.textContent=`${j.meta?.executadas??0}/${j.meta?.planejadas??0} fontes · custo declarado: ${j.meta?.subrequests??0} subrequests · job ${j.meta?.job_id||'sem id'}`;$('stage').append(meta);renderPivos(j.pivos);
  current={email:j.alvo?.valor||alvo,data:j};$('actions').hidden=false;setOrbPhase('done',{breaches:[]});$('answer-content').textContent=`${j.meta?.executadas??0} fontes processadas. ${j.score?.parcial?'Resultado parcial.':'Análise concluída.'}`;
  pushLog(5,`${j.meta?.executadas??0} fontes processadas.`,'success');
  pushLog(6,j.score?.parcial?'Resultado parcial.':'Análise concluída.','success');
  pushLog(7,'Relatório renderizado.','success');
- pushLog(8,'Exportação JSON disponível.','success');
+ pushLog(8,'Exportações JSON, CSV e PDF disponíveis.','success');
  pushLog(9,'Painel de ações liberado.','success');
  $('scan-announcement').textContent=`Análise concluída. ${Math.max(0,reportRows().length-1)} achados.`;
  }catch(err){const message=err?.message||'Falha na análise.';setOrbPhase('error',message);$('form-error').textContent=message;$('scan-announcement').textContent='Verificação interrompida';pushLog(4,message,'bad');}
@@ -278,6 +292,7 @@ function marcarExportacao(formato){
 }
 $('export-json').addEventListener('click',()=>{if(!current)return;const data={...current.data};delete data.fontes;delete data.sources;const report={schemaVersion:1,generatedAt:new Date().toISOString(),email:current.email,fontes:current.data.fontes||[],data};downloadReport(JSON.stringify(report,null,2),'application/json;charset=utf-8','json');marcarExportacao('json');});
 $('export-csv').addEventListener('click',()=>{if(!current)return;const csv='\uFEFF'+reportRows().map(row=>row.map(csvCell).join(',')).join('\r\n');downloadReport(csv,'text/csv;charset=utf-8','csv');marcarExportacao('csv');});
+$('export-pdf').addEventListener('click',()=>{if(!current)return;try{const bytes=window.OSINTRelatorio.pdf(current.data,current.email);downloadReport(bytes,'application/pdf','pdf');marcarExportacao('pdf');}catch(err){const box=$('form-error');if(box)box.textContent='Não foi possível gerar o PDF: '+(err&&err.message||'erro desconhecido');}});
 $('password-toggle').addEventListener('click',()=>{const show=$('pass-panel').hidden;$('pass-panel').hidden=!show;$('password-toggle').setAttribute('aria-expanded',String(show));if(show)$('password').focus();});
 $('password-run').addEventListener('click',async()=>{const p=$('password').value;if(!p){$('password-result').textContent='Digite uma senha.';return;}const btn=$('password-run');btn.disabled=true;try{const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-1',new TextEncoder().encode(p)))).map(v=>v.toString(16).padStart(2,'0')).join('').toUpperCase();const prefix=hash.slice(0,5),suffix=hash.slice(5);const response=await fetch(`https://api.pwnedpasswords.com/range/${prefix}`,{cache:'no-store',headers:{'Add-Padding':'true'}});if(!response.ok)throw Error(`HTTP ${response.status}`);const body=await response.text();const match=body.split(/\r?\n/).find(line=>line.split(':')[0]===suffix);const hits=match?Number(match.split(':')[1]||0):0;$('password-result').textContent=hits?`Senha encontrada ${fmt(hits)} vezes em coleções de vazamentos. Não a reutilize.`:'não encontrada — isso não garante que a senha seja segura.';}catch(err){$('password-result').textContent='Não foi possível consultar a base de senhas: '+err.message;}finally{btn.disabled=false;}});
 

@@ -57,15 +57,35 @@ function donoDePorta(porta) {
   return null;
 }
 
+// A interface da previa responde? Uma instancia registrada pode estar viva
+// no SO e mesmo assim sem HTTP (o processo que a subiu morreu no meio do
+// start). Um GET na raiz separa "processo vivo" de "previa utilizavel" --
+// e a resposta que o editor precisa antes de tentar abrir a previa.
+async function sondarHttp(porta) {
+  const base = `http://127.0.0.1:${porta}`;
+  const inicio = Date.now();
+  try {
+    const resposta = await fetch(`${base}/`, {
+      headers: { origin: base },
+      signal: AbortSignal.timeout(2000)
+    });
+    await resposta.text();
+    return { status: resposta.status, ms: Date.now() - inicio };
+  } catch (erro) {
+    return { status: 0, ms: Date.now() - inicio, erro: String(erro?.message || erro) };
+  }
+}
+
 async function main() {
   const canonicas = portasCanonicas();
   const registro = listarInstancias();
   const processos = listarProcessos();
   const mapa = mapaDeProcessos(processos);
 
-  const instâncias = registro.map(inst => {
+  const instâncias = await Promise.all(registro.map(async inst => {
     const vivo = !inst.invalido && processoVivo(inst.pid);
     const cadeia = vivo ? cadeiaDe(inst.pid, { mapa }) : [];
+    const http = vivo && inst.porta ? await sondarHttp(inst.porta) : null;
     return {
       pid: inst.pid,
       porta: inst.porta ?? null,
@@ -82,9 +102,10 @@ async function main() {
       desatacada: vivo ? instanciaDesatacada(inst, { mapa }) : false,
       cadeia: cadeia.map(elo => `${elo.pid}${elo.vivo ? '' : ' (morto)'}`),
       invalido: !!inst.invalido,
+      http,
       iniciado_em: inst.iniciado_em || null
     };
-  });
+  }));
 
   const servidores = processos.filter(p => p.cmd && p.cmd.includes('dev-server.mjs'));
   const semRegistro = servidores
@@ -133,12 +154,13 @@ async function main() {
   console.log(`  portas canonicas ocupadas: ${resultado.portasOcupadas.join(', ') || 'nenhuma'}`);
   console.log('');
   for (const inst of instâncias) {
+    const http = inst.http ? ` · http ${inst.http.status}` : '';
     const estado = inst.invalido
       ? 'registro invalido'
       : inst.vivo
         ? (inst.desatacada ? `vivo (desatacado: elo ${inst.eloQuebrado ?? '?'} morto)` : inst.orfao ? 'vivo (orfao)' : inst.eloQuebrado ? `vivo (elo quebrado: ${inst.eloQuebrado})` : 'vivo')
         : 'morto';
-    console.log(`  pid ${inst.pid}  porta ${inst.porta ?? '-'}  ${inst.papel ?? '-'}/${inst.classe ?? '-'}  pai ${inst.ppid ?? '-'}  ${estado}`);
+    console.log(`  pid ${inst.pid}  porta ${inst.porta ?? '-'}  ${inst.papel ?? '-'}/${inst.classe ?? '-'}  pai ${inst.ppid ?? '-'}  ${estado}${http}`);
     if (inst.cadeia.length) console.log(`      ancestrais: ${inst.cadeia.join(' <- ')}`);
   }
   for (const p of semRegistro) {

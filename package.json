@@ -12,6 +12,7 @@
     "check": "npm --prefix current-site/osint-infoc-hacker run check && npm --prefix osint-infoc-hacker run check",
     "build": "npm --prefix current-site/osint-infoc-hacker run build",
     "test": "npm --prefix current-site/osint-infoc-hacker run test",
+    "suite": "npm --prefix current-site/osint-infoc-hacker run test",
     "dev": "npm --prefix current-site/osint-infoc-hacker run dev --",
     "dev:stop": "npm --prefix current-site/osint-infoc-hacker run dev:stop --",
     "dev:status": "npm --prefix current-site/osint-infoc-hacker run dev:status --",

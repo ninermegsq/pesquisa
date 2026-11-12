@@ -224,6 +224,19 @@ async function challenge(){
    catch(e){reject(e);}
  });
 }
+// Mapa de conexoes: a variante Netlify usa o contrato legado
+// (`availability`), entao a lista de fontes consultadas e montada a partir
+// dele e entregue ao mesmo mapa do site principal. Resposta=false vira
+// "falhou" (no vermelho); ausente no contrato tambem conta como falha.
+const MAPA_IDS={hudson:'hudsonrock'};
+function fontesDoMapa(response){
+ const disponibilidade=response&&response.availability||{};
+ return Object.entries(disponibilidade).map(([id,ok])=>({id:MAPA_IDS[id]||id,status:ok?'ok':'erro',erro:ok?undefined:'fonte indisponivel'}));
+}
+function renderMapa(box,fontes){
+ if(!box||!window.OSINTMapa||typeof window.OSINTMapa.render!=='function')return;
+ try{window.OSINTMapa.render(box,{fontes:fontes||[],pais:null});}catch(e){box.remove();}
+}
 async function scan(event){
  event.preventDefault();if(scanning)return;
  const email=$('email').value.trim().toLowerCase();$('form-error').textContent='';
@@ -246,6 +259,10 @@ async function scan(event){
   await delay(200);pushLog(8,av.xon?`XposedOrNot: ${response.breaches?.length||0} breaches.`:'XposedOrNot: fonte indisponível.',!av.xon?'warning':response.breaches?.length?'bad':'success');
   await delay(180);pushLog(9,'Verificação finalizada. Resultados públicos e parciais quando houver indisponibilidade.','success');
   const rendered=renderResults(response,email),wrapper=document.createElement('div');wrapper.innerHTML=rendered.html;$('stage').append(...wrapper.childNodes);
+  // O mapa entra antes do detalhamento: cada fonte consultada vira um no e
+  // as que falharam ficam vermelhas.
+  const mapaBox=document.createElement('section');mapaBox.className='mapa-bloco';mapaBox.id='mapa-bloco';$('stage').insertBefore(mapaBox,$('stage').firstChild);
+  renderMapa(mapaBox,fontesDoMapa(response));
   requestAnimationFrame(()=>$('risk-fill')&&($('risk-fill').style.width=rendered.score+'%'));
   current={email,data:response};setOrbPhase('done',response);
  }catch(err){const message=err?.message||'erro não identificado';setOrbPhase('error',message);pushLog(9,'Scan interrompido: '+message,'bad');$('form-error').textContent=message;}

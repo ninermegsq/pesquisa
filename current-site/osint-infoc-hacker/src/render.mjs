@@ -7,7 +7,9 @@ const bloco=(titulo,corpo,r)=>{if(!corpo)return '';
  // estado aberto era so do servidor, e o cliente ja gerava fechado. A seta
  // fica no <summary> para que o estado fechado seja legivel, e os chips de
  // cache e de erro permanecem no resumo: nenhuma informacao fica oculta.
- return `<details class="acc"><summary><span class="arr">▶</span><span>${esc(titulo)}</span>${selo}${est}</summary><div class="accbody">${corpo}</div></details>`;
+ // O id da fonte viaja no data-fonte para que o mapa de conexoes consiga
+ // abrir o acordeao correspondente ao clicar no no.
+ return `<details class="acc" data-fonte="${esc(r?.id||'')}"><summary><span class="arr">▶</span><span>${esc(titulo)}</span>${selo}${est}</summary><div class="accbody">${corpo}</div></details>`;
 };
 const titulos={xon:'BREACHES & SENHAS',hudsonrock:'INFOSTEALER',gravatar:'GRAVATAR',pgp:'PGP',github:'GITHUB',emailrep:'REPUTAÇÃO',email_registro:'CADASTRO DE E-MAIL',dns:'DNS & E-MAIL',crtsh:'SUBDOMÍNIOS',wayback:'URLS HISTÓRICAS',internetdb:'EXPOSIÇÃO',ipgeo:'REDE',asn:'ASN',cnpj_br:'EMPRESA',ceis:'SANÇÕES',ddd:'REGIÃO',phone_footprint:'RASTREIO DE TELEFONE',numverify:'VALIDADE DO NÚMERO',wikidata:'WIKIDATA',datajud:'PROCESSOS',telegram:'TELEGRAM',gitlab:'GITLAB',npm:'NPM',bluesky:'BLUESKY',rdap:'RDAP',ssllabs:'SSL LABS',urlscan:'URLSCAN',cpf_valida:'CPF',cpf_brasilapi:'CADASTRO DE CPF',placa_footprint:'RASTREIO DE PLACA',placa_consultarplaca:'VEÍCULO',nome_perfil:'PERFIS'};
 function campo(k,v){

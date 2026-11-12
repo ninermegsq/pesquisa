@@ -163,8 +163,8 @@
     "numverify": {
       "limite": { "por_minuto": null, "por_dia": null, "texto": "Limite do plano contratado (Numverify/APILayer)", "origem": "plano" },
       "usa_proxy": false,
-      "observacao": "So roda com NUMVERIFY_API_KEY: sem a chave a API responde 401 e a fonte fica sem_chave. Validade, operadora, pais e tipo de linha.",
-      "explicacoes": { "sem_chave": "Sem NUMVERIFY_API_KEY a fonte nao roda e o relatorio nao fica parcial.", "http": "401 sem access_key e ausencia de credencial; 429 e cota do plano." }
+      "observacao": "So roda com NUMVERIFY_API_KEY: sem a chave a fonte fica sem_chave. A chave sai do painel da APILayer (app.apilayer.com/signup/numverify/free) e vale na rota atual do marketplace (api.apilayer.com/number_verification/validate, cabecalho apikey); a rota antiga (apilayer.net/api/validate) fica como reserva. Validade, operadora, pais e tipo de linha.",
+      "explicacoes": { "sem_chave": "Sem NUMVERIFY_API_KEY a fonte nao roda e o relatorio nao fica parcial.", "http": "401 e o provedor recusando a credencial (chave de outro produto ou nao enviada); 104 e cota do plano esgotada; 106 e limite de requisicoes estourado.", "rota": "NUMVERIFY_API_ROTA fixa a rota: auto (padrao), marketplace ou legado." }
     },
     "wikidata": {
       "limite": { "por_minuto": null, "por_dia": null, "texto": "Consulta SPARQL publica; consultas lentas expiram em 60 s", "origem": "documentado" },

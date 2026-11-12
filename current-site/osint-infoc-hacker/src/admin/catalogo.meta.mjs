@@ -2,7 +2,7 @@
 // Nao edite a mao: edite as entradas e rode `npm run build`.
 // Conteudo deterministico: sem data de geracao, para que o build seja idempotente.
 
-export const DIGEST_CATALOGO = "64603a14a810a6c1ad6b1381f0855b4da398526f13f10993dd3e03a0c900ad5e";
+export const DIGEST_CATALOGO = "955aa847b3d7cc408b5c0be42ac1c57b28848a1540dc7c3a6770c842244c06cf";
 
 export const PADROES_DE_EXPLICACAO = Object.freeze({
   "sem_chave": "A fonte nao rodou porque a credencial do operador nao esta configurada. Nao e falha real: o restante do relatorio continua valendo e o relatorio nao fica parcial.",
@@ -437,8 +437,8 @@ export const CATALOGO = Object.freeze([
     limite_texto: "Limite do plano contratado (Numverify/APILayer)",
     limite_origem: "plano",
     usa_proxy: false,
-    observacao: "So roda com NUMVERIFY_API_KEY: sem a chave a API responde 401 e a fonte fica sem_chave. Validade, operadora, pais e tipo de linha.",
-    explicacoes: {"sem_chave":"Sem NUMVERIFY_API_KEY a fonte nao roda e o relatorio nao fica parcial.","sem_token":"A fonte nao rodou por falta de token de uso unico valido (ausente, expirado, reutilizado ou vinculado a outro alvo). Falha de sessao, nao do provedor.","erro_rede":"Falha de DNS, conexao ou TLS ao falar com o provedor. Em geral e bloqueio do IP de saida (reputacao) ou provedor fora do ar; a fonte repassa a mensagem crua.","timeout":"O prazo da consulta estourou antes da resposta. Causas Frequentes: provedor lento, cota do orcamento de subrequests do scan ou fila do provedor.","http":"401 sem access_key e ausencia de credencial; 429 e cota do plano.","formato":"A resposta chegou, mas fora do formato esperado (JSON invalido, HTML de erro ou campo ausente). Em geral o provedor mudou o contrato.","erro":"Falha nao classificada pela taxonomia. O detalhe fica no log privado do Worker; o relatorio publica apenas a mensagem bounded."},
+    observacao: "So roda com NUMVERIFY_API_KEY: sem a chave a fonte fica sem_chave. A chave sai do painel da APILayer (app.apilayer.com/signup/numverify/free) e vale na rota atual do marketplace (api.apilayer.com/number_verification/validate, cabecalho apikey); a rota antiga (apilayer.net/api/validate) fica como reserva. Validade, operadora, pais e tipo de linha.",
+    explicacoes: {"sem_chave":"Sem NUMVERIFY_API_KEY a fonte nao roda e o relatorio nao fica parcial.","sem_token":"A fonte nao rodou por falta de token de uso unico valido (ausente, expirado, reutilizado ou vinculado a outro alvo). Falha de sessao, nao do provedor.","erro_rede":"Falha de DNS, conexao ou TLS ao falar com o provedor. Em geral e bloqueio do IP de saida (reputacao) ou provedor fora do ar; a fonte repassa a mensagem crua.","timeout":"O prazo da consulta estourou antes da resposta. Causas Frequentes: provedor lento, cota do orcamento de subrequests do scan ou fila do provedor.","http":"401 e o provedor recusando a credencial (chave de outro produto ou nao enviada); 104 e cota do plano esgotada; 106 e limite de requisicoes estourado.","formato":"A resposta chegou, mas fora do formato esperado (JSON invalido, HTML de erro ou campo ausente). Em geral o provedor mudou o contrato.","erro":"Falha nao classificada pela taxonomia. O detalhe fica no log privado do Worker; o relatorio publica apenas a mensagem bounded.","rota":"NUMVERIFY_API_ROTA fixa a rota: auto (padrao), marketplace ou legado."},
   }),
   Object.freeze({
     id: "wikidata",

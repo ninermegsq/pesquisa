@@ -90,7 +90,8 @@ desses arquivos fica embutida em `cloudflare-worker.mjs`.
 | `GITHUB_TOKEN` | Não | Token opcional de leitura da API GitHub; configure com `wrangler secret put GITHUB_TOKEN`. Sem ele, GitHub aparece indisponível. A resposta é cacheada por e-mail durante 24 horas. |
 | `DATAJUD_API_KEY` | Não | Chave opcional da API pública do DataJud/CNJ (fonte `datajud`, categoria nome). Sem ela a fonte responde `sem_chave` e o relatório **não** fica parcial. Configure com `wrangler secret put DATAJUD_API_KEY`; **nenhuma chave fica no código**. |
 | `TRANSPARENCIA_KEY` | Não | Chave opcional da API do Portal da Transparência (sanções/CEIS). Sem ela a fonte CEIS responde `sem_chave` e o relatório **não** fica parcial. |
-| `NUMVERIFY_API_KEY` | Não | Chave opcional da API Numverify/APILayer (fonte `numverify`, número de celular: validade, operadora, país, tipo de linha). **Sem ela a fonte não roda** e responde `sem_chave` — o relatório **não** fica parcial. Configure com `wrangler secret put NUMVERIFY_API_KEY`; **nenhuma chave fica no código**. |
+| `NUMVERIFY_API_KEY` | Não | Chave opcional da API Numverify/APILayer (fonte `numverify`, número de celular: validade, operadora, país, tipo de linha). **Sem ela a fonte não roda** e responde `sem_chave` — o relatório **não** fica parcial. A chave é emitida no painel da APILayer (`app.apilayer.com/signup/numverify/free`, produto *Number Verification API*): chave de outro produto é recusada com 401. A fonte usa primeiro a rota atual (`api.apilayer.com/number_verification/validate`, cabeçalho `apikey`) e, se o provedor recusar a credencial, tenta a rota antiga (`apilayer.net/api/validate`). Configure com `wrangler secret put NUMVERIFY_API_KEY`; **nenhuma chave fica no código**. |
+| `NUMVERIFY_API_ROTA` | Não | Rota fixa da APILayer para a fonte `numverify`: `auto` (padrão — marketplace e, se recusarem a chave, a antiga), `marketplace` ou `legado`. Serve para não depender do degrau automático quando o provedor muda de rota. |
 | `WARM_SECRET` | Não | Segredo do token de operação (aquecimento e painel de saúde). Tem precedência sobre `HMAC_SECRET`. Sem ele, `/api/saude` e o aquecimento respondem "não autorizado". |
 | `SUPABASE_URL` | Sim (painel) | Endereço do banco do painel. Sem ele o painel responde "banco não configurado". |
 | `SUPABASE_PUBLISHABLE_KEY` | Sim (painel) | Chave **publicável** do Supabase (`sb_publishable_...`). A proteção está nas policies RLS e nas funções `SECURITY DEFINER`; a chave de serviço **nunca** vai para o navegador nem para o Worker. |
@@ -388,7 +389,7 @@ O que **não** muda: `cloudflare-worker.mjs`, `wrangler.toml`, `public/` e as Ne
 - **CNPJ.ws:** a base pública (`publica.cnpj.ws`) aceita **3 consultas por minuto/IP**; a 4ª devolve HTTP 429 com `retry-after: 60`. Por isso a fonte `cnpj_br` cai no Minha Receita quando o limite é atingido — o limite do provedor não vira relatório parcial. A consulta usa sempre a base pública (`publica.cnpj.ws`): o token comercial saiu do projeto e a fonte não exige credencial. Os dados do CNPJ.ws têm defasagem de cerca de um mês.
 - **GitHub:** a consulta só é feita quando `GITHUB_TOKEN` está configurado; sem ele, `availability.github` fica `false`. No Worker, o resumo é cacheado por e-mail na Cache API durante 24 horas para reduzir chamadas compartilhadas.
 - **Busca do GitHub (`npm run pesquisa:github`):** a API pública de busca permite **10 consultas por minuto sem token** e 30 com token. O script espera a janela abrir (`x-ratelimit-reset`) e repete; só depois de duas tentativas registra o aviso e segue com o que tem. O ranking é uma fotografia do momento da execução.
-- **Numverify:** a API pública responde **HTTP 401** sem `access_key`. Por isso a fonte `numverify` é declarada com **credencial obrigatória**: sem `NUMVERIFY_API_KEY` ela responde `sem_chave` e o relatório **não** fica parcial (a fonte não rodou). É a única fonte de telefone que depende de chave.
+- **Numverify/APILayer:** a fonte `numverify` é declarada com **credencial obrigatória**: sem `NUMVERIFY_API_KEY` ela responde `sem_chave` e o relatório **não** fica parcial (a fonte não rodou). É a única fonte de telefone que depende de chave. Medido em 2026-11-20: a rota antiga (`apilayer.net/api/validate?access_key=…`) devolve **HTTP 401 `invalid_access_key`** para chave emitida no painel atual, e a rota atual (`api.apilayer.com/number_verification/validate`, cabeçalho `apikey`) devolve **HTTP 401 `Invalid authentication credentials`** — resposta idêntica à de uma chave inválida. A chave precisa ser a do produto *Number Verification API* do painel `app.apilayer.com/signup/numverify/free` (plano gratuito: 100 requisições por dia). A fonte tenta a rota atual primeiro e a antiga como reserva; `NUMVERIFY_API_ROTA` fixa uma delas. A recusa do provedor vira mensagem com a orientação, sem despejar o corpo cru da resposta no relatório.
 - **Checagens de cadastro de e-mail (`email_registro`):** os 8 endpoints públicos respondem se o endereço está **em uso** naquele serviço — isso **não** identifica quem controla o e-mail, e o resultado muda conforme o serviço. Um site bloqueado vira "indisponível" isolado; se nenhum dos 8 responder, a fonte falha de verdade em vez de devolver "nada encontrado".
 - **CPF (BrasilAPI):** medido ao vivo em 2026-11-11, o provedor **não publica o cadastro completo** (nome, nascimento, filiação, endereço): ele responde `{"cpf":"…","isValid":true,"rf":7,"ufs":["ES","RJ"]}`, ou `{"isValid":false}`, ou 404 quando o CPF não consta da base. A fonte publica exatamente o que recebeu, e `existe` fica **nulo** quando o provedor valida os dígitos mas não afirma se o CPF existe. Formato desconhecido vira erro, nunca dado inventado.
 - **Placa (Consultar Placa v2):** é a única API de placa **viva** medida em 2026-11-11, e ela **exige credencial do operador** (`CONSULTARPLACA_CREDENCIAL`, no formato `email:api_key`, Basic Auth). Sem a credencial a fonte responde `sem_chave` e o relatório **não** fica parcial. A consulta é paga (R$ 0,31 por placa na data da medição) e o provedor oferece uma placa de teste gratuita, `AAA0000`, com dados fictícios. O provedor anterior (`apicarros.com`, apresentado como SINESP) está **morto**: responde HTTP 200 sem JSON, com o domínio estacionado.
@@ -444,7 +445,8 @@ declarada):
   rede**: as buscas são links, não consultas.
 - `numverify` (PhoneInfoga): validade, operadora, país e tipo de linha do
   número, via Numverify/APILayer. Precisa de `NUMVERIFY_API_KEY`; sem a chave
-  responde `sem_chave` e o relatório não fica parcial.
+  responde `sem_chave` e o relatório não fica parcial. Usa a rota atual da
+  APILayer (cabeçalho `apikey`) com a rota antiga como reserva.
 
 O relatório completo da pesquisa — ranking, mapa repositório → técnica
 portada e o descarte de cada candidato com a medição — está em
@@ -510,6 +512,11 @@ wrangler secret put CONSULTARPLACA_CREDENCIAL
 
 A credencial do Consultar Placa é o **e-mail da conta como usuário e a api_key
 como senha**, no formato `email:api_key` (Basic Auth).
+
+A chave do Numverify sai do painel da APILayer, no produto *Number
+Verification API* (`app.apilayer.com/signup/numverify/free`); uma chave de
+outro produto da APILayer é recusada com HTTP 401 pela rota de validação de
+telefone.
 
 Sem essas chaves, as fontes correspondentes respondem com o código `sem_chave` ou `sem_token` e o relatório **não** é marcado como parcial: a fonte não rodou, o restante das consultas continua valendo.
 

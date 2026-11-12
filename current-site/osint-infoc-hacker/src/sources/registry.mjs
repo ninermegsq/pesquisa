@@ -458,6 +458,88 @@ const SITES_PERFIL=[
   perfil:j=>j&&typeof j==='object'&&j.username?{usuario:texto(j.username),nome:texto(j.name),url:`https://dev.to/${j.username}`}:null}
 ];
 
+// ---------------------------------------------------------------------------
+// Number Verification API (APILayer) — o Numverify virou produto do
+// marketplace.
+//
+// Medido ao vivo em 2026-11-20: a chave que o painel da APILayer entrega
+// hoje (app.apilayer.com/signup/numverify/free) vale na rota do marketplace
+// `api.apilayer.com/number_verification/validate`, com o cabecalho `apikey`.
+// A rota antiga do Numverify (`apilayer.net/api/validate?access_key=...`)
+// continua no ar para as chaves emitidas antes da migracao, mas recusa as
+// chaves do marketplace com `invalid_access_key`. A fonte aceita as duas
+// formas: tenta a do marketplace e, so quando o provedor recusa a
+// autenticacao, tenta a antiga.
+//
+// O provedor responde em dois formatos de erro: o JSON do Numverify
+// (`{"success":false,"error":{"type":...}}`) e o do marketplace
+// (`{"message":...}`). Os dois viram mensagem util em portugues, com a acao
+// que resolve — o operador precisa saber se a chave foi recusada, se a cota
+// do plano acabou ou se o numero estava invalido.
+// ---------------------------------------------------------------------------
+const ROTA_NUMVERIFY_MARKETPLACE={
+  nome:'marketplace',
+  url:(chave,numero)=>`https://api.apilayer.com/number_verification/validate?number=${encodeURIComponent(numero)}`,
+  headers:chave=>({apikey:chave})
+};
+const ROTA_NUMVERIFY_LEGADO={
+  nome:'legado',
+  url:(chave,numero)=>`https://apilayer.net/api/validate?access_key=${encodeURIComponent(chave)}&number=${encodeURIComponent(numero)}`,
+  headers:()=>({})
+};
+// Texto do provedor por tipo de erro, em portugues. O relatorio corta a
+// mensagem em 220 caracteres: por isso o texto e curto e direto.
+const ERROS_NUMVERIFY={
+  missing_access_key:'a chave nao chegou ao provedor (missing_access_key).',
+  invalid_access_key:'chave recusada pelo provedor (invalid_access_key): a credencial nao vale para o produto de validacao de telefone.',
+  inactive_user:'conta do provedor inativa (inactive_user): contate o suporte da APILayer.',
+  usage_limit_reached:'cota do plano esgotada (usage_limit_reached): o provedor recusa consultas ate a renovacao.',
+  rate_limit_reached:'limite de requisicoes do plano estourado (rate_limit_reached).',
+  no_phone_number_provided:'o provedor nao recebeu o numero (no_phone_number_provided).',
+  non_numeric_phone_number_provided:'o provedor recusou o numero por nao ser numerico (non_numeric_phone_number_provided).',
+  invalid_country_code:'codigo de pais invalido (invalid_country_code).',
+  invalid_api_function:'a rota pedida nao existe na API (invalid_api_function).',
+  '404_not_found':'recurso inexistente na API (404_not_found).'
+};
+// O marketplace fala por `message` e nao por `error.type`.
+const ERROS_NUMVERIFY_MENSAGEM=[
+  [/invalid authentication credentials/i,'chave recusada pelo provedor: a credencial nao e reconhecida.'],
+  [/no api key found/i,'a chave nao chegou ao provedor: o cabecalho apikey nao foi reconhecido.'],
+  [/no route matched/i,'a rota pedida nao existe no provedor.'],
+  [/not found/i,'recurso inexistente na API do provedor.']
+];
+// A acao que resolve o caso mais comum: chave recusada.
+const DICA_CHAVE_RECUSADA=' Gere a chave em app.apilayer.com/signup/numverify/free e salve em NUMVERIFY_API_KEY.';
+// Recusa de autenticacao: a chave chegou ao provedor e ele recusou (ou nao a
+// viu). Sao as unicas situacoes em que a outra rota da credencial resolve.
+const ehRecusaDeChave=(tipo,mensagem)=>{
+  const t=String(tipo||'').toLowerCase();
+  if(t==='invalid_access_key'||t==='missing_access_key')return true;
+  return /invalid authentication credentials|no api key found/i.test(String(mensagem||''));
+};
+// Erro da fonte com orientacao, em vez do corpo cru do provedor.
+function erroNumverify(tipo,mensagem,status){
+  const t=String(tipo||'').trim();
+  const bruto=String(mensagem||'').trim();
+  let base=ERROS_NUMVERIFY[t]||null;
+  if(!base){
+    const achado=ERROS_NUMVERIFY_MENSAGEM.find(([re])=>re.test(bruto));
+    base=achado?achado[1]:(bruto?bruto.slice(0,120):'o provedor recusou a consulta');
+  }
+  const dica=/invalid_access_key|invalid authentication/i.test(`${t} ${bruto}`)?DICA_CHAVE_RECUSADA:'';
+  const e=new Error(`numverify: ${base}${dica}`);
+  if(Number.isFinite(status)&&status>=400)e.status=status;
+  return e;
+}
+// Corpo do provedor como objeto, sem lancar: o erro vem em JSON nos dois
+// formatos, mas o texto do marketplace pode nao ser JSON.
+async function jsonDoProvedor(r){
+  let t='';
+  try{t=await r.text();}catch{t=r.corpo||'';}
+  if(!t)t=r.corpo||'';
+  try{return JSON.parse(t);}catch{return null;}
+}
+
 export const REGISTRY=[
  {id:'gravatar',tipos:['email'],custo:1,ttl:86400,provenance:'gravatar-public-profile',
   async run(a,c){
@@ -823,22 +905,61 @@ export const REGISTRY=[
       observacao:'Formatos do numero e links para as buscas publicas por categoria (redes sociais, SMS descartavel, reputacao, pessoas), no mesmo estilo do PhoneInfoga. A fonte nao consulta o Google e nao executa nenhuma etapa de tomada de conta.'
     }};
   }},
- // Validade, operadora e pais do numero. Endereco publico do Numverify
- // (APILayer): sem credencial a API responde 401, entao a fonte e
- // declarada com credencial obrigatoria no manifesto e responde sem_chave
- // quando ela falta (falha de configuracao, nao resultado parcial).
+ // Validade, operadora e pais do numero. Provedor: Number Verification API da
+ // APILayer (o Numverify virou produto do marketplace). Sem credencial a
+ // API responde 401, entao a fonte e declarada com credencial obrigatoria no
+ // manifesto e responde sem_chave quando ela falta (falha de configuracao,
+ // nao resultado parcial).
+ //
+ // A fonte aceita as duas formas de credencial do provedor: a do marketplace
+ // (`api.apilayer.com/number_verification/validate` com o cabecalho `apikey`,
+ // que e a chave que o painel da APILayer entrega hoje) e a antiga do
+ // Numverify (`apilayer.net/api/validate` com `access_key` na query). Tenta a
+ // do marketplace primeiro e so cai na antiga quando o provedor recusa a
+ // autenticacao. `NUMVERIFY_API_ROTA` fixa a rota: `auto` (padrao),
+ // `marketplace` ou `legado`.
  {id:'numverify',tipos:['telefone'],custo:1,ttl:43200,provenance:'numverify-apilayer',
   async run(a,c){
     exigirCredencial(c.env,'numverify');
     const numero=telefoneE164(a.valor);
-    const r=await c.get(`https://apilayer.net/api/validate?access_key=${encodeURIComponent(String(c.env.NUMVERIFY_API_KEY))}&number=${encodeURIComponent(numero)}`,{timeout:7000});
-    if(!r.ok) throw falhar(r);
-    const j=await J(r);
-    if(j?.success===false) throw Error(`numverify: ${String(j?.error?.type||'erro do provedor')}`);
-    return {dados:{valido:j?.valid===true,numero:j?.number??null,formatoLocal:j?.local_format??null,
-      formatoInternacional:j?.international_format??null,codigoPais:j?.country_code??null,pais:j?.country_name??null,
-      localizacao:j?.location??null,operadora:j?.carrier??null,tipoLinha:j?.line_type??null,
-      observacao:'Validade, operadora, pais e tipo de linha do numero (Numverify/APILayer).'}};
+    // Chave colada com espaco ou quebra de linha e recusada pelo provedor:
+    // o corte aqui evita o 401 sem significado.
+    const chave=String(valorDaCredencial(c.env,'numverify')||'').trim();
+    const preferencia=String(c.env.NUMVERIFY_API_ROTA||'auto').trim().toLowerCase();
+    const rotas=preferencia==='legado'?[ROTA_NUMVERIFY_LEGADO]
+      :preferencia==='marketplace'?[ROTA_NUMVERIFY_MARKETPLACE]
+      :[ROTA_NUMVERIFY_MARKETPLACE,ROTA_NUMVERIFY_LEGADO];
+    let recusa=null;
+    for(const rota of rotas){
+      const r=await c.get(rota.url(chave,numero),{timeout:7000,headers:rota.headers(chave)});
+      if(r.ok){
+        const j=await J(r);
+        // Numverify legado: erro no corpo, com `success:false`.
+        if(j?.success===false)throw erroNumverify(j?.error?.type,j?.error?.info,r.status);
+        // Marketplace: erro no corpo, com `message`.
+        if(j&&typeof j==='object'&&!Array.isArray(j)&&j.valid===undefined&&typeof j.message==='string')
+          throw erroNumverify(null,j.message,r.status);
+        return {dados:{valido:j?.valid===true,numero:j?.number??null,formatoLocal:j?.local_format??null,
+          formatoInternacional:j?.international_format??null,codigoPais:j?.country_code??null,pais:j?.country_name??null,
+          localizacao:j?.location??null,operadora:j?.carrier??null,tipoLinha:j?.line_type??null,
+          provedor:rota.nome,
+          observacao:'Validade, operadora, pais e tipo de linha do numero (Numverify/APILayer).'}};
+      }
+      const j=await jsonDoProvedor(r);
+      const tipo=j?.error?.type||null;
+      const mensagem=j?.message||j?.error?.info||r.corpo||'';
+      if(ehRecusaDeChave(tipo,mensagem)||r.status===404){
+        // A outra forma da credencial pode resolver: recusa de autenticacao
+        // ou rota que o provedor nao expoe mais. Tenta antes de falhar.
+        recusa={tipo,mensagem,status:r.status};
+        continue;
+      }
+      // Cota estourada, conta inativa, numero invalido: nao adianta trocar
+      // de rota, o erro e repassado com a orientacao.
+      throw erroNumverify(tipo,mensagem,r.status);
+    }
+    // As duas rotas recusaram a credencial.
+    throw erroNumverify(recusa?.tipo,recusa?.mensagem,recusa?.status);
   }},
  {id:'wikidata',tipos:['nome'],custo:1,ttl:604800,provenance:'wikidata-sparql',
   async run(a,c){

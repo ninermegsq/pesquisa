@@ -58,15 +58,22 @@ const NUMVERIFY_OK = {
 const chamadas = [];
 let direcao = 'positivo';
 let bloqueados = new Set();
+// Duas rotas do provedor: a do marketplace (a atual, cabecalho `apikey`) e a
+// antiga do Numverify (`access_key` na query). A fonte tenta a primeira e so
+// cai na segunda quando o provedor recusa a autenticacao.
 let numverifyResposta = { status: 200, corpo: NUMVERIFY_OK };
+let numverifyLegado = { status: 200, corpo: NUMVERIFY_OK };
 
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, opts = {}) => {
   const u = new URL(String(url));
-  chamadas.push({ url: String(url), host: u.hostname, method: opts.method || 'GET', body: opts.body ?? null });
-  if (u.hostname === 'apilayer.net') {
-    return new Response(JSON.stringify(numverifyResposta.corpo), {
-      status: numverifyResposta.status, headers: { 'content-type': 'application/json; charset=utf-8' }
+  chamadas.push({ url: String(url), host: u.hostname, method: opts.method || 'GET', body: opts.body ?? null,
+    apikey: opts.headers && typeof opts.headers.get === 'function' ? opts.headers.get('apikey') : null });
+  if (u.hostname === 'api.apilayer.com' || u.hostname === 'apilayer.net') {
+    const resposta = u.hostname === 'api.apilayer.com' ? numverifyResposta : numverifyLegado;
+    const corpo = typeof resposta.corpo === 'string' ? resposta.corpo : JSON.stringify(resposta.corpo);
+    return new Response(corpo, {
+      status: resposta.status, headers: { 'content-type': 'application/json; charset=utf-8' }
     });
   }
   if (bloqueados.has(u.hostname)) return new Response('blocked by provider', { status: 403 });
@@ -189,22 +196,69 @@ try {
   const cComChave = ctx({ UA_MODE: 'identificado', UA: 'fixture-check/1.0', NUMVERIFY_API_KEY: 'chave-de-teste' }, 'https://validation.example');
   chamadas.length = 0;
   let saidaNv = await nv.run({ tipo: 'telefone', valor: '11999999999' }, cComChave);
-  assert.equal(chamadas[0].url, 'https://apilayer.net/api/validate?access_key=chave-de-teste&number=5511999999999');
+  // A rota atual do marketplace responde primeiro, com o cabecalho `apikey`.
+  assert.equal(chamadas.length, 1, 'a fonte faz uma consulta quando a chave e aceita');
+  assert.equal(chamadas[0].url, 'https://api.apilayer.com/number_verification/validate?number=5511999999999');
+  assert.equal(chamadas[0].apikey, 'chave-de-teste');
   assert.equal(saidaNv.dados.valido, true);
   assert.equal(saidaNv.dados.operadora, 'Claro');
   assert.equal(saidaNv.dados.codigoPais, 'BR');
   assert.equal(saidaNv.dados.tipoLinha, 'mobile');
+  assert.equal(saidaNv.dados.provedor, 'marketplace');
 
-  // Chave invalida: o provedor responde 401 e a fonte propaga o erro.
-  numverifyResposta = { status: 401, corpo: { success: false, error: { code: 101, type: 'invalid_access_key' } } };
-  await assert.rejects(() => nv.run({ tipo: 'telefone', valor: '11999999999' }, cComChave), e => /HTTP 401/.test(e.message));
+  // Chave colada com espaco ou quebra de linha: o corte evita o 401 sem
+  // significado (o provedor recusa a chave como invalida).
+  const cComEspaco = ctx({ UA_MODE: 'identificado', UA: 'fixture-check/1.0', NUMVERIFY_API_KEY: '  chave-de-teste\n' }, 'https://validation.example');
+  chamadas.length = 0;
+  await nv.run({ tipo: 'telefone', valor: '11999999999' }, cComEspaco);
+  assert.equal(chamadas[0].apikey, 'chave-de-teste', 'a chave tem de ser cortada antes de ir ao provedor');
+
+  // O provedor recusa a autenticacao na rota do marketplace: a fonte tenta a
+  // rota antiga (access_key na query) antes de desistir.
+  numverifyResposta = { status: 401, corpo: { message: 'Invalid authentication credentials' } };
+  chamadas.length = 0;
+  saidaNv = await nv.run({ tipo: 'telefone', valor: '11999999999' }, cComChave);
+  assert.equal(chamadas.length, 2, 'a recusa de autenticacao abre a segunda rota');
+  assert.equal(chamadas[1].url, 'https://apilayer.net/api/validate?access_key=chave-de-teste&number=5511999999999');
+  assert.equal(saidaNv.dados.valido, true);
+  assert.equal(saidaNv.dados.provedor, 'legado');
+
+  // As duas rotas recusam a credencial: a falha sai em portugues, com a
+  // orientacao, e sem o corpo cru do provedor.
+  numverifyLegado = { status: 401, corpo: { success: false, error: { code: 101, type: 'invalid_access_key', info: 'You have not supplied a valid API Access Key.' } } };
+  chamadas.length = 0;
+  await assert.rejects(() => nv.run({ tipo: 'telefone', valor: '11999999999' }, cComChave), e => {
+    assert.match(e.message, /chave recusada pelo provedor/);
+    assert.match(e.message, /app\.apilayer\.com\/signup\/numverify\/free/);
+    assert.ok(!/success":false/.test(e.message), 'o corpo cru do provedor nao pode vazar para o relatorio');
+    assert.equal(e.status, 401);
+    return true;
+  });
+
+  // Cota do plano esgotada: o erro e do plano, nao da credencial, e a fonte
+  // traduz o tipo do provedor.
+  numverifyResposta = { status: 200, corpo: { success: false, error: { code: 104, type: 'usage_limit_reached' } } };
+  numverifyLegado = { status: 200, corpo: { success: false, error: { code: 104, type: 'usage_limit_reached' } } };
+  await assert.rejects(() => nv.run({ tipo: 'telefone', valor: '11999999999' }, cComChave), /cota do plano esgotada/);
+
+  // A rota pode ser fixada pelo operador: `legado` usa so a rota antiga.
+  numverifyResposta = { status: 200, corpo: NUMVERIFY_OK };
+  numverifyLegado = { status: 200, corpo: NUMVERIFY_OK };
+  const cLegado = ctx({ UA_MODE: 'identificado', UA: 'fixture-check/1.0', NUMVERIFY_API_KEY: 'chave-de-teste', NUMVERIFY_API_ROTA: 'legado' }, 'https://validation.example');
+  chamadas.length = 0;
+  saidaNv = await nv.run({ tipo: 'telefone', valor: '11999999999' }, cLegado);
+  assert.equal(chamadas.length, 1);
+  assert.equal(chamadas[0].url, 'https://apilayer.net/api/validate?access_key=chave-de-teste&number=5511999999999');
+  assert.equal(saidaNv.dados.provedor, 'legado');
 
   console.log(JSON.stringify({
     scope: 'LOCAL ONLY; fixtures offline das respostas ao vivo',
     fontes: ['email_registro', 'phone_footprint', 'numverify'],
     email_registro: { checagens: 8, positivo: '8 cadastrado', negativo: '0 cadastrado', bloqueado: '7 checagens seguem', todosBloqueados: 'falha real' },
     phone_footprint: { chamadasDeRede: 0, e164: '+5511999999999', nacional: '(11) 99999-9999', categorias: 5 },
-    numverify: { semChave: 'sem_chave', comChave: 'resposta valida', chaveInvalida: 'HTTP 401' }
+    numverify: { semChave: 'sem_chave', comChave: 'rota do marketplace (cabecalho apikey)',
+      recusaNaPrimeiraRota: 'cai na rota antiga', chaveInvalida: 'mensagem em portugues com a orientacao',
+      cotaDoPlano: 'traduzida', rotaFixa: 'NUMVERIFY_API_ROTA' }
   }));
 } finally {
   globalThis.fetch = realFetch;

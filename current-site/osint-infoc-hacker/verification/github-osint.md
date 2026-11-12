@@ -115,13 +115,27 @@ a serviço nenhum com o número.
 ### 3.3 `numverify` — o scanner Numverify do PhoneInfoga
 
 O upstream usa `https://api.apilayer.com/number_verification/validate` com
-header `Apikey`. Medido nesta máquina: essa rota responde **401 sem chave**, e
-`apilayer.net/api/validate` também (corpo `{"success":false,"error":{"code":
-101,"type":"invalid_access_key"}}`). A fonte usa a forma documentada do
-Numverify (`apilayer.net/api/validate?access_key=…&number=…`) e é declarada
-no manifesto com **credencial obrigatória**: sem `NUMVERIFY_API_KEY` ela
-responde `sem_chave` (falha de configuração — o relatório **não** fica
-parcial).
+header `Apikey`. O projeto usava só a forma antiga do Numverify
+(`https://apilayer.net/api/validate?access_key=…&number=…`). Medido nesta
+máquina em 2026-11-20, com uma chave emitida no painel da APILayer:
+
+| Rota | Cabeçalho | Resposta |
+| --- | --- | --- |
+| `api.apilayer.com/number_verification/validate` (atual) | `apikey: <CHAVE>` | **HTTP 401** `{"message":"Invalid authentication credentials"}` — idêntica à de uma chave inválida |
+| `apilayer.net/api/validate` (antiga) | `access_key=<CHAVE>` na query | **HTTP 401** `{"success":false,"error":{"code":101,"type":"invalid_access_key"}}` |
+
+Conclusão da medição: **a chave chegava ao provedor** (sem chave nenhuma a
+resposta é `missing_access_key`/`No API key found in request`, e com uma chave
+de outro produto da APILayer o provedor também recusa) — o que falha é o
+produto ao qual a chave pertence. A chave precisa ser emitida no painel
+*Number Verification API* (`app.apilayer.com/signup/numverify/free`, plano
+gratuito: 100 requisições por dia). A fonte agora usa a rota atual com
+cabeçalho `apikey` e **cai para a rota antiga** se o provedor recusar a
+credencial (`NUMVERIFY_API_ROTA` fixa uma delas: `auto`, `marketplace`,
+`legado`). A recusa vira mensagem em português com a orientação; o corpo cru
+do provedor não chega ao relatório. A fonte é declarada no manifesto com
+**credencial obrigatória**: sem `NUMVERIFY_API_KEY` ela responde `sem_chave`
+(falha de configuração — o relatório **não** fica parcial).
 
 ## 4. O que NÃO foi portado — e por quê (com a medição)
 
@@ -156,12 +170,14 @@ são a rota correta para uso offline, fora do edge.
 rede) fixa o contrato das três fontes: metadados do manifesto, as 8 URLs e os
 8 métodos exatos, o resultado positivo e negativo, o site bloqueado isolado, a
 falha real quando nenhum site responde, zero chamada de rede em
-`phone_footprint`, e `sem_chave`/`HTTP 401` no `numverify`.
+`phone_footprint`, e no `numverify`: `sem_chave`, a rota do marketplace com o
+cabeçalho `apikey`, a reserva para a rota antiga quando a credencial é
+recusada, a tradução da recusa (sem vazar o corpo cru) e a cota do plano.
 
 Saída real (`npm test`):
 
 ```json
-{"scope":"LOCAL ONLY; fixtures offline das respostas ao vivo","fontes":["email_registro","phone_footprint","numverify"],"email_registro":{"checagens":8,"positivo":"8 cadastrado","negativo":"0 cadastrado","bloqueado":"7 checagens seguem","todosBloqueados":"falha real"},"phone_footprint":{"chamadasDeRede":0,"e164":"+5511999999999","nacional":"(11) 99999-9999","categorias":5},"numverify":{"semChave":"sem_chave","comChave":"resposta valida","chaveInvalida":"HTTP 401"}}
+{"scope":"LOCAL ONLY; fixtures offline das respostas ao vivo","fontes":["email_registro","phone_footprint","numverify"],"email_registro":{"checagens":8,"positivo":"8 cadastrado","negativo":"0 cadastrado","bloqueado":"7 checagens seguem","todosBloqueados":"falha real"},"phone_footprint":{"chamadasDeRede":0,"e164":"+5511999999999","nacional":"(11) 99999-9999","categorias":5},"numverify":{"semChave":"sem_chave","comChave":"rota do marketplace (cabecalho apikey)","recusaNaPrimeiraRota":"cai na rota antiga","chaveInvalida":"mensagem em portugues com a orientacao","cotaDoPlano":"traduzida","rotaFixa":"NUMVERIFY_API_ROTA"}}
 ```
 
 Contagem do registro depois da integração (`npm test`):
@@ -184,5 +200,9 @@ Contagem do registro depois da integração (`npm test`):
 - "Cadastrado" significa que o endereço **está em uso** naquele serviço. Não
   identifica quem controla o e-mail, e os serviços podem mudar de resposta a
   qualquer momento.
-- `numverify` só funciona com `NUMVERIFY_API_KEY` configurada; sem a chave a
-  fonte responde `sem_chave` e o relatório não fica parcial.
+- `numverify` só funciona com `NUMVERIFY_API_KEY` configurada **e** com a chave
+  do produto *Number Verification API* da APILayer; sem a chave a fonte
+  responde `sem_chave` e o relatório não fica parcial. Com uma chave de outro
+  produto, o provedor responde 401 e a fonte reporta a recusa com a
+  orientação — a verificação ao vivo dessa fonte no edge continua dependente
+  de uma credencial válida.

@@ -54,7 +54,7 @@ scan entrega **26 das 32 fontes**; com as 6 chaves, as 32.
 | 22 | `telegram` | telefone | ok, página pública | 718 ms | 200 |
 | 23 | `ddd` | telefone | ok, **local** (snapshot Anatel, sem rede) | 0 ms | — |
 | 24 | `phone_footprint` | telefone | ok, **local** (PhoneInfoga/Google dorks) | 1 ms | — |
-| 25 | `numverify` | telefone | **sem_chave** (`NUMVERIFY_API_KEY`) | — | — |
+| 25 | `numverify` | telefone | **sem_chave** (`NUMVERIFY_API_KEY`) — com a chave, o provedor recusou a credencial (401 `invalid_access_key`) nesta sessão (ver limites) | — | — |
 | 26 | `wikidata` | nome | ok, 5 hits | 735 ms | 200 |
 | 27 | `datajud` | nome | **sem_chave** (`DATAJUD_API_KEY`) — com a chave, o CNJ devolveu 401 nesta sessão (ver limites) | — | — |
 | 28 | `nome_perfil` | nome | ok, 5 provedores (dev.to 404 = alvo sem perfil) | 2.717 ms | 200/404 |
@@ -491,10 +491,12 @@ conta foram excluídos por decisão, para não gerar efeito colateral no alvo.
 Prova offline (`verification/osint-github-source-check.mjs`, na cadeia do
 `npm test`, sem rede): fixa metadados, as 8 URLs e os 8 métodos, positivo,
 negativo, site bloqueado isolado, falha total, zero chamada de rede em
-`phone_footprint` e `sem_chave`/`HTTP 401` no `numverify`.
+`phone_footprint` e, no `numverify`, `sem_chave`, a rota do marketplace com o
+cabeçalho `apikey`, a reserva para a rota antiga, a recusa de chave traduzida
+(sem vazar o corpo cru) e a cota do plano.
 
 ```json
-{"scope":"LOCAL ONLY; fixtures offline das respostas ao vivo","fontes":["email_registro","phone_footprint","numverify"],"email_registro":{"checagens":8,"positivo":"8 cadastrado","negativo":"0 cadastrado","bloqueado":"7 checagens seguem","todosBloqueados":"falha real"},"phone_footprint":{"chamadasDeRede":0,"e164":"+5511999999999","nacional":"(11) 99999-9999","categorias":5},"numverify":{"semChave":"sem_chave","comChave":"resposta valida","chaveInvalida":"HTTP 401"}}
+{"scope":"LOCAL ONLY; fixtures offline das respostas ao vivo","fontes":["email_registro","phone_footprint","numverify"],"email_registro":{"checagens":8,"positivo":"8 cadastrado","negativo":"0 cadastrado","bloqueado":"7 checagens seguem","todosBloqueados":"falha real"},"phone_footprint":{"chamadasDeRede":0,"e164":"+5511999999999","nacional":"(11) 99999-9999","categorias":5},"numverify":{"semChave":"sem_chave","comChave":"rota do marketplace (cabecalho apikey)","recusaNaPrimeiraRota":"cai na rota antiga","chaveInvalida":"mensagem em portugues com a orientacao","cotaDoPlano":"traduzida","rotaFixa":"NUMVERIFY_API_ROTA"}}
 {"ok":true,"fontes":27,"email":13,"custo_email":24,"categorias":6,"chaves_visitante":0,"codigos":7,"credenciais_opcionais":["github","emailrep","cnpj_br","ceis","numverify","datajud"]}
 ```
 
@@ -506,7 +508,11 @@ Limitações declaradas: a verificação ao vivo dos 8 endpoints foi feita nesta
 máquina, não pela saída do Worker no edge (item 2 da lista "ainda obrigatório"
 continua sem prova); o ranking é uma fotografia de 2026-11-11; "cadastrado"
 significa que o endereço está em uso naquele serviço, não quem o controla;
-`numverify` só funciona com `NUMVERIFY_API_KEY` configurada. O relatório
+`numverify` só funciona com `NUMVERIFY_API_KEY` configurada **e** com chave do
+produto *Number Verification API* da APILayer — medido em 2026-11-20, a chave
+apresentada foi recusada pelo provedor nas duas rotas (401
+`invalid_access_key` na antiga, 401 `Invalid authentication credentials` na
+atual), e a fonte agora usa a rota atual com reserva para a antiga. O relatório
 completo, com o mapa repositório → técnica portada e o descarte de cada
 candidato, está em `verification/github-osint.md`.
 

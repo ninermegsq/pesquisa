@@ -45,6 +45,8 @@
     "mestre": "node scripts/configurar-mestre.mjs",
     "check:novos-alvos": "node verification/novos-alvos-check.mjs",
     "dev:worker": "wrangler dev --config wrangler.toml",
+    "deploy": "npm exec --yes wrangler@4 -- deploy --keep-vars",
+    "deploy:dry": "npm exec --yes wrangler@4 -- deploy --dry-run --keep-vars",
     "dev:validation": "wrangler dev --config wrangler.validation.toml"
   },
   "dependencies": {},

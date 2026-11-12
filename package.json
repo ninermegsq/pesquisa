@@ -41,6 +41,7 @@
     "check:novos-alvos": "npm --prefix current-site/osint-infoc-hacker run check:novos-alvos",
     "check:netlify": "npm --prefix osint-infoc-hacker run check",
     "check:build": "npm --prefix current-site/osint-infoc-hacker run check:build",
+    "deploy": "npm --prefix current-site/osint-infoc-hacker run deploy",
     "git": "git",
     "node": "node",
     "gh": "gh",

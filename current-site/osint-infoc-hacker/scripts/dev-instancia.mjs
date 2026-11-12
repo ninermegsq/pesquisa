@@ -22,6 +22,7 @@ import { existsSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
+import { cadeiaDe, mapaDeProcessos } from './dev-processos.mjs';
 
 // Portas usadas pelo preview do editor. A primeira livre e a canonica.
 export const PORTAS_CANONICAS = [3000, 5173, 8080, 4173, 5000, 3001, 5174, 8000, 8888];
@@ -139,12 +140,40 @@ export function encerrarProcesso(pid) {
 // (a previa do editor, ou o servidor de fundo de outra sessao) nunca e
 // derrubado por outro servidor. Derrubar uma previa viva e o que produz
 // "o servidor terminou antes de abrir a previa".
-export function instanciaOrfa(instancia) {
+//
+// Caso extra (Windows): o pai imediato pode estar VIVO mesmo com a arvore
+// morta acima dele, porque o Windows nao reparenta os filhos. O editor
+// encerra o processo que subiu a arvore, os intermediarios (cmd.exe, npm)
+// sobrevivem e o servidor continua segurando a porta. Nesse caso o sinal
+// esta no elo quebrado da cadeia de ancestrais: `instanciaDesatacada`.
+export function instanciaOrfa(instancia, { mapa = null } = {}) {
   const ppid = Number(instancia?.ppid);
-  if (!Number.isFinite(ppid) || ppid <= 0) return false;
-  // Linux: o processo orfao e reparentado para o init (pid 1).
-  if (ppid === 1) return true;
-  return !processoVivo(ppid);
+  if (Number.isFinite(ppid) && ppid > 0) {
+    // Linux: o processo orfao e reparentado para o init (pid 1).
+    if (ppid === 1) return true;
+    if (!processoVivo(ppid)) return true;
+  }
+  return instanciaDesatacada(instancia, { mapa });
+}
+
+// Idade minima para tratar uma instancia como "desatacada". Uma previa
+// recem-inaugurada nunca e derrubada por este caminho: o editor ainda pode
+// estar subindo a arvore de ancestrais e um elo morto ali seria normal.
+export const MINUTOS_DESATACADO = 15;
+
+// A instancia esta DESATACADA quando a arvore de ancestrais que a subiu
+// morreu e ela sobreviveu: o elo quebrado aparece na cadeia (o primeiro
+// ancestral que nao existe mais). E o sinal que identifica os servidores
+// que sobraram de uma sessao anterior e continuam segurando as portas.
+export function instanciaDesatacada(instancia, { mapa = null } = {}) {
+  const pid = Number(instancia?.pid);
+  if (!Number.isFinite(pid) || pid <= 0) return false;
+  const inicio = Date.parse(String(instancia?.iniciado_em || ''));
+  if (Number.isFinite(inicio) && Date.now() - inicio < MINUTOS_DESATACADO * 60_000) return false;
+  // O mapa de processos custa uma chamada ao PowerShell no Windows: e
+  // construido uma vez por operacao e reaproveitado.
+  const m = typeof mapa === 'function' ? mapa() : (mapa || mapaDeProcessos());
+  return cadeiaDe(pid, { mapa: m }).some(elo => !elo.vivo);
 }
 
 // Encerra as instancias do projeto que ainda seguram uma porta canonica,
@@ -157,6 +186,10 @@ export function instanciaOrfa(instancia) {
 // O servidor de fundo usa porta efemera e, por isso, nunca e atingido.
 export async function liberarPortasCanicas({ portas = portasCanonicas(), excetoPid = process.pid, apenasOrfas = true } = {}) {
   const encerrados = [];
+  // Um unico mapa de processos por operacao (o custo e uma chamada ao
+  // PowerShell no Windows).
+  let cacheMapa = null;
+  const mapa = () => { if (!cacheMapa) cacheMapa = mapaDeProcessos(); return cacheMapa; };
   for (const instancia of listarInstancias()) {
     if (instancia.invalido) {
       removerInstancia(instancia.pid);
@@ -169,7 +202,7 @@ export async function liberarPortasCanicas({ portas = portasCanonicas(), excetoP
     }
     const porta = Number(instancia.porta);
     if (!Number.isFinite(porta) || !portas.includes(porta)) continue;
-    const orfa = instanciaOrfa(instancia);
+    const orfa = instanciaOrfa(instancia, { mapa });
     if (apenasOrfas && !orfa) continue;
     if (!encerrarProcesso(instancia.pid)) continue;
     for (let i = 0; i < 60; i++) {

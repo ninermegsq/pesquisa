@@ -10,7 +10,7 @@ const workerPath = path.join(root, 'cloudflare-worker.mjs');
 let worker = await readFile(workerPath, 'utf8');
 // Fontes opcionais: quando o arquivo nao existe em public/, a constante do
 // Worker e preservada (a versao publicada continua sendo a fonte de verdade).
-const SOURCES = [['HTML', 'public/index.html'], ['APP_JS', 'public/app.js'], ['THANKS', 'public/obrigado.html'], ['FAVICON', 'public/favicon.svg'], ['ROBOTS', 'public/robots.txt'], ['SITEMAP', 'public/sitemap.xml'], ['SECURITY', 'public/.well-known/security.txt']];
+const SOURCES = [['HTML', 'public/index.html'], ['APP_JS', 'public/app.js'], ['THANKS', 'public/obrigado.html'], ['FAVICON', 'public/favicon.svg'], ['ROBOTS', 'public/robots.txt'], ['SITEMAP', 'public/sitemap.xml'], ['SECURITY', 'public/.well-known/security.txt'], ['ADMIN_HTML', 'public/admin.html'], ['ADMIN_JS', 'public/admin.js']];
 let injected = 0;
 for (const [name, file] of SOURCES) {
   const pattern = new RegExp('^const ' + name + ' = .*;$', 'm');

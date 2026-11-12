@@ -26,7 +26,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { detectar } from '../src/lib/alvo.mjs';
 import { aplicarStats } from './stats.mjs';
 import { verificarTokenCalor } from '../src/lib/warm.mjs';
-import { sincronizarManifesto } from './garantir-manifesto.mjs';
+import { sincronizarManifesto, sincronizarCatalogo } from './garantir-manifesto.mjs';
 import {
   liberarPortasCanicas,
   portasCanonicas,
@@ -54,12 +54,43 @@ let handleScan = null;
 let REGISTRY = [];
 try {
   await sincronizarManifesto();
+  await sincronizarCatalogo();
   ({ handleScan } = await import('../src/scan.mjs'));
   ({ REGISTRY } = await import('../src/sources/registry.mjs'));
 } catch (erro) {
   // Falha aqui nao pode derrubar o servidor: sem motor de fontes a interface
   // ainda abre e o motivo exato fica no log do processo.
   console.error(`[dev] o motor de fontes nao carregou: ${erro.message}`);
+}
+
+// ---------------------------------------------------------------------------
+// Painel admin: import dinamico, com degradacao explicita
+// ---------------------------------------------------------------------------
+//
+// O painel admin depende de um modulo GERADO (src/admin/catalogo.meta.mjs).
+// Em ESM os imports estaticos sao resolvidos (linked) ANTES de qualquer
+// codigo do modulo rodar: se o modulo gerado ainda nao existe no disco —
+// clone novo, build nao rodado, arquivo apagado — um `import` estatico de
+// src/admin/rotas.mjs mata o processo ANTES de abrir a porta. E o editor
+// mostra "o servidor terminou antes de abrir a previa".
+//
+// O mesmo problema ja existia com o manifesto das fontes (ver bloco acima) e
+// foi resolvido do mesmo jeito: sincronizar antes e carregar dinamico.
+//
+// Se o painel nao carregar, o servidor continua no ar e /api/admin/*
+// responde 503 com o motivo exato, em vez de derrubar a previa.
+let tratarAdmin = async () => new Response(
+  JSON.stringify({ ok: false, motivo: 'painel admin indisponivel no servidor local' }),
+  { status: 503, headers: { 'content-type': 'application/json; charset=utf-8' } }
+);
+try {
+  ({ tratarAdmin } = await import('../src/admin/rotas.mjs'));
+} catch (erro) {
+  console.error(`[dev] o painel admin nao carregou: ${erro.message}`);
+  tratarAdmin = async () => new Response(
+    JSON.stringify({ ok: false, motivo: `painel admin indisponivel no servidor local: ${erro.message}` }),
+    { status: 503, headers: { 'content-type': 'application/json; charset=utf-8' } }
+  );
 }
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -195,6 +226,18 @@ const env = {
   BUDGET_SUBREQ: '38',
   TURNSTILE_SITEKEY: '1x00000000000000000000AA'
 };
+
+// Painel admin: com SUPABASE_URL e SUPABASE_PUBLISHABLE_KEY no ambiente o
+// servidor local conversa com o mesmo banco do Worker; sem eles, entra o
+// banco em memoria (ADMIN_MODO_LOCAL=1). A chave mestra e efemera por
+// execucao: as credenciais gravadas no modo local somem ao reiniciar.
+env.SUPABASE_URL = process.env.SUPABASE_URL || '';
+env.SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || '';
+env.ADMIN_MODO_LOCAL = (env.SUPABASE_URL && env.SUPABASE_PUBLISHABLE_KEY) ? '' : '1';
+env.CREDENCIAIS_MASTER_KEY = process.env.CREDENCIAIS_MASTER_KEY ||
+  createHash('sha256').update(`osint-local-master:${randomUUID()}`).digest('hex');
+env.PROXY_GATEWAY_URL = process.env.PROXY_GATEWAY_URL || '';
+env.ADMIN_SENHA = process.env.ADMIN_SENHA || '';
 
 // Credenciais do operador declaradas no manifesto (GITHUB_TOKEN,
 // EMAILREP_KEY, TRANSPARENCIA_KEY, NUMVERIFY_API_KEY, DATAJUD_API_KEY,
@@ -471,14 +514,36 @@ async function devSaude(req, res) {
   return sendJson(res, 200, saudeLocal());
 }
 
+// Painel admin local: a mesma API do Worker, sobre o mesmo objeto env.
+async function devAdmin(req, res) {
+  const host = req.headers.host || 'localhost';
+  const bruto = (req.method === 'GET' || req.method === 'HEAD') ? null : await readBody(req);
+  const cabecalhos = Object.entries(req.headers)
+    .filter(([nome]) => !['host', 'connection', 'content-length'].includes(nome))
+    .map(([nome, valor]) => [nome, valor]);
+  const request = new Request(`http://${host}${req.url || '/'}`, {
+    method: req.method,
+    headers: cabecalhos,
+    body: bruto && bruto.length ? bruto : undefined
+  });
+  const response = await tratarAdmin(request, env, { ip: clientIp(req) });
+  const payload = await response.text();
+  const headers = Object.fromEntries(response.headers.entries());
+  res.writeHead(response.status, { ...headers, 'cache-control': 'no-store' });
+  res.end(payload);
+}
+
 async function route(req, res) {
   const url = new URL(req.url || '/', 'http://localhost');
   const pathname = decodeURIComponent(url.pathname);
   if (pathname === '/api/scan') return devScan(req, res);
   if (pathname === '/api/saude') return devSaude(req, res);
+  if (pathname.startsWith('/api/admin')) return devAdmin(req, res);
   if (pathname === '/.netlify/functions/token') return devToken(req, res);
   if (pathname === '/' || pathname === '/index.html') return sendIndex(res);
   if (pathname === '/app.js') return sendFile(res, path.join(publicDir, 'app.js'));
+  if (pathname === '/admin' || pathname === '/admin.html') return sendFile(res, path.join(publicDir, 'admin.html'));
+  if (pathname === '/admin.js') return sendFile(res, path.join(publicDir, 'admin.js'));
   if (pathname === '/og.png') return sendFile(res, path.join(publicDir, 'og.png'));
   // favicon.svg, robots.txt, sitemap.xml, .well-known/security.txt e
   // obrigado.html sao servidos de public/ como os demais arquivos estaticos.

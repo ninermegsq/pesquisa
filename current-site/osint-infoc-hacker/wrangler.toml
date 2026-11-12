@@ -14,6 +14,14 @@ UA_NAVEGADOR = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KH
 ALLOWED_ORIGINS = "https://ostnt.online"
 UA = "ostnt.online scanner (+https://ostnt.online)"
 BUDGET_SUBREQ = "38"
+# Painel admin: o endereco e a chave publicavel do Supabase. A chave
+# publicavel e publica por desenho (a protecao esta nas policies RLS e nas
+# funcoes SECURITY DEFINER); a chave de servico NUNCA entra aqui.
+SUPABASE_URL = "https://uwicqptehijzjubbkanb.supabase.co"
+SUPABASE_PUBLISHABLE_KEY = "sb_publishable_6hszy3i4tCuIwlks6Cr94g_F1a6mosu"
+# CREDENCIAIS_MASTER_KEY nao vive no repositorio: e segredo do Worker.
+#   npx wrangler secret put CREDENCIAIS_MASTER_KEY
+# (o painel sobe sem ela, mas nenhuma credencial de API pode ser gravada).
 
 [[durable_objects.bindings]]
 name = "TOKEN_GUARD"

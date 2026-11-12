@@ -6,3 +6,17 @@ node_modules/
 
 # Estado local do Wrangler (.wrangler/tmp, .wrangler/state).
 .wrangler/
+
+# Segredos e estado local do operador. NUNCA entram no repositorio:
+# a chave mestra das credenciais (CREDENCIAIS_MASTER_KEY), a senha do
+# painel (ADMIN_SENHA) e as chaves de API das fontes vao como segredo do
+# Worker (`wrangler secret put`) ou como variavel de ambiente do processo.
+.local/
+.dev.vars
+.env
+.env.*
+!.env.example
+
+# Logs e temporarios.
+*.log
+supabase/.temp/

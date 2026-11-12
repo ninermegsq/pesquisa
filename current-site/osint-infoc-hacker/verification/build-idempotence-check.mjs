@@ -28,6 +28,8 @@ const SITE = path.resolve(aqui, '..');
 // Artefatos derivados que o build reescreve (caminho relativo ao site).
 const DERIVADOS = [
   'src/sources/registry.meta.mjs',
+  'src/admin/catalogo.meta.mjs',
+  'db/migrations/0002_catalogo.sql',
   'src/lib/migrations.mjs',
   'cloudflare-worker.mjs'
 ];

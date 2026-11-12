@@ -1,0 +1,212 @@
+{
+  "descricao": "Metadados de operacao das fontes: limite de requisicoes, uso de proxy rotativo e explicacao de falha por fonte. Complementa o manifesto (src/sources/registry.json), que continua sendo a fonte da verdade de id, tipos, custo, TTL e credencial. Este arquivo e a entrada de scripts/build-catalogo.mjs, que gera src/admin/catalogo.meta.mjs (runtime) e db/migrations/0002_catalogo.sql (banco).",
+  "origens_de_limite": {
+    "documentado": "limite publicado pelo provedor",
+    "medido": "limite medido por este projeto, com data",
+    "plano": "limite do plano contratado pelo operador",
+    "nao_publicado": "o provedor nao publica cota; o consumo nao e previsivel"
+  },
+  "padroes": {
+    "sem_chave": "A fonte nao rodou porque a credencial do operador nao esta configurada. Nao e falha real: o restante do relatorio continua valendo e o relatorio nao fica parcial.",
+    "sem_token": "A fonte nao rodou por falta de token de uso unico valido (ausente, expirado, reutilizado ou vinculado a outro alvo). Falha de sessao, nao do provedor.",
+    "erro_rede": "Falha de DNS, conexao ou TLS ao falar com o provedor. Em geral e bloqueio do IP de saida (reputacao) ou provedor fora do ar; a fonte repassa a mensagem crua.",
+    "timeout": "O prazo da consulta estourou antes da resposta. Causas Frequentes: provedor lento, cota do orcamento de subrequests do scan ou fila do provedor.",
+    "http": "O provedor respondeu com status HTTP inesperado. 429 e limite de cota por IP; 401/403 e credencial recusada ou bloqueada; 5xx e falha do provedor.",
+    "formato": "A resposta chegou, mas fora do formato esperado (JSON invalido, HTML de erro ou campo ausente). Em geral o provedor mudou o contrato.",
+    "erro": "Falha nao classificada pela taxonomia. O detalhe fica no log privado do Worker; o relatorio publica apenas a mensagem bounded."
+  },
+  "fontes": {
+    "gravatar": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "Consulta publica por hash do e-mail; o provedor nao publica cota", "origem": "nao_publicado" },
+      "usa_proxy": false,
+      "observacao": "Responde 404 quando o e-mail nao tem avatar: e resposta legitima, nao falha.",
+      "explicacoes": { "http": "404 significa que o e-mail nao tem gravatar (resposta legitima); 429/403 indicam bloqueio por IP." }
+    },
+    "pgp": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "Consulta publica ao keys.openpgp.org; sem cota publicada", "origem": "nao_publicado" },
+      "usa_proxy": false,
+      "observacao": "200 com lista vazia significa que o e-mail nao tem chave publica: nao e falha.",
+      "explicacoes": { "http": "200 sem chaves e resposta legitima; 429 indica limite por IP do provedor." }
+    },
+    "gitlab": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "Busca GraphQL publica; cota do GitLab por IP nao documentada aqui", "origem": "nao_publicado" },
+      "usa_proxy": false,
+      "observacao": "A API GraphQL exige POST: a fonte usa a rota de busca por e-mail.",
+      "explicacoes": { "formato": "A resposta GraphQL volta em envelope (data/users) ou com errors: a fonte le o envelope e acusa formato invalido quando ele falta." }
+    },
+    "npm": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "Registro publico; sem cota publicada", "origem": "nao_publicado" },
+      "usa_proxy": false,
+      "observacao": "Registro de pacotes: a fonte procura pacotes com o e-mail no campo maintainers.",
+      "explicacoes": {}
+    },
+    "bluesky": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "API publica app.bsky; cota nao publicada", "origem": "nao_publicado" },
+      "usa_proxy": false,
+      "observacao": "Busca por e-mail na API publica de perfis.",
+      "explicacoes": {}
+    },
+    "telegram": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "Pagina publica t.me; sem cota publicada", "origem": "nao_publicado" },
+      "usa_proxy": false,
+      "observacao": "Entrega o titulo e a descricao da pagina publica. O Telegram devolve a mesma pagina para qualquer numero: o resultado e paginaPublica, nao prova de existencia da conta.",
+      "explicacoes": { "http": "A pagina t.me responde 200 mesmo para numero inexistente; so 429/5xx sao falha real." }
+    },
+    "xon": {
+      "limite": { "por_minuto": null, "por_dia": 100, "texto": "Cerca de 100 chamadas por dia por IP para os endpoints usados, alem de limite por hora", "origem": "documentado" },
+      "usa_proxy": true,
+      "observacao": "Fonte mais exposta a limite por IP do projeto: e a primeira a entrar no pool de proxy rotativo. A resposta traz vazamentos e senhas expostas.",
+      "explicacoes": { "http": "429 aqui e quase sempre cota por IP (100/dia): o proxy rotativo e a mitigacao; se persistir, o plano do provedor precisa mudar." }
+    },
+    "hudsonrock": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "Consulta publica; cota nao publicada", "origem": "nao_publicado" },
+      "usa_proxy": false,
+      "observacao": "Entrega infostealers que registraram o e-mail.",
+      "explicacoes": {}
+    },
+    "github": {
+      "limite": { "por_minuto": 83, "por_dia": 2000, "texto": "Com token: 5000 requisicoes por hora por usuario; sem token a API nao e usada", "origem": "documentado" },
+      "usa_proxy": false,
+      "observacao": "So roda com GITHUB_TOKEN. A resposta e cacheada por e-mail por 24 h para reduzir chamadas compartilhadas.",
+      "explicacoes": { "sem_chave": "Sem GITHUB_TOKEN a fonte nao roda. Configure a chave no painel admin (ou como variavel de ambiente) e o resumo passa a ter disponibilidade real.", "http": "401/403 significa token invalido, expirado ou sem escopo de leitura de usuario; 403 com rate limit e cota por token." }
+    },
+    "emailrep": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "Limite do plano contratado (chave da conta)", "origem": "plano" },
+      "usa_proxy": false,
+      "observacao": "So roda com EMAILREP_KEY. Entrega reputacao, detalhes de e-mail corporativo e blacklist.",
+      "explicacoes": { "sem_chave": "Sem EMAILREP_KEY a fonte nao roda e o relatorio nao fica parcial.", "http": "401/403 e chave invalida ou conta sem cota; 429 e cota do plano." }
+    },
+    "email_registro": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "8 endpoints publicos, cada um com a propria cota por IP", "origem": "nao_publicado" },
+      "usa_proxy": true,
+      "observacao": "Cada endpoint responde se o e-mail esta em uso naquele servico. Site bloqueado (por exemplo Freelancer com EMAIL_BLOCKED) vira indisponivel isolado, e nao falha da fonte.",
+      "explicacoes": { "http": "Um site que bloqueia o dominio responde 400 EMAIL_BLOCKED: a fonte marca o site como indisponivel e segue com os outros.", "formato": "Resposta sem campo de status reconhecivel: o site e marcado indisponivel." }
+    },
+    "dns": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "Resolver DoH publico (Google); cota nao publicada", "origem": "nao_publicado" },
+      "usa_proxy": false,
+      "observacao": "Traz MX, SPF, DKIM e DMARC: registro TXT prova que a empresa existe, nao que o produto esteja em uso.",
+      "explicacoes": { "formato": "Resposta DoH sem a secao Answer: o nome pode nao resolver, o que e resposta legitima (vira observation, nao erro)." }
+    },
+    "crtsh": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "Provedor de subdominios; cota nao publicada", "origem": "nao_publicado" },
+      "usa_proxy": false,
+      "observacao": "A fonte limita o resultado a 60 subdominios e avisa que a lista nao e um inventario completo.",
+      "explicacoes": { "http": "503 e o provedor ocupado (server busy): e indisponibilidade temporaria, nao ausencia de subdominios.", "timeout": "O provedor pode demorar mais de 15 s; a fonte tem prazo proprio." }
+    },
+    "wayback": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "CDX publico do arquivo; cota nao publicada", "origem": "nao_publicado" },
+      "usa_proxy": false,
+      "observacao": "A API CDX pode responder 503: a fonte cai no caminho available e marca o historico como indisponivel.",
+      "explicacoes": { "http": "503 do CDX e indisponibilidade do arquivo; a fonte nao inventa historico vazio como resultado." }
+    },
+    "rdap": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "RDAP do registro; cota nao publicada", "origem": "nao_publicado" },
+      "usa_proxy": false,
+      "observacao": "Dados de registro do dominio: datas, status e entidades.",
+      "explicacoes": { "formato": "RDAP sem o bloco de registro esperado: a fonte acusa formato inesperado." }
+    },
+    "ssllabs": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "API v3 publica; a avaliacao pode demorar dezenas de segundos", "origem": "nao_publicado" },
+      "usa_proxy": false,
+      "observacao": "A nota vem por endpoint: a fonte publica a pior nota entre os servidores avaliados. Enquanto a avaliacao nao acabou, devolve situacao em_andamento, sem nota e sem erro.",
+      "explicacoes": { "timeout": "A avaliacao do SSL Labs pode passar de 20 s; nesse caso a fonte devolve em_andamento e a proxima consulta encontra a nota.", "http": "429 e limite do provedor por IP." }
+    },
+    "urlscan": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "Busca publica; a API completa exige chave", "origem": "nao_publicado" },
+      "usa_proxy": false,
+      "observacao": "Entrega paginas publicas varridas pelo urlscan.",
+      "explicacoes": { "http": "403/429 na busca publica indica cota ou bloqueio por IP." }
+    },
+    "internetdb": {
+      "limite": { "por_minuto": 60, "por_dia": null, "texto": "A base publica do Shodan aceita cerca de 1 requisicao por segundo por IP", "origem": "documentado" },
+      "usa_proxy": false,
+      "observacao": "Os dados sao do IP do registro A: em CDN ou hospedagem compartilhada a vulnerabilidade pode nao pertencer ao dominio.",
+      "explicacoes": { "http": "429 aqui e cota por IP do Shodan." }
+    },
+    "ipgeo": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "Consulta publica de whois; cota do plano livre nao publicada", "origem": "nao_publicado" },
+      "usa_proxy": false,
+      "observacao": "Pais, cidade, ASN e organizacao do IP.",
+      "explicacoes": {}
+    },
+    "asn": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "Consulta DNS do Team Cymru; cota nao publicada", "origem": "nao_publicado" },
+      "usa_proxy": false,
+      "observacao": "Resolucao reversa do IP para ASN.",
+      "explicacoes": { "formato": "Resolucao NXDOMAIN e resposta legitima do DNS reverso." }
+    },
+    "cnpj_br": {
+      "limite": { "por_minuto": 3, "por_dia": null, "texto": "A base publica (publica.cnpj.ws) aceita 3 consultas por minuto por IP; a 4a devolve 429 com retry-after 60", "origem": "documentado" },
+      "usa_proxy": true,
+      "observacao": "Usa sempre a base publica; quando o limite e atingido, cai na Minha Receita como reserva, e o limite do provedor nao vira relatorio parcial. Os dados tem defasagem de cerca de um mes.",
+      "explicacoes": { "http": "429 da base publica e limite por IP: a fonte tenta a reserva (Minha Receita) e so vira falha se as duas falharem." }
+    },
+    "ceis": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "Limite do plano contratado (chave do Portal da Transparencia)", "origem": "plano" },
+      "usa_proxy": false,
+      "observacao": "So roda com TRANSPARENCIA_KEY. Entrega sancoes e empresas impedidas.",
+      "explicacoes": { "sem_chave": "Sem TRANSPARENCIA_KEY a fonte nao roda e o relatorio nao fica parcial.", "http": "401/403 e chave invalida ou sem acesso ao conjunto de dados." }
+    },
+    "ddd": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "Consulta local (snapshot Anatel): nenhuma chamada de rede", "origem": "nao_publicado" },
+      "usa_proxy": false,
+      "observacao": "Snapshot estatico de 67 DDDs obtido do Anatel em 2026-10-30. Precisa de atualizacao deliberada: nao promete dado mais novo que o arquivo.",
+      "explicacoes": {}
+    },
+    "phone_footprint": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "Consulta local: nenhuma chamada de rede", "origem": "nao_publicado" },
+      "usa_proxy": false,
+      "observacao": "Normaliza E.164, monta o formato nacional com DDD e entrega links de busca. Os links sao buscas, nao consultas.",
+      "explicacoes": {}
+    },
+    "numverify": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "Limite do plano contratado (Numverify/APILayer)", "origem": "plano" },
+      "usa_proxy": false,
+      "observacao": "So roda com NUMVERIFY_API_KEY: sem a chave a API responde 401 e a fonte fica sem_chave. Validade, operadora, pais e tipo de linha.",
+      "explicacoes": { "sem_chave": "Sem NUMVERIFY_API_KEY a fonte nao roda e o relatorio nao fica parcial.", "http": "401 sem access_key e ausencia de credencial; 429 e cota do plano." }
+    },
+    "wikidata": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "Consulta SPARQL publica; consultas lentas expiram em 60 s", "origem": "documentado" },
+      "usa_proxy": false,
+      "observacao": "Busca por rotulos de nome: homonimos sao comuns, entao o resultado nao prova identidade.",
+      "explicacoes": { "timeout": "O SPARQL do Wikidata corta consultas em 60 s; a consulta precisa ser estreita." }
+    },
+    "datajud": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "API publica do CNJ; sem cota publicada. Medido em 2026-11-11: resposta entre 26 s e 40 s", "origem": "medido" },
+      "usa_proxy": false,
+      "observacao": "O CNJ recusa a chave com 401 security_exception quando o volume de sondas cresce: nao e bug do codigo. O prazo do scan e 30 s por causa dessa latencia medida.",
+      "explicacoes": { "http": "401 security_exception e a chave recusada pelo CNJ (bloqueio por volume), nao erro de codigo; 404 e ausencia de processo no indice consultado.", "timeout": "O CNJ medido leva 26 s a 40 s: com prazo de 30 s a fonte pode estourar mesmo com a chave valida." }
+    },
+    "cpf_valida": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "Validacao local dos digitos verificadores: nenhuma chamada de rede", "origem": "nao_publicado" },
+      "usa_proxy": false,
+      "observacao": "Prova apenas que os digitos batem. CPF valido nao e CPF existente.",
+      "explicacoes": {}
+    },
+    "cpf_brasilapi": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "BrasilAPI: cota do plano nao publicada", "origem": "nao_publicado" },
+      "usa_proxy": false,
+      "observacao": "Medido em 2026-11-11: o provedor nao publica nome, nascimento, filiacao nem endereco. A fonte publica exatamente o que recebeu e deixa 'existe' nulo quando o provedor nao afirma.",
+      "explicacoes": { "http": "404 significa que o CPF nao consta da base consultada: ausencia na base, nunca prova de inexistencia." }
+    },
+    "placa_footprint": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "Consulta local: nenhuma chamada de rede", "origem": "nao_publicado" },
+      "usa_proxy": false,
+      "observacao": "Formato da placa (Mercosul ou antiga) e links de busca. Nao identifica o titular.",
+      "explicacoes": {}
+    },
+    "placa_consultarplaca": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "Consulta paga por placa (R$ 0,31 em 2026-11-11); limite conforme plano", "origem": "plano" },
+      "usa_proxy": false,
+      "observacao": "So roda com CONSULTARPLACA_CREDENCIAL (email:api_key em Basic Auth). Aceita apenas os formatos AAA0000 e AAA09A00: placa Mercosul e recusada com 400. A placa identifica o veiculo, nao o titular.",
+      "explicacoes": { "sem_chave": "Sem CONSULTARPLACA_CREDENCIAL a fonte nao roda e o relatorio nao fica parcial.", "http": "400 e formato de placa nao aceito pelo provedor; 401 e credencial recusada; 402 e saldo insuficiente." }
+    },
+    "nome_perfil": {
+      "limite": { "por_minuto": null, "por_dia": null, "texto": "10 subrequests em sites publicos; cota depende de cada site", "origem": "nao_publicado" },
+      "usa_proxy": false,
+      "observacao": "Perfis publicos de nomes de usuario derivados do nome completo. Perfil com o mesmo nome nao prova identidade. Quando nenhum site responde, a fonte falha de verdade em vez de devolver nada encontrado.",
+      "explicacoes": { "http": "Um site que responde 403/429 e marcado indisponivel; so quando todos falham a fonte vira falha real." }
+    }
+  }
+}

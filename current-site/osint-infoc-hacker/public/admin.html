@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="dark">
+<title>Painel admin · OSINT // infoc.hacker</title>
+<style>
+:root{
+  --bg:#050505; --panel:#0c0c0b; --line:rgba(231,230,217,.13); --txt:#e7e6d9;
+  --dim:rgba(231,230,217,.55); --ember:#e6a274; --ok:#9fd3ad; --warn:#e6a274; --err:#e08585;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{width:min(1180px,100% - 28px);margin:0 auto;padding:26px 0 70px}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:14px}
+h1{margin:0;font:500 21px/1.2 Georgia,"Times New Roman",serif}
+h1 em{color:var(--ember);font-style:normal}
+.sub{color:var(--dim);font:10px var(--mono);letter-spacing:.14em;text-transform:uppercase}
+nav.abas{display:flex;flex-wrap:wrap;gap:6px;margin:18px 0 22px}
+nav.abas button{border:1px solid var(--line);background:transparent;color:var(--dim);border-radius:999px;padding:7px 13px;font:10px var(--mono);letter-spacing:.1em;cursor:pointer}
+nav.abas button[aria-selected="true"]{border-color:var(--ember);color:var(--ember);background:rgba(230,162,116,.08)}
+section[role="tabpanel"]{display:none}
+section[role="tabpanel"].ativo{display:block}
+.card{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:16px 17px;margin-bottom:16px}
+.card h2{margin:0 0 4px;font:500 15px/1.3 Georgia,serif}
+.card p.dica{margin:0 0 13px;color:var(--dim);font-size:12px}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+.kpi{border:1px solid var(--line);border-radius:10px;padding:12px 13px;background:#0a0a09}
+.kpi b{display:block;font:500 26px/1.2 Georgia,serif}
+.kpi span{color:var(--dim);font:9px var(--mono);letter-spacing:.13em;text-transform:uppercase}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--dim);font:9px var(--mono);letter-spacing:.13em;text-transform:uppercase;font-weight:400}
+td.mono,th.mono{font-family:var(--mono);font-size:11px}
+.tag{display:inline-block;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font:9px var(--mono);letter-spacing:.06em;color:var(--dim)}
+.tag.ok{border-color:rgba(159,211,173,.45);color:var(--ok)}
+.tag.aus{border-color:rgba(230,133,133,.45);color:var(--err)}
+.tag.warn{border-color:rgba(230,162,116,.5);color:var(--warn)}
+input,select,textarea{width:100%;background:#080807;border:1px solid var(--line);border-radius:8px;color:var(--txt);padding:9px 10px;font:13px inherit}
+input:focus,select:focus,textarea:focus{outline:1px solid var(--ember)}
+label{display:block;color:var(--dim);font:9px var(--mono);letter-spacing:.13em;text-transform:uppercase;margin:0 0 5px}
+.campo{margin-bottom:10px}
+.linha{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.linha .campo{flex:1 1 170px;margin-bottom:0}
+button{font:11px var(--mono);letter-spacing:.09em;border-radius:8px;border:1px solid var(--line);background:#101010;color:var(--txt);padding:9px 14px;cursor:pointer}
+button:hover{border-color:var(--ember);color:var(--ember)}
+button.primario{background:var(--ember);border-color:var(--ember);color:#120d09}
+button.primario:hover{filter:brightness(1.08);color:#120d09}
+button.perigo:hover{border-color:var(--err);color:var(--err)}
+button.mini{padding:4px 8px;font-size:10px}
+.msg{padding:9px 11px;border-radius:8px;font:11px var(--mono);margin:10px 0 0;display:none}
+.msg.erro{display:block;border:1px solid rgba(230,133,133,.45);color:var(--err)}
+.msg.ok{display:block;border:1px solid rgba(159,211,173,.4);color:var(--ok)}
+.aviso{border:1px dashed rgba(230,162,116,.45);border-radius:9px;padding:11px 13px;color:var(--warn);font:11px var(--mono);margin-bottom:14px}
+.escondido{display:none !important}
+#login{max-width:380px;margin:9vh auto}
+.barras{display:flex;flex-wrap:wrap;gap:6px;align-items:flex-end;height:120px;margin-top:12px}
+.barra{flex:1 1 16px;min-width:12px;display:flex;flex-direction:column;justify-content:flex-end;gap:3px;text-align:center}
+.barra i{display:block;background:linear-gradient(180deg,var(--ember),rgba(230,162,116,.35));border-radius:4px 4px 0 0;min-height:2px}
+.barra span{font:8px var(--mono);color:var(--dim);transform:rotate(-45deg);white-space:nowrap}
+.explica{border-left:2px solid var(--ember);padding:8px 11px;margin:8px 0;background:rgba(230,162,116,.06);border-radius:0 7px 7px 0;color:var(--dim);font-size:12px}
+.explica b{color:var(--txt);display:block;font-size:12px;margin-bottom:3px}
+.legenda{display:flex;flex-wrap:wrap;gap:14px;color:var(--dim);font:10px var(--mono);margin-top:10px}
+.legenda i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}
+footer{margin-top:26px;color:var(--dim);font:9px var(--mono);letter-spacing:.1em;border-top:1px solid var(--line);padding-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div>
+    <h1>Painel <em>admin</em></h1>
+    <div class="sub">OSINT // infoc.hacker · operacao</div>
+  </div>
+  <div class="sub" id="estado">carregando…</div>
+</header>
+
+<!-- LOGIN -->
+<section id="login">
+  <div class="card">
+    <h2>Entrar no painel</h2>
+    <p class="dica">O acesso e do operador. As credenciais sao trocaveis em qualquer momento pelo painel.</p>
+    <div class="campo"><label for="usuario">Usuario</label><input id="usuario" autocomplete="username" spellcheck="false"></div>
+    <div class="campo"><label for="senha">Senha</label><input id="senha" type="password" autocomplete="current-password"></div>
+    <button class="primario" id="entrar" type="button">ENTRAR</button>
+    <p class="msg" id="login-msg" role="alert"></p>
+  </div>
+  <div class="aviso" id="aviso-local">MODO LOCAL · banco em memoria · sessoes, credenciais e historico somem quando o servidor reinicia.</div>
+</section>
+
+<!-- PAINEL -->
+<div id="painel" class="escondido">
+
+  <nav class="abas" role="tablist">
+    <button role="tab" aria-selected="true" data-aba="visao">VISAO GERAL</button>
+    <button role="tab" aria-selected="false" data-aba="chaves">CHAVES DE API</button>
+    <button role="tab" aria-selected="false" data-aba="proxies">PROXIES</button>
+    <button role="tab" aria-selected="false" data-aba="fontes">FONTES</button>
+    <button role="tab" aria-selected="false" data-aba="visitas">FLUXO DE VISITAS</button>
+    <button role="tab" aria-selected="false" data-aba="falhas">FLUXO DE FALHAS</button>
+  </nav>
+
+  <section role="tabpanel" class="ativo" id="aba-visao">
+    <div class="card">
+      <h2>Ambiente</h2>
+      <p class="dica">Como o painel esta ligado agora.</p>
+      <div class="grid" id="ambiente"></div>
+    </div>
+    <div class="card">
+      <h2>Funil do periodo</h2>
+      <p class="dica" id="periodo">Ultimos 30 dias.</p>
+      <div class="grid" id="funil"></div>
+    </div>
+    <div class="card">
+      <h2>Ultimos eventos</h2>
+      <p class="dica">Erros de origem, credenciais ausentes e falhas registradas pelo motor.</p>
+      <table><thead><tr><th>Quando</th><th>Tipo</th><th>Fonte</th><th>Codigo</th><th>Mensagem</th></tr></thead><tbody id="eventos"></tbody></table>
+    </div>
+  </section>
+
+  <section role="tabpanel" id="aba-chaves">
+    <div class="card">
+      <h2>Chaves de API</h2>
+      <p class="dica">Quais chaves estao ativas, de onde vem cada uma, como a fonte usa e qual e o limite de requisicoes. O valor completo nunca e devolvido: aparecem a mascara e a impressao digital.</p>
+      <table><thead><tr><th>Fonte</th><th>Variavel</th><th>Estado</th><th>Origem</th><th class="mono">Min</th><th class="mono">Dia</th><th>Como funciona</th><th></th></tr></thead><tbody id="lista-chaves"></tbody></table>
+      <p class="msg" id="chaves-msg"></p>
+    </div>
+    <div class="card">
+      <h2>Gravar credencial</h2>
+      <p class="dica">O valor e cifrado (AES-256-GCM) antes de ir para o banco. A chave mestra nunca sai do Worker.</p>
+      <div class="linha">
+        <div class="campo" style="flex:1 1 220px"><label for="c-fonte">Fonte</label><select id="c-fonte"></select></div>
+        <div class="campo" style="flex:1 1 200px"><label for="c-valor">Valor da chave</label><input id="c-valor" autocomplete="off" spellcheck="false" placeholder="token, api key ou credencial"></div>
+        <div class="campo" style="flex:0 1 140px"><label for="c-status">Estado</label><select id="c-status"><option value="ativa">ativa</option><option value="inativa">inativa</option><option value="expirada">expirada</option></select></div>
+        <div class="campo" style="flex:0 1 110px"><label for="c-min">Limite/min</label><input id="c-min" type="number" min="0" placeholder="—"></div>
+        <div class="campo" style="flex:0 1 110px"><label for="c-dia">Limite/dia</label><input id="c-dia" type="number" min="0" placeholder="—"></div>
+        <div><button class="primario" id="c-salvar" type="button">SALVAR</button></div>
+      </div>
+      <div class="campo"><label for="c-obs">Observacao</label><input id="c-obs" placeholder="ex.: token de leitura, cota de 5000 req/h"></div>
+      <p class="msg" id="c-msg"></p>
+    </div>
+  </section>
+
+  <section role="tabpanel" id="aba-proxies">
+    <div class="card">
+      <h2>Pool de proxies rotativos</h2>
+      <p class="dica">Fontes com limite por IP usam este pool. A rotacao respeita o peso e coloca em cooldown o proxy que falhou.</p>
+      <div id="aviso-gateway"></div>
+      <table><thead><tr><th>Rotulo</th><th>Endereco</th><th>Esquema</th><th>Ativo</th><th class="mono">Peso</th><th class="mono">Usos</th><th class="mono">Falhas</th><th>Ultimo uso</th><th></th></tr></thead><tbody id="lista-proxies"></tbody></table>
+      <p class="msg" id="proxies-msg"></p>
+    </div>
+    <div class="card">
+      <h2>Adicionar proxy</h2>
+      <div class="linha">
+        <div class="campo" style="flex:1 1 180px"><label for="p-rotulo">Rotulo</label><input id="p-rotulo" placeholder="ex.: br-sp-01"></div>
+        <div class="campo" style="flex:2 1 260px"><label for="p-url">Endereco</label><input id="p-url" placeholder="http://usuario:senha@host:porta"></div>
+        <div class="campo" style="flex:0 1 130px"><label for="p-esquema">Esquema</label><select id="p-esquema"><option value="http">http</option><option value="socks5">socks5</option></select></div>
+        <div class="campo" style="flex:0 1 90px"><label for="p-peso">Peso</label><input id="p-peso" type="number" min="1" value="1"></div>
+        <div><button class="primario" id="p-salvar" type="button">ADICIONAR</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section role="tabpanel" id="aba-fontes">
+    <div class="card">
+      <h2>Fontes do scanner</h2>
+      <p class="dica">As 32 fontes do catalogo. O que o painel grava aqui vale em producao: o scan passa a obedecer o limite por minuto, o limite por dia e a escolha do pool de proxies. O catalogo do codigo continua sendo a documentacao de cada fonte.</p>
+      <div class="linha" style="margin-bottom:14px">
+        <div class="campo" style="flex:0 1 200px"><label for="f-filtro">Filtro</label><select id="f-filtro"><option value="">todas as fontes</option><option value="chave">exigem chave de API</option><option value="proxy">saem pelo pool de proxies</option><option value="ajustada">ja ajustadas pelo operador</option></select></div>
+        <div class="campo" style="flex:1 1 220px"><label for="f-busca">Busca</label><input id="f-busca" placeholder="id, titulo ou variavel de ambiente"></div>
+      </div>
+      <table><thead><tr><th>Fonte</th><th>Tipos</th><th>Variavel</th><th class="mono">Min</th><th class="mono">Dia</th><th>Proxy</th><th>Limite (texto)</th><th></th></tr></thead><tbody id="lista-fontes"></tbody></table>
+      <p class="msg" id="fontes-msg"></p>
+    </div>
+    <div class="card" id="editor-fonte">
+      <h2 id="f-editor-titulo">Editar fonte</h2>
+      <p class="dica">Nos limites, campo vazio significa "sem limite". Em "restaurar padrao" os campos voltam ao valor do catalogo do codigo.</p>
+      <div class="linha">
+        <div class="campo" style="flex:1 1 220px"><label for="f-titulo">Titulo</label><input id="f-titulo" placeholder="titulo exibido no painel"></div>
+        <div class="campo" style="flex:0 1 110px"><label for="f-custo">Custo</label><input id="f-custo" type="number" min="0" placeholder="—"></div>
+        <div class="campo" style="flex:0 1 110px"><label for="f-ttl">TTL (s)</label><input id="f-ttl" type="number" min="0" placeholder="—"></div>
+      </div>
+      <div class="linha">
+        <div class="campo" style="flex:0 1 130px"><label for="f-min">Limite/min</label><input id="f-min" type="number" min="0" placeholder="—"></div>
+        <div class="campo" style="flex:0 1 130px"><label for="f-dia">Limite/dia</label><input id="f-dia" type="number" min="0" placeholder="—"></div>
+        <div class="campo" style="flex:1 1 220px"><label for="f-texto">Limite (texto)</label><input id="f-texto" placeholder="ex.: 60 req/min por IP"></div>
+        <div class="campo" style="flex:0 1 160px"><label for="f-proxy">Pool de proxies</label><select id="f-proxy"><option value="nao">nao usa</option><option value="sim">usa</option></select></div>
+      </div>
+      <div class="campo"><label for="f-obs">Observacao</label><input id="f-obs" placeholder="ex.: cota publica de 10 req/s"></div>
+      <div class="linha">
+        <div><button class="primario" id="f-salvar" type="button">SALVAR</button></div>
+        <div><button id="f-padrao" type="button">RESTAURAR PADRAO</button></div>
+        <div><button id="f-cancelar" type="button">FECHAR</button></div>
+      </div>
+      <p class="msg" id="f-msg"></p>
+    </div>
+  </section>
+
+  <section role="tabpanel" id="aba-visitas">
+    <div class="card">
+      <h2>Fluxo de visitas</h2>
+      <p class="dica">Da abertura da pagina ate a conclusao da analise. O IP entra apenas como hash; nenhum endereco e gravado.</p>
+      <div class="grid" id="funil-visitas"></div>
+      <div class="barras" id="serie"></div>
+      <div class="legenda">
+        <span><i style="background:#e6a274"></i>visita</span>
+        <span><i style="background:#c8d3a8"></i>scan</span>
+        <span><i style="background:#9fd3ad"></i>scan concluido</span>
+        <span><i style="background:#e08585"></i>falha</span>
+      </div>
+    </div>
+  </section>
+
+  <section role="tabpanel" id="aba-falhas">
+    <div class="card">
+      <h2>Fluxo de falhas</h2>
+      <p class="dica">Onde as consultas quebram, com o codigo do contrato e a explicacao de cada um.</p>
+      <table><thead><tr><th>Fonte</th><th>Codigo</th><th class="mono">Ocorrencias</th><th>Ultima vez</th><th>Explicacao</th></tr></thead><tbody id="lista-falhas"></tbody></table>
+      <p class="msg" id="falhas-msg"></p>
+    </div>
+    <div class="card">
+      <h2>Explicacao dos codigos</h2>
+      <p class="dica">O significado de cada codigo de erro do motor, e o que fazer com ele.</p>
+      <div id="codigos"></div>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  <span id="rodape">Painel local · nada publicado</span>
+  <button id="sair" type="button" class="escondido mini" style="margin-left:12px">SAIR</button>
+</footer>
+</div>
+<script src="/admin.js" defer></script>
+</body>
+</html>

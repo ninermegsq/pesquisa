@@ -223,7 +223,7 @@ rodar em um host alcançável a partir da Cloudflare.
 
 ## Publicação e deploy
 
-1. Instale Node.js 20 e Netlify CLI (a CLI pode ser instalada globalmente em sua máquina; **não** é dependência do projeto).
+1. Instale Node.js 22.5 ou superior e Netlify CLI (a CLI pode ser instalada globalmente em sua máquina; **não** é dependência do projeto). O mínimo é 22.5 porque o servidor local usa `node:sqlite` (o armazenamento do limite de login), que só existe a partir dessa versão.
 2. No diretório do projeto execute `npm install` e `npm run check`.
 3. Entre na conta com `netlify login` e vincule/crie o site com `netlify init` ou `netlify link`. Se criar via Netlify, associe seu repositório Git.
 4. Crie um widget Turnstile no painel da Cloudflare e autorize os domínios de produção, incluindo o `*.netlify.app` selecionado. Guarde a site key e a secret key.

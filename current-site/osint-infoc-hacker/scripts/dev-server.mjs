@@ -27,7 +27,12 @@ import { detectar } from '../src/lib/alvo.mjs';
 import { aplicarStats } from './stats.mjs';
 import { verificarTokenCalor } from '../src/lib/warm.mjs';
 import { sincronizarManifesto, sincronizarCatalogo } from './garantir-manifesto.mjs';
-import { criarGuardLocal, criarStubLogin } from './lib/guard-local.mjs';
+// O Durable Object local (scripts/lib/guard-local.mjs) e importado de forma
+// DINAMICA, dentro do try que monta o stub. Um import estatico quebraria o
+// servidor inteiro no Node sem `node:sqlite` (versao anterior a 22.5), e o
+// try/catch de degradação nunca chegaria a rodar: o modulo falha na
+// importação, antes do try. O servidor local tem que subir mesmo sem o
+// SQLite, com o limite no contador em memoria.
 import {
   liberarPortasCanicas,
   portasCanonicas,
@@ -239,6 +244,7 @@ const env = {
 // O stub e exposto pelo mesmo metodo (`getByName`) para que o codigo do
 // painel seja identico nos dois caminhos.
 try {
+  const { criarGuardLocal, criarStubLogin } = await import('./lib/guard-local.mjs');
   const guardLocal = criarGuardLocal();
   const stubLogin = criarStubLogin(guardLocal);
   env.TOKEN_GUARD = {

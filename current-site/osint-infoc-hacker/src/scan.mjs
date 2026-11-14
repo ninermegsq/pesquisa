@@ -6,10 +6,10 @@ import {REGISTRY} from './sources/registry.mjs';
 import {render} from './render.mjs';
 import {classificarErro,statusDeCodigo,saudeDe} from './contract.mjs';
 import {porId} from './admin/catalogo.meta.mjs';
-import {aplicarCredenciais} from './admin/credenciais.mjs';
+import {aplicarCredenciais, registrarUso} from './admin/credenciais.mjs';
 import {fontesComProxy} from './admin/fontes.mjs';
 import {buscarProxy,getViaProxy,registrarUsoProxy} from './admin/proxies.mjs';
-import {registrar as registrarTelemetria} from './admin/telemetria.mjs';
+import {registrar as registrarTelemetria, registrarEvento} from './admin/telemetria.mjs';
 
 const BUDGET=38,LIM_HORA=10,LIM_DIA=60;
 const CAB={'content-type':'application/json; charset=utf-8','cache-control':'no-store'};
@@ -25,10 +25,21 @@ async function limite(env,ip){
   return {ok:true};
 }
 
+// Evento de configuracao quebrada para a aba de eventos do painel. A
+// mensagem cita a variavel de ambiente que precisa ser preenchida, nunca o
+// valor da chave nem o alvo consultado.
+async function registrarEventoAmbiente(env,{fonte,codigo}){
+  const entrada=porId(fonte);
+  const variavel=entrada?.requer_env||'desconhecida';
+  const mensagem=codigo==='sem_token'
+    ?`A fonte ${fonte} precisa de um token em ${variavel}. Configure no painel admin.`
+    :`A fonte ${fonte} precisa da chave ${variavel}. Configure no painel admin.`;
+  return registrarEvento(env,{tipo:'credencial_ausente',fonte,codigo,mensagem});
+}
+
 // Registro do scan no Durable Object de saude. Best effort: se o DO nao
 // existir (ambiente local) o scan continua normalmente.
-async function registrarJob(env,jobId,fonteSaude,saude,escopo){
-  try{
+async function registrarJob(env,jobId,fonteSaude,saude,escopo){  try{
     const guard=env?.TOKEN_GUARD;
     if(!guard||typeof guard.getByName!=='function')return false;
     const stub=guard.getByName('osint-saude');
@@ -103,6 +114,7 @@ function paisDoVisitante(request){
 }
 
 export async function handleScan(request,env,ip,opcoes={}){
+  const t0=Date.now();
   const jobId=globalThis.crypto.randomUUID();
   const escopo=opcoes.escopo||'visitante';
   const body=await request.json().catch(()=>null);const bruto=body?.alvo;
@@ -113,7 +125,25 @@ export async function handleScan(request,env,ip,opcoes={}){
   const envEfetivo=aplicacao.env||env;
   const ipLimpo=String(ip||'').split('#')[0];
   const waitUntil=typeof opcoes.waitUntil==='function'?opcoes.waitUntil:null;
-  const comFundo=(dados)=>{const p=registrarTelemetria(envEfetivo,dados).catch(()=>({ok:false}));if(waitUntil){try{waitUntil(p);return null;}catch{/* sem waitUntil: segue sem espera */}}return p;};
+  // A telemetria do funil nunca pode ser perdida. Com `waitUntil` (Cloudflare),
+  // a promessa e entregue ao runtime, que a mantem viva depois da resposta. Sem
+  // ele (servidor local), a promessa precisa ser aguardada: uma promessa
+  // solta morre no fim do turno e a etapa se perde do funil.
+  const comFundo=async(dados)=>{
+    const p=registrarTelemetria(envEfetivo,dados).catch(()=>({ok:false}));
+    if(waitUntil){try{waitUntil(p);return null;}catch{/* sem waitUntil: segue sem espera */}}
+    await p;
+    return null;
+  };
+  // Mesmo tratamento para uma promessa qualquer (contador de uso da
+  // credencial): o runtime do Cloudflare precisa assumir a promessa para que
+  // ela sobreviva ao fim da requisicao.
+  const emFundo=async(tarefa)=>{
+    const p=(async()=>{try{return await tarefa();}catch{return null;}})();
+    if(waitUntil){try{waitUntil(p);return null;}catch{/* sem waitUntil: segue sem espera */}}
+    await p;
+    return null;
+  };
   let rl;try{rl=await limite(envEfetivo,ip);}catch{return json({erro:'Cache obrigatório indisponível.'},503);}
   if(!rl.ok) return json({erro:'Limite atingido.'},429,{'retry-after':String(rl.retry)});
   const origem=new URL(request.url).origin;
@@ -125,7 +155,12 @@ export async function handleScan(request,env,ip,opcoes={}){
   const usaProxyDe=s=>proxied?proxied.has(s.id):undefined;
   const fila=REGISTRY.filter(s=>s.tipos.includes(alvo.tipo)).sort((x,y)=>x.custo-y.custo)
     .filter(s=>{if(gasto+s.custo>Math.min(BUDGET,Number(envEfetivo.BUDGET_SUBREQ)||BUDGET))return false;gasto+=s.custo;return true;});
-  comFundo({etapa:'scan',alvo_tipo:alvo.tipo,job_id:jobId,ip:ipLimpo,agente:opcoes.agente||null});
+  // A etapa `scan` e registrada ANTES de qualquer consulta: se o scan
+  // estourar o tempo da requisicao, o funil mostra a entrada mesmo sem a
+  // saida. A etapa `scan_concluido` carrega a DURACAO do scan (ms em relacao
+  // a t0), nao o epoch: a coluna `ms` do banco e integer (max 2^31-1) e um
+  // epoch em milissegundos estoura o limite e faz a RPC recusar a linha.
+  await comFundo({etapa:'scan',alvo_tipo:alvo.tipo,job_id:jobId,ip:ipLimpo,agente:opcoes.agente||null});
   const res=await Promise.all(fila.map(s=>rodar(s,alvo,c,{usaProxy:usaProxyDe(s)})));
   const fontes=res.map(({pivos:p,...r})=>r);
   const pivos=[...new Set(res.flatMap(r=>r.pivos||[]).map(p=>`${p.tipo}:${p.valor}`))]
@@ -135,12 +170,37 @@ export async function handleScan(request,env,ip,opcoes={}){
   await registrarJob(envEfetivo,jobId,fonteSaude,saude,escopo);
   // Funil: fim do scan e uma linha por falha de fonte (com o codigo do
   // contrato, que o painel traduz para portugues).
-  comFundo({etapa:'scan_concluido',alvo_tipo:alvo.tipo,job_id:jobId,ip:ipLimpo,ok:!saude.parcial,ms:Date.now()});
+  // `ms` aqui e a DURACAO do scan, nao o epoch. A coluna `ms` do banco e
+  // integer: um epoch em milissegundos (~1.7e12) estoura 2^31-1 e a RPC
+  // recusa a linha inteira, o que fazia `scan_concluido` nunca aparecer.
+  await comFundo({etapa:'scan_concluido',alvo_tipo:alvo.tipo,job_id:jobId,ip:ipLimpo,ok:!saude.parcial,ms:Date.now()-t0});
+  // Contador de uso da credencial: sem esta chamada `total_usos` e
+  // `ultimo_uso` ficariam sempre em zero no painel, porque a RPC
+  // `admin_credenciais_uso` so e chamada aqui. Vale para toda fonte que
+  // possui credencial (declarada no manifesto), seja ela do banco ou do
+  // ambiente do Worker.
+  for(const f of fontes){
+    if(!porId(f.id)?.requer_env)continue;
+    await emFundo(()=>registrarUso(envEfetivo,f.id));
+  }
   for(const f of fontes){
     if(f.status==='ok')continue;
-    comFundo({etapa:'falha',alvo_tipo:alvo.tipo,fonte:f.id,codigo:f.erro_codigo||'erro',ok:false,ms:f.ms??null,job_id:jobId,ip:ipLimpo});
+    await comFundo({etapa:'falha',alvo_tipo:alvo.tipo,fonte:f.id,codigo:f.erro_codigo||'erro',ok:false,ms:f.ms??null,job_id:jobId,ip:ipLimpo});
   }
-  console.log(JSON.stringify({event:'scan_done',job_id:jobId,escopo,alvo_tipo:alvo.tipo,executadas:fontes.length,parcial:saude.parcial,ms:Date.now()}));
+  // Eventos do painel: a aba de eventos mostra a configuracao quebrada (a
+  // credencial que falta, a fonte que pede chave e nao tem). Sem esta
+  // chamada a aba ficava sempre vazia, porque `registrarEvento` nao tinha
+  // nenhum chamador. A mensagem vai sem o valor da credencial e sem o
+  // alvo: so o codigo do contrato e o nome da variavel de ambiente.
+  for(const f of fontes){
+    if(f.status!=='sem_chave'&&f.status!=='sem_token')continue;
+    await emFundo(()=>registrarEventoAmbiente(envEfetivo,{fonte:f.id,codigo:f.status}));
+  }
+  // `ms` aqui e a DURACAO do scan, nao o epoch: o mesmo valor que vai para a
+  // coluna `ms` do banco. Um epoch em milissegundos (~1.7e12) estoura o
+  // limite do integer e inutiliza a leitura do log para comparar com a
+  // linha gravada.
+  console.log(JSON.stringify({event:'scan_done',job_id:jobId,escopo,alvo_tipo:alvo.tipo,executadas:fontes.length,parcial:saude.parcial,ms:Date.now()-t0}));
   return json({alvo,gerado_em:new Date().toISOString(),
     fontes,
     disponibilidade:Object.fromEntries(res.map(r=>[r.id,r.status==='ok'])),

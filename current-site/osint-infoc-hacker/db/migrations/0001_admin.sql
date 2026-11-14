@@ -187,8 +187,12 @@ $$;
 -- Usuarios e sessoes
 -- ---------------------------------------------------------------------------
 
--- Login: usuario sem '@' no comeco e senha sem '@' no comeco. O '@' inicial e
--- aceito como ruido de digitacao: o valor comparado e sempre o "nucleo".
+-- Login: o USUARIO aceita '@' inicial como ruido de digitacao (o valor
+-- comparado e sempre o "nucleo"), mas a SENHA e comparada exatamente como
+-- veio. Aceitar '@' inicial na senha ampliava o espaco de credenciais
+-- aceito sem nenhuma necessidade: a conta do operador passa a ter uma
+-- unica senha valida, o que tambem fecha a porta para tentativas de
+-- adivinhacao por variacao trivial do texto.
 CREATE OR REPLACE FUNCTION public.admin_login(p_usuario text, p_senha text, p_agente text DEFAULT NULL, p_ip text DEFAULT NULL)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -206,7 +210,7 @@ BEGIN
   IF NOT FOUND THEN
     RETURN jsonb_build_object('ok', false, 'motivo', 'credencial invalida');
   END IF;
-  IF NOT coalesce(u.senha_hash = extensions.crypt(ltrim(coalesce(p_senha, ''), '@'), u.senha_hash), false) THEN
+  IF NOT coalesce(u.senha_hash = extensions.crypt(coalesce(p_senha, ''), u.senha_hash), false) THEN
     RETURN jsonb_build_object('ok', false, 'motivo', 'credencial invalida');
   END IF;
   v_token := replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');
@@ -264,6 +268,53 @@ AS $$
 BEGIN
   DELETE FROM public.admin_sessoes WHERE token = p_token;
   RETURN jsonb_build_object('ok', true);
+END;
+$$;
+
+-- Troca de senha do operador. A senha nova e gravada com bcrypt (pgcrypto),
+-- nunca em claro, e nunca volta para o Worker: a funcao devolve apenas o
+-- desfecho.
+--
+-- Regras:
+--   - a sessao que chamou a funcao e valida e nao expirada;
+--   - a senha nova tem tamanho minimo (uma senha de 1 caractere nao e
+--     credencial, e e o caminho mais curto para um ataque de adivinhacao);
+--   - a senha nova precisa ser diferente da atual;
+--   - trocar a senha derruba TODAS as sessoes do usuario, inclusive a que
+--     fez a troca: se a senha antiga pode continuar valendo em algum lugar,
+--     a troca nao trocou nada.
+CREATE OR REPLACE FUNCTION public.admin_senha_trocar(p_token text, p_senha_atual text, p_senha_nova text)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+  u    public.admin_usuarios%ROWTYPE;
+  v_id uuid;
+BEGIN
+  SELECT u.id, u.senha_hash INTO u
+    FROM public.admin_sessoes ses
+    JOIN public.admin_usuarios u ON u.id = ses.usuario_id
+   WHERE ses.token = p_token AND ses.expira_em > now() AND u.ativo;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'motivo', 'sessao invalida ou expirada');
+  END IF;
+  v_id := u.id;
+  IF p_senha_nova IS NULL OR length(p_senha_nova) < 8 THEN
+    RETURN jsonb_build_object('ok', false, 'motivo', 'a senha nova precisa de ao menos 8 caracteres');
+  END IF;
+  IF p_senha_nova = coalesce(p_senha_atual, '') THEN
+    RETURN jsonb_build_object('ok', false, 'motivo', 'a senha nova e igual a atual');
+  END IF;
+  IF NOT coalesce(u.senha_hash = extensions.crypt(coalesce(p_senha_atual, ''), u.senha_hash), false) THEN
+    RETURN jsonb_build_object('ok', false, 'motivo', 'senha atual invalida');
+  END IF;
+  UPDATE public.admin_usuarios
+     SET senha_hash = extensions.crypt(p_senha_nova, extensions.gen_salt('bf', 10))
+   WHERE id = v_id;
+  DELETE FROM public.admin_sessoes WHERE usuario_id = v_id;
+  RETURN jsonb_build_object('ok', true, 'motivo', 'senha trocada; entre de novo');
 END;
 $$;
 
@@ -536,6 +587,15 @@ BEGIN
   IF p_etapa IS NULL OR length(p_etapa) > 40 THEN
     RETURN jsonb_build_object('ok', false, 'motivo', 'etapa invalida');
   END IF;
+  -- Lista fechada de etapas. A mesma lista existe no Worker
+  -- (src/admin/telemetria.mjs), mas a validacao de la e so em JavaScript:
+  -- qualquer chamada direta a RPC gravava o que quisesse na coluna `etapa`.
+  -- Isso encheu o funil com linhas de teste (etapas como 'AUDITORIA_TESTE'),
+  -- que apareceriam no painel como etapas desconhecidas. O banco agora
+  -- recusa o que nao for uma etapa do funil.
+  IF p_etapa NOT IN ('visita', 'scan', 'scan_concluido', 'falha', 'exportacao') THEN
+    RETURN jsonb_build_object('ok', false, 'motivo', 'etapa invalida');
+  END IF;
   INSERT INTO public.admin_visitas (etapa, alvo_tipo, fonte, codigo, ok, ms, job_id, ip_hash, agente)
     VALUES (p_etapa, left(coalesce(p_alvo_tipo, ''), 40), left(coalesce(p_fonte, ''), 64), left(coalesce(p_codigo, ''), 40), p_ok, p_ms, p_job_id, left(coalesce(p_ip_hash, ''), 64), left(coalesce(p_agente, ''), 200));
   RETURN jsonb_build_object('ok', true);
@@ -783,6 +843,7 @@ REVOKE ALL ON FUNCTION public.admin_mestre_ok(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_login(text, text, text, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_sessao(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_logout(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_senha_trocar(text, text, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_credenciais_leitura(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_credenciais_uso(text, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_credenciais_salvar(text, text, text, text, text, integer, integer, text) FROM PUBLIC;
@@ -803,6 +864,7 @@ GRANT EXECUTE ON FUNCTION public.admin_mestre_ok(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_login(text, text, text, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_sessao(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_logout(text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_senha_trocar(text, text, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_credenciais_leitura(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_credenciais_uso(text, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_credenciais_salvar(text, text, text, text, text, integer, integer, text) TO anon, authenticated;

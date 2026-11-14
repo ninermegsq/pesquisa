@@ -16,7 +16,13 @@ export function aplicarMigracoes(sql, migracoes, agora = Date.now()) {
   for (const migracao of migracoes) {
     const versao = Number(migracao?.versao);
     if (!Number.isInteger(versao) || versao < 1) throw new Error('aplicarMigracoes: versao de migracao invalida');
-    const registrada = sql.exec(`SELECT versao FROM ${TABELA_META} WHERE versao = ?`, versao).one();
+    // A leitura precisa tolerar zero linhas. O cursor do Cloudflare lanca
+    // ("Expected exactly one result from SQL query, but got no results")
+    // quando `.one()` nao acha exatamente uma linha, e num banco recem-criado
+    // a migracao ainda NAO esta registrada: e o caso normal do primeiro
+    // start, nao um erro. Por isso a busca e feita por `.toArray()[0]`, que
+    // devolve `undefined` quando nada casa.
+    const registrada = sql.exec(`SELECT versao FROM ${TABELA_META} WHERE versao = ?`, versao).toArray()[0];
     if (registrada && Number(registrada.versao) === versao) continue;
     const sqlTexto = String(migracao?.sql || '').trim();
     if (!sqlTexto) throw new Error(`aplicarMigracoes: migracao ${versao} sem SQL`);

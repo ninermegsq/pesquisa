@@ -102,6 +102,7 @@ footer{margin-top:26px;color:var(--dim);font:9px var(--mono);letter-spacing:.1em
     <button role="tab" aria-selected="false" data-aba="fontes">FONTES</button>
     <button role="tab" aria-selected="false" data-aba="visitas">FLUXO DE VISITAS</button>
     <button role="tab" aria-selected="false" data-aba="falhas">FLUXO DE FALHAS</button>
+    <button role="tab" aria-selected="false" data-aba="acesso">ACESSO</button>
   </nav>
 
   <section role="tabpanel" class="ativo" id="aba-visao">
@@ -191,12 +192,40 @@ footer{margin-top:26px;color:var(--dim);font:9px var(--mono);letter-spacing:.1em
         <div class="campo" style="flex:0 1 160px"><label for="f-proxy">Pool de proxies</label><select id="f-proxy"><option value="nao">nao usa</option><option value="sim">usa</option></select></div>
       </div>
       <div class="campo"><label for="f-obs">Observacao</label><input id="f-obs" placeholder="ex.: cota publica de 10 req/s"></div>
+      <div class="campo">
+        <label for="f-explicacoes">Explicacao de cada falha (um codigo por linha)</label>
+        <textarea id="f-explicacoes" rows="6" placeholder="sem_chave = a fonte pede uma chave que nao esta configurada&#10;timeout = a consulta passou do tempo limite&#10;http = a fonte respondeu com erro"></textarea>
+        <p class="dica">Formato: <span class="mono">codigo = texto</span>. O que for gravado aqui vale sobre a documentacao do catalogo; os codigos que voce nao escrever mantem o texto original. Para apagar um codigo, escreva o texto vazio.</p>
+      </div>
       <div class="linha">
         <div><button class="primario" id="f-salvar" type="button">SALVAR</button></div>
         <div><button id="f-padrao" type="button">RESTAURAR PADRAO</button></div>
         <div><button id="f-cancelar" type="button">FECHAR</button></div>
       </div>
       <p class="msg" id="f-msg"></p>
+    </div>
+  </section>
+
+  <section role="tabpanel" id="aba-acesso">
+    <div class="card">
+      <h2>Trocar a senha do operador</h2>
+      <p class="dica">A senha do operador nunca volta a ser exibida depois de gravada. Ao trocar a senha, todas as sessoes abertas sao encerradas e voce precisa entrar de novo.</p>
+      <div class="campo">
+        <label for="senha-atual">Senha atual</label>
+        <input id="senha-atual" type="password" autocomplete="current-password">
+      </div>
+      <div class="campo">
+        <label for="senha-nova">Senha nova</label>
+        <input id="senha-nova" type="password" autocomplete="new-password">
+      </div>
+      <div class="campo">
+        <label for="senha-nova-2">Repetir a senha nova</label>
+        <input id="senha-nova-2" type="password" autocomplete="new-password">
+      </div>
+      <div class="linha">
+        <button id="senha-salvar" class="primario">TROCAR SENHA</button>
+      </div>
+      <p id="senha-msg" class="msg"></p>
     </div>
   </section>
 

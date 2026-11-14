@@ -7,6 +7,7 @@ import {DurableObject} from 'cloudflare:workers';
 // the target, the e-mail or the IP.
 import {MIGRACOES} from './migrations.mjs';
 import {aplicarMigracoes} from './sql-migrations.mjs';
+import {reservar, zerar, ler, resumo} from './login-limite.mjs';
 
 const RETENCAO_MS=7*24*60*60*1000;
 const JANELA_MAX_MS=30*24*60*60*1000;
@@ -27,8 +28,41 @@ export class TokenGuard extends DurableObject {
  }
  async alarm(){
    this.ctx.storage.sql.exec('DELETE FROM used WHERE expires <= ?',Date.now());
-   const next=this.ctx.storage.sql.exec('SELECT MIN(expires) AS expires FROM used').one().expires;
+   // `.one()` lanca quando a consulta nao devolve exatamente uma linha. A
+   // busca do proximo vencimento tolera zero linhas: uma tabela `used` vazia
+   // e o estado normal depois que todos os nonces expiraram.
+   const linha=this.ctx.storage.sql.exec('SELECT MIN(expires) AS expires FROM used').toArray()[0];
+   const next=linha?Number(linha.expires)||0:0;
    if(next)await this.ctx.storage.setAlarm(next);
+ }
+ // -------------------------------------------------------------------------
+ // Limite de tentativas de login do painel admin.
+ //
+ // A chave e o HMAC do endereco de origem: nem o nome do objeto, nem a
+ // tabela guardam o endereco em claro. A reserva e feita em tres passos sem
+ // await no meio (ler, calcular, gravar), entao o runtime do Durable Object,
+ // que executa um objeto por vez, torna a operacao atomica: duas
+ // requisicoes simultaneas nao conseguem ler o mesmo total e passar as duas.
+ // -------------------------------------------------------------------------
+ async reservaTentativa(chave,opcoes={}){
+   return reservar(this.ctx.storage.sql,chave,opcoes);
+ }
+ async zeraTentativa(chave){
+   return zerar(this.ctx.storage.sql,chave);
+ }
+ async tentativasLogin(chave){
+   return ler(this.ctx.storage.sql,chave);
+ }
+ // Resumo do limite de login, sem identificar origem nenhuma.
+ //
+ // O painel precisa saber se a protecao esta viva. Antes nao havia como
+ // ver isso: o limite funcionava (ou nao) e o operador so descobria por
+ // tentativa e erro.
+ //
+ // A politica (SQL, janela, teto) esta em login-limite.mjs, o mesmo modulo
+ // que roda nos dois caminhos: Durable Object e servidor local.
+ async resumoLimite(){
+   return resumo(this.ctx.storage.sql);
  }
  // Registra o resultado de um scan. Guarda contagens e ids de fonte: nada de
  // alvo, e-mail ou IP. Retencao de 7 dias.
@@ -57,9 +91,9 @@ export class TokenGuard extends DurableObject {
    const db=this.ctx.storage.sql;
    const janela=Math.max(60000,Math.min(Number(janelaMs)||86400000,JANELA_MAX_MS));
    const desde=Date.now()-janela;
-   const schema=db.exec('SELECT versao,nome FROM schema_meta ORDER BY versao').all();
-   const totals=db.exec('SELECT COUNT(*) AS total, SUM(CASE WHEN parcial = 1 THEN 1 ELSE 0 END) AS parciais FROM jobs WHERE criado_em >= ?',desde).one();
-   const linhas=db.exec('SELECT fonte,status,erro_codigo,COUNT(*) AS n FROM job_fontes GROUP BY fonte,status,erro_codigo').all();
+   const schema=db.exec('SELECT versao,nome FROM schema_meta ORDER BY versao').toArray();
+   const totals=db.exec('SELECT COUNT(*) AS total, SUM(CASE WHEN parcial = 1 THEN 1 ELSE 0 END) AS parciais FROM jobs WHERE criado_em >= ?',desde).toArray()[0]||{};
+   const linhas=db.exec('SELECT fonte,status,erro_codigo,COUNT(*) AS n FROM job_fontes GROUP BY fonte,status,erro_codigo').toArray();
    const porFonte={};
    for(const linha of linhas){
      const id=String(linha.fonte||'');
@@ -77,7 +111,7 @@ export class TokenGuard extends DurableObject {
    const parciais=Number(totals?.parciais)||0;
    return {
      janela_ms:janela,
-     schema:(schema||[]).map(linha=>({versao:Number(linha.versao)||0,nome:String(linha.nome||'')})),
+     schema:schema.map(linha=>({versao:Number(linha.versao)||0,nome:String(linha.nome||'')})),
      versao_migracoes:MIGRACOES.length,
      jobs:{total,parciais,completos:total-parciais},
      fontes:Object.values(porFonte).sort((a,b)=>a.id.localeCompare(b.id))

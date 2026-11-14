@@ -12,6 +12,8 @@ import { listarCredenciais, salvarCredencial, removerCredencial, chaveMestreDeEn
 import { listarProxies, salvarProxy, removerProxy, gatewayDisponivel } from './proxies.mjs';
 import { CATALOGO } from './catalogo.meta.mjs';
 import { fontesEfetivas, listarFontesDoBanco, mesclarFontes, invalidarFontes } from './fontes.mjs';
+import { hashIp } from './telemetria.mjs';
+import { JANELA_MS, calcularReserva } from '../lib/login-limite.mjs';
 
 const CAB = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' };
 
@@ -19,32 +21,115 @@ const json = (dados, status = 200, extra = {}) =>
   new Response(JSON.stringify(dados), { status, headers: { ...CAB, ...extra } });
 
 // ---------------------------------------------------------------------------
-// Limite de tentativas de login (por IP, em memoria do isolate).
+// Limite de tentativas de login (por origem).
+//
+// Por que o Durable Object e obrigatorio: o limite precisa valer para TODOS os
+// isolates do Worker. Um `Map` em memoria vive so dentro de um isolate: o
+// Cloudflare espalha as requisicoes por maquinas e reinicia os isolates o tempo
+// todo, entao o contador se zera a cada troca de isolate. Na pratica o limite
+// de 10 tentativas por 15 minutos nao existia: um atacante so precisava cair em
+// isolates diferentes.
+//
+// Por que nao e mais o KV: o KV tem consistencia eventual, uma gravacao pode
+// levar ate um minuto para aparecer em outra regiao. Com "ler o total e depois
+// somar" o contador voltava a zero por baixo do limite. O Durable Object tem
+// armazenamento forte e executa um objeto por vez: a reserva acontece dentro
+// do objeto, entao duas requisicoes simultaneas nao conseguem ler o mesmo
+// total e passar as duas.
+//
+// A tentativa e reservada ANTES da checagem da credencial, nao depois. O
+// codigo antigo lia o contador, conferia a senha e so entao somava: esse era
+// um vao entre a leitura e a escrita por onde varias requisicoes passavam
+// juntas. Somar depois tambem contava duas vezes (o `Map` local ja tinha sido
+// incrementado antes da escrita no KV), e por isso a producao bloqueava na
+// tentativa 9, e nao na 10.
+//
+// A chave nunca e o endereco de origem em claro: e o HMAC dele, que identifica
+// a origem sem guardar o endereco.
+//
+// O modo local (sem Durable Object) cai no limite em memoria: e um servidor
+// unico, sem isolates, entao o `Map` e suficiente ali.
 // ---------------------------------------------------------------------------
 
-const tentativas = new Map();
-const MAX_TENTATIVAS = 10;
-const JANELA_MS = 15 * 60 * 1000;
+// Nome do objeto que guarda o contador. E um objeto unico com uma linha por
+// origem (a coluna `chave`), e nao um objeto por origem: assim o numero de
+// objetos nao cresce com o numero de tentativas.
+const OBJETO_LOGIN = 'osint-login';
 
-function bloqueioDe(ip) {
-  const agora = Date.now();
-  const registro = tentativas.get(ip) || { n: 0, ate: 0 };
-  if (registro.ate <= agora) {
-    registro.n = 0;
-    registro.ate = 0;
-  }
-  return registro;
+const memoria = new Map();
+
+// Chave opaca da origem: HMAC do endereco. Estavel entre deploys porque o
+// segredo (HMAC_SECRET) e o mesmo, entao o contador sobrevive a publicacao.
+function chaveLogin(ip, env) {
+  const bruto = String(ip || '').trim() || 'desconhecido';
+  return hashIp(bruto, env) || 'origem-desconhecida';
 }
 
-function registrarTentativa(ip) {
-  const registro = bloqueioDe(ip);
-  registro.n += 1;
-  registro.ate = Date.now() + JANELA_MS;
-  tentativas.set(ip, registro);
-  if (tentativas.size > 5000) {
-    for (const [chave, item] of tentativas) if (item.ate <= Date.now()) tentativas.delete(chave);
+// Stub do Durable Object do limite, ou null quando ele nao esta disponivel.
+function stubDoLogin(env) {
+  const guard = env?.TOKEN_GUARD;
+  if (!guard || typeof guard.getByName !== 'function') return null;
+  try {
+    const stub = guard.getByName(OBJETO_LOGIN);
+    if (!stub || typeof stub.reservaTentativa !== 'function') return null;
+    return stub;
+  } catch {
+    return null;
   }
-  return registro;
+}
+
+function limparMemoria() {
+  if (memoria.size <= 5000) return;
+  const agora = Date.now();
+  for (const [chave, item] of memoria) if (Number(item?.ate) <= agora) memoria.delete(chave);
+}
+
+// Reserva uma tentativa e devolve o total gasto. Bloqueado quando o total
+// passou do limite; a partir dai a resposta e 429.
+async function reservarTentativa(env, ip) {
+  const chave = chaveLogin(ip, env);
+  const stub = stubDoLogin(env);
+  if (stub) {
+    try {
+      const r = await stub.reservaTentativa(chave);
+      if (r && Number.isFinite(Number(r.tentativas))) {
+        return {
+          ok: true,
+          chave,
+          tentativas: Number(r.tentativas),
+          bloqueado: !!r.bloqueado,
+          origem: 'durable-object'
+        };
+      }
+    } catch (e) {
+      console.error(JSON.stringify({ event: 'admin_limite_login', status: 'erro', message: String(e?.message || e) }));
+    }
+  }
+  // Sem Durable Object: contador em memoria, com a mesma politica.
+  const agora = Date.now();
+  const calc = calcularReserva(memoria.get(chave) || null, agora, JANELA_MS);
+  memoria.set(chave, { tentativas: calc.tentativas, ate: calc.ate });
+  limparMemoria();
+  return {
+    ok: true,
+    chave,
+    tentativas: calc.tentativas,
+    bloqueado: calc.bloqueado,
+    origem: 'memoria'
+  };
+}
+
+// Zera o contador depois de um login bem-sucedido.
+async function zerarTentativas(env, ip) {
+  const chave = chaveLogin(ip, env);
+  memoria.delete(chave);
+  const stub = stubDoLogin(env);
+  if (!stub) return;
+  try {
+    await stub.zeraTentativa(chave);
+  } catch (e) {
+    console.error(JSON.stringify({ event: 'admin_limite_login_reset', status: 'erro', message: String(e?.message || e) }));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -80,8 +165,11 @@ async function login(request, env, opcoes) {
     return json({ ok: false, motivo: 'Banco do painel nao configurado (SUPABASE_URL/SUPABASE_PUBLISHABLE_KEY).' }, 503);
   }
   const ip = opcoes?.ip || 'desconhecido';
-  const bloqueio = bloqueioDe(ip);
-  if (bloqueio.n >= MAX_TENTATIVAS) {
+  // A tentativa e reservada ANTES da checagem da credencial. Como a reserva
+  // acontece dentro do Durable Object, ela e atomica: requisicoes simultaneas
+  // nao conseguem passar as duas pelo mesmo total.
+  const reserva = await reservarTentativa(env, ip);
+  if (reserva.bloqueado) {
     return json({ ok: false, motivo: 'Muitas tentativas. Tente de novo em alguns minutos.' }, 429);
   }
   let body;
@@ -93,13 +181,13 @@ async function login(request, env, opcoes) {
     p_usuario: usuario,
     p_senha: senha,
     p_agente: request.headers.get('user-agent') || null,
-    p_ip: ip
+    // O banco recebe o identificador opaco da origem, nunca o endereco.
+    p_ip: reserva.chave
   });
   if (!r?.ok) {
-    registrarTentativa(ip);
     return json({ ok: false, motivo: r?.motivo || 'credencial invalida' }, 401);
   }
-  tentativas.delete(ip);
+  await zerarTentativas(env, ip);
   return json({
     ok: true,
     token: r.token,
@@ -111,6 +199,14 @@ async function login(request, env, opcoes) {
 }
 
 async function logout(request, env) {
+  // Somente POST encerra a sessao. Um GET em /api/admin/logout pode vir de
+  // um prefetch, de um link clicado por engano ou de um scanner: encerrar a
+  // sessao do operador por um GET e um desvio de REST. O logout e idempotente
+  // (apagar a propria sessao de novo nao faz mal), entao responder 405 para
+  // GET/HEAD mantem o cliente honesto sem efeito colateral.
+  if (request.method !== 'POST') {
+    return json({ ok: false, motivo: 'metodo nao permitido' }, 405);
+  }
   const token = tokenDo(request);
   if (token) await rpcSegura(env, 'admin_logout', { p_token: token });
   return json({ ok: true });
@@ -128,9 +224,19 @@ async function painel(request, env) {
   const leitura = await listarFontesDoBanco(env);
   const linhas = leitura.linhas?.length ? leitura.linhas : (Array.isArray(r.fontes) ? r.fontes : []);
   const fontes = mesclarFontes(CATALOGO, linhas);
+  // O resumo do limite de login vai junto do painel: e o unico jeito de o
+  // operador confirmar que a protecao esta viva sem ficar tentando entrar.
+  // Sao contagens, sem identificar origem nenhuma. A leitura do contador
+  // nao e parte do painel: se falhar, o painel abre normal.
+  let limite = null;
+  try {
+    const stub = env.TOKEN_GUARD && env.TOKEN_GUARD.getByName('osint-login');
+    if (stub) limite = await stub.resumoLimite();
+  } catch { limite = null; }
   return json({
     ...r,
     fontes,
+    limite_login: limite,
     ambiente: {
       banco: modoDoBanco(env),
       master_key: !!chaveMestreDeEnv(env),
@@ -218,6 +324,46 @@ async function fontes(request, env) {
   return json({ ok: false, motivo: 'metodo nao permitido' }, 405);
 }
 
+// Troca da senha do operador.
+//
+// O painel promete que as credenciais sao trocaveis em qualquer momento.
+// Antes desta rota o promessa nao tinha por tras nenhum codigo: nao havia
+// funcao no banco, nem rota, nem tela. A funcao `admin_senha_trocar` pode
+// ainda nao existir no banco de producao (a migracao e aplicada no
+// Supabase SQL Editor); nesse caso a resposta diz isso com clareza, em vez
+// de fingir que a troca foi feita.
+async function senha(request, env) {
+  const guard = await exigeSessao(request, env);
+  if (guard.erro) return guard.erro;
+  if (request.method !== 'POST') {
+    return json({ ok: false, motivo: 'metodo nao permitido' }, 405);
+  }
+  let body;
+  try { body = await request.json(); } catch { body = {}; }
+  const atual = String(body?.senha_atual ?? '');
+  const nova = String(body?.senha_nova ?? '');
+  if (!atual || !nova) {
+    return json({ ok: false, motivo: 'informe a senha atual e a nova' }, 400);
+  }
+  const r = await rpcSegura(env, 'admin_senha_trocar', {
+    p_token: guard.token,
+    p_senha_atual: atual,
+    p_senha_nova: nova
+  });
+  if (r?.ok) return json({ ok: true, motivo: r.motivo || 'senha trocada' });
+  // A RPC pode nao existir no banco ainda: o PostgREST responde 404 com
+  // "Could not find the function". Nesse caso a mensagem precisa dizer o
+  // que fazer, e nao "banco recusou ...".
+  const motivo = String(r?.motivo || '');
+  if (motivo.includes('Could not find the function') || motivo.includes('404')) {
+    return json({
+      ok: false,
+      motivo: 'a funcao de troca de senha ainda nao foi aplicada no banco (admin_senha_trocar). Aplique db/migrations/0001_admin.sql no Supabase SQL Editor.'
+    }, 501);
+  }
+  return json({ ok: false, motivo: motivo || 'troca recusada' }, 400);
+}
+
 // ---------------------------------------------------------------------------
 // Entrada
 // ---------------------------------------------------------------------------
@@ -232,6 +378,7 @@ export async function tratarAdmin(request, env, opcoes = {}) {
     if (caminho === '/api/admin/credenciais') return await credenciais(request, env);
     if (caminho === '/api/admin/proxies') return await proxies(request, env);
     if (caminho === '/api/admin/fontes') return await fontes(request, env);
+    if (caminho === '/api/admin/senha') return await senha(request, env);
     return json({ ok: false, motivo: 'rota desconhecida' }, 404);
   } catch (e) {
     console.error(JSON.stringify({ event: 'admin_erro', rota: caminho, message: String(e?.message || e) }));

@@ -150,6 +150,37 @@ A senha nunca é guardada em texto puro: o banco guarda o hash e a verificação
 acontece no servidor, em funções `SECURITY DEFINER` com
 `search_path = public, extensions`.
 
+#### O limite é visível no painel
+
+O operador não precisa descobrir a proteção por tentativa e erro: o painel
+mostra o estado do contador. `GET /api/admin/painel` devolve o campo
+`limite_login`, e `GET /api/saude` devolve o mesmo campo.
+
+```json
+{ "origens": 1, "tentativas": 3, "bloqueadas": 0,
+  "max_tentativas": 10, "janela_ms": 900000,
+  "expira_em_ms": 1794644760600, "expirado_em_segundos": 899 }
+```
+
+- `origens` — quantas origens tentaram dentro da janela;
+- `tentativas` — total de tentativas na janela;
+- `bloqueadas` — quantas origens já ultrapassaram o limite (a 11ª tentativa
+  bloqueia; o contador satura em 11);
+- `expirado_em_segundos` — quanto falta para a janela mais antiga expirar.
+
+São **contagens, sem identificar origem nenhuma**. A chave do contador é o
+HMAC do endereço de origem; devolver a chave devolveria um identificador
+estável da origem, que é exatamente o que não pode vazar. O resumo nunca
+inclui chave, hash ou endereço — `verification/admin-check.mjs` falha se
+algum campo assim aparecer.
+
+A política (SQL, janela de 15 min, teto de 10) está em
+`src/lib/login-limite.mjs`, módulo único usado nos dois caminhos: o Durable
+Object (`src/lib/token-guard.mjs`) e o servidor local
+(`scripts/lib/guard-local.mjs`, SQLite do Node). O contador vive no Durable
+Object, não no KV: o KV é consistente por partes, e ler-o-somar-o-depois-
+gravar deixaria duas requisições simultâneas passarem pelas duas.
+
 ### Rotas do painel
 
 | Rota | Método | Auth | Observação |
@@ -157,7 +188,7 @@ acontece no servidor, em funções `SECURITY DEFINER` com
 | `/admin` | GET | — | Interface do painel. |
 | `/api/admin/login` | POST | — | `{usuario, senha}` → token de sessão. |
 | `/api/admin/logout` | POST | token | Encerra a sessão. |
-| `/api/admin/painel` | GET | token | KPIs do funil, falhas, fontes, credenciais, proxies e o estado do ambiente (`banco`, `master_key`, `gateway_proxy`, `fontes_ajustadas`). |
+| `/api/admin/painel` | GET | token | KPIs do funil, falhas, fontes, credenciais, proxies, o estado do ambiente (`banco`, `master_key`, `gateway_proxy`, `fontes_ajustadas`) e o resumo do limite de login (`limite_login`). |
 | `/api/admin/credenciais` | GET/POST/DELETE | token | Lista, grava (cifrada) e remove a credencial de uma fonte. |
 | `/api/admin/proxies` | GET/POST/DELETE | token | Lista, grava e remove proxies; `gateway` diz se o gateway rotativo está ativo. |
 | `/api/admin/fontes` | GET/POST | token | Catálogo efetivo e ajuste por fonte (limites e explicações de falha). |
@@ -192,7 +223,7 @@ rodar em um host alcançável a partir da Cloudflare.
 
 ## Publicação e deploy
 
-1. Instale Node.js 20 e Netlify CLI (a CLI pode ser instalada globalmente em sua máquina; **não** é dependência do projeto).
+1. Instale Node.js 22.5 ou superior e Netlify CLI (a CLI pode ser instalada globalmente em sua máquina; **não** é dependência do projeto). O mínimo é 22.5 porque o servidor local usa `node:sqlite` (o armazenamento do limite de login), que só existe a partir dessa versão.
 2. No diretório do projeto execute `npm install` e `npm run check`.
 3. Entre na conta com `netlify login` e vincule/crie o site com `netlify init` ou `netlify link`. Se criar via Netlify, associe seu repositório Git.
 4. Crie um widget Turnstile no painel da Cloudflare e autorize os domínios de produção, incluindo o `*.netlify.app` selecionado. Guarde a site key e a secret key.
@@ -582,6 +613,68 @@ cada versão uma única vez, registrando em `schema_meta`.
 
 Nada de alvo, e-mail ou IP é persistido: só contagens, identificador de fonte e
 instantes.
+
+### 3b. Migrações do Postgres do painel (`db/migrations/*.sql`)
+
+O banco do painel (Supabase) tem um caminho de migração **separado** do
+Durable Object. `db/migrations/0001_admin.sql` cria o schema do painel
+(usuários, sessões, credenciais cifradas, proxies, telemetria e catálogo) e
+`db/migrations/0002_catalogo.sql` semeia as 32 fontes do catálogo.
+
+**Estas migrações não são aplicadas pelo Worker nem pelo `npm run build`.**
+O build só empacota `migrations/*.sql` (Durable Object) e gera
+`db/migrations/0002_catalogo.sql` a partir do catálogo. O Postgres é um banco
+externo: quem aplica é o operador, no **Supabase SQL Editor** (ou por `psql`
+contra o banco do projeto).
+
+- `db/migrations/0001_admin.sql` é **reaplicável**: usa apenas
+  `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`,
+  `CREATE OR REPLACE FUNCTION`, `ALTER TABLE ... ENABLE ROW LEVEL SECURITY`,
+  `REVOKE`/`GRANT` e a semente do usuário com `ON CONFLICT DO NOTHING`.
+  Não há `DROP`: rodar de novo atualiza as funções sem tocar nos dados.
+- `db/migrations/0002_catalogo.sql` é gerado por
+  `scripts/build-catalog.mjs` e também reaplicável.
+
+Ordem de aplicação na primeira vez: `0001_admin.sql` e depois
+`0002_catalogo.sql`. Depois, basta reaplicar o `0001` quando ele mudar.
+
+> A semente do usuário operador usa uma senha aleatória (UUID), que só
+> existe como hash bcrypt. Por isso a troca de senha pelo painel
+> (`POST /api/admin/senha`) depende de `admin_senha_trocar`, que está em
+> `db/migrations/0001_admin.sql`: **sem reaplicar essa migração, o painel
+> responde que a função ainda não existe no banco.**
+
+#### 3c. Passo manual do operador (`0003_correcoes_admin.sql`)
+
+`db/migrations/0003_correcoes_admin.sql` é o passo que fecha o intervalo
+entre o banco de produção e o código do repositório. Ele é **gerado** por
+`scripts/build-correcoes-admin.mjs`, a partir do corpo **exato** das três
+funções de `0001_admin.sql`; `verification/sql-admin-check.mjs` compara os
+dois byte a byte e falha se divergirem. Editar o `0003` na mão quebra o
+check.
+
+O arquivo traz:
+
+| Correção | O que muda | Como se manifesta |
+| --- | --- | --- |
+| A | `admin_login` aceita `@` inicial no **usuário**, mas não na **senha** | Antes, a conta do operador tinha duas senhas válidas |
+| C | `admin_senha_trocar` passa a existir no banco | Antes, `POST /api/admin/senha` respondia 404 `PGRST202` |
+| E | `admin_registrar_visita` recusa etapa fora da lista fechada | Antes, qualquer chamada direta à RPC gravava a etapa que quisesse no funil |
+| Limpeza | `DELETE` das linhas de teste do funil | 41 linhas de etapa que não é do funil; as 388 do funil real não são tocadas |
+
+Como rodar: **Supabase → SQL Editor → colar o arquivo → Run**. A execução
+pode ser repetida (as correções usam `CREATE OR REPLACE`; a limpeza só
+apaga linha de teste).
+
+Por que o passo é manual e não automático: o CLI do Supabase não está
+autenticado neste ambiente e o repositório não tem chave de
+`service-role`. A `key` publicável do `anon` não serve — as policies RLS
+bloqueiam escrita direta nas tabelas (o `DELETE` via PostgREST responde
+`200` com `[]` e não apaga nada).
+
+O Worker já protege a etapa por conta própria: `src/admin/telemetria.mjs`
+valida contra `ETAPAS` antes de chamar a RPC. A correção E fecha o
+segredo na chamada direta, não substitui essa validação.
 
 ### 4. Painel de saúde e identificador de job
 

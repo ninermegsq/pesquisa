@@ -29,10 +29,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Node 20
+      # Node 22 e o minimo do projeto: `node:sqlite`, o armazenamento local do
+      # limite de login (scripts/lib/guard-local.mjs), so existe a partir do
+      # Node 22.5. O deploy roda a mesma suite do CI, entao a versao tem que
+      # ser a mesma.
+      - name: Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Instalar dependencias
         run: npm ci --no-audit --no-fund

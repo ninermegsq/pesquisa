@@ -6,16 +6,17 @@
   "description": "OSINT // infoc.hacker — scanner de exposicao de e-mail publicado em Cloudflare Workers",
   "license": "UNLICENSED",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5"
   },
   "scripts": {
     "check": "node scripts/check-syntax.mjs",
     "check:build": "node verification/build-idempotence-check.mjs",
-    "build": "node scripts/build-registry.mjs && node scripts/build-catalog.mjs && node scripts/build-migrations.mjs && node scripts/build-worker.mjs",
+    "build": "node scripts/build-registry.mjs && node scripts/build-catalog.mjs && node scripts/build-migrations.mjs && node scripts/build-correcoes-admin.mjs && node scripts/build-worker.mjs",
     "build:registry": "node scripts/build-registry.mjs",
     "build:catalog": "node scripts/build-catalog.mjs",
     "build:migrations": "node scripts/build-migrations.mjs",
-    "test": "node verification/cache-check.mjs && node verification/contract-check.mjs && node verification/codegen-check.mjs && node verification/migrations-check.mjs && node verification/admin-check.mjs && node verification/telegram-source-check.mjs && node verification/ssllabs-source-check.mjs && node verification/osint-github-source-check.mjs && node verification/source-fix-check.mjs && node verification/novos-alvos-check.mjs && node verification/warm-check.mjs && node verification/worker-regression.mjs && node verification/dev-server-check.mjs && node verification/dev-manifesto-check.mjs && node verification/dev-process-check.mjs && node verification/dev-ownership-check.mjs && node verification/dev-preview-check.mjs && node verification/mapa-pdf-check.mjs && node verification/stats-check.mjs",
+    "build:correcoes-admin": "node scripts/build-correcoes-admin.mjs",
+    "test": "node verification/cache-check.mjs && node verification/contract-check.mjs && node verification/codegen-check.mjs && node verification/migrations-check.mjs && node verification/sql-admin-check.mjs && node verification/admin-check.mjs && node verification/telegram-source-check.mjs && node verification/ssllabs-source-check.mjs && node verification/osint-github-source-check.mjs && node verification/source-fix-check.mjs && node verification/novos-alvos-check.mjs && node verification/warm-check.mjs && node verification/worker-regression.mjs && node verification/dev-server-check.mjs && node verification/dev-manifesto-check.mjs && node verification/dev-process-check.mjs && node verification/dev-ownership-check.mjs && node verification/dev-preview-check.mjs && node verification/mapa-pdf-check.mjs && node verification/stats-check.mjs && node verification/funil-check.mjs && node verification/codigos-falhas-check.mjs",
     "dev": "node scripts/dev-server.mjs",
     "dev:stop": "node scripts/stop-dev-servers.mjs",
     "dev:status": "node scripts/dev-status.mjs",

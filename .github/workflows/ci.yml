@@ -21,17 +21,24 @@ concurrency:
 
 jobs:
   verificar:
-    name: Verificacao local (Node 20)
+    name: Verificacao local (Node 22)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Node 20
+      # Node 22 e o minimo do projeto: `node:sqlite`, o armazenamento local do
+      # limite de login (scripts/lib/guard-local.mjs), so existe a partir do
+      # Node 22.5. No Node 20 o `import { DatabaseSync } from 'node:sqlite'`
+      # quebra com ERR_UNKNOWN_BUILTIN_MODULE e nenhum check chega a rodar.
+      #
+      # O Node 20 esta em EOL desde abril de 2026: nao ha manutencao nem
+      # correcao de seguranca para ele.
+      - name: Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Instalar dependencias
         run: npm ci --no-audit --no-fund

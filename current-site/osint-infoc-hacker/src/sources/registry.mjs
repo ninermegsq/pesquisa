@@ -997,8 +997,13 @@ export const REGISTRY=[
     const headers={authorization:key,'content-type':'application/json'};
     let r=await c.get(url,{method:'POST',timeout:30000,headers,
       body:JSON.stringify({size:10,_source:['numeroProcesso','classe.nome','dataAbertura','movimentos.orgaoJulgador.nome','partes.nome'],track_total_hits:false,terminate_after:15000,query:{bool:{should:[{match_phrase:{'movimentos.orgaoJulgador.nome':{query:limpo}}},{match_phrase:{'partes.nome':{query:limpo}}}],minimum_should_match:1}}})});
-    if(r.status===401||r.status===403)throw Error(`credencial recusada pelo CNJ (HTTP ${r.status})`);
-    if(r.status===429)throw Error('CNJ sobrecarregado (HTTP 429): o cluster publico rejeitou a consulta');
+    // O status HTTP precisa viajar com o erro: sem `.status` o contrato
+    // (src/contract.mjs) classifica a recusa como `erro` generico, e o painel
+    // perde a explicacao de `http` que o catalogo escreve para o CNJ
+    // ("401 security_exception e a chave recusada pelo CNJ"). O mesmo
+    // formato de erro (`Error` + `.status`) ja e o de `erroNumverify`.
+    if(r.status===401||r.status===403){const e=Error(`credencial recusada pelo CNJ (HTTP ${r.status})`);e.status=r.status;throw e;}
+    if(r.status===429){const e=Error('CNJ sobrecarregado (HTTP 429): o cluster publico rejeitou a consulta');e.status=429;throw e;}
     if(r.status===400)r=await c.get(url,{method:'POST',timeout:30000,headers,
       body:JSON.stringify({size:10,query:{match_phrase:{'movimentos.orgaoJulgador.nome':{query:limpo}}}})});
     if(!r.ok) throw falhar(r);

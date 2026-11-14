@@ -97,6 +97,16 @@
     html += kpi(p.mestre_configurado ? 'sim' : 'nao', 'hash no banco');
     html += kpi(texto(p.usuario && p.usuario.usuario) || '—', 'operador');
     html += kpi(texto(p.dias) + 'd', 'janela');
+    // O limite de login: quantas origens tentaram, quantas estao
+    // bloqueadas e quantas tentativas cabem na janela. Sem identificar
+    // origem nenhuma, so contagens.
+    var lim = p.limite_login || null;
+    if (lim) {
+      html += kpi(texto(lim.origens || 0), 'origens na janela');
+      html += kpi(texto(lim.tentativas || 0), 'tentativas');
+      html += kpi(texto(lim.bloqueadas || 0), 'origens bloqueadas');
+      html += kpi(texto(lim.max_tentativas || 0), 'tentativas por janela');
+    }
     $('ambiente').innerHTML = html;
   }
 
@@ -237,14 +247,68 @@
     }
     $('lista-falhas').innerHTML = html || '<tr><td colspan="5" class="sub">nenhuma falha registrada no periodo</td></tr>';
 
-    // Explicacao dos codigos: vem do catalogo de cada fonte.
-    var usados = {};
-    for (var k = 0; k < falhas.length; k++) usados[falhas[k].codigo] = true;
-    var base = fontes.length ? fontes[0].explicacoes || {} : {};
+    // Explicacao dos codigos: e o glossario de erro do motor.
+    //
+    // O texto de um codigo nao e unico: `http` significa uma coisa no GitHub,
+    // outra no Xon e outra no CNJ. A versao anterior pegava o texto da
+    // PRIMEIRA fonte do catalogo (gravatar) e mostrava esse texto para
+    // qualquer falha, o que deixava o operador lendo sobre o gravatar uma
+    // falha do CNJ.
+    //
+    // Aqui o texto vem da fonte que de fato falhou. Para um codigo que
+    // apareceu no periodo, cada fonte que falhou entra com o seu texto. Para
+    // um codigo que nao apareceu, entra o texto padrao do motor (o mais
+    // comum entre as fontes), para o glossario continuar completo.
+    var porFonteCodigo = {};
+    for (var k = 0; k < falhas.length; k++) {
+      var fl = falhas[k];
+      var codigoFalha = fl.codigo || 'erro';
+      var entradaFalha = porFonte[fl.fonte] || {};
+      var explicacoesFalha = entradaFalha.explicacoes || {};
+      var textoFalha = explicacoesFalha[codigoFalha] ||
+        (explicacoesFalha.erro && codigoFalha === 'erro' ? explicacoesFalha.erro : '');
+      if (!textoFalha && entradaFalha.observacao) textoFalha = entradaFalha.observacao;
+      if (!porFonteCodigo[codigoFalha]) porFonteCodigo[codigoFalha] = [];
+      porFonteCodigo[codigoFalha].push({ fonte: fl.fonte || '—', texto: textoFalha });
+    }
+
+    // Todos os codigos que o catalogo conhece, para o glossario nao depender
+    // de ter havido falha no periodo.
+    var contagem = {};
+    for (var i = 0; i < fontes.length; i++) {
+      var ex = fontes[i].explicacoes || {};
+      for (var cod in ex) {
+        if (!Object.prototype.hasOwnProperty.call(ex, cod)) continue;
+        if (!contagem[cod]) contagem[cod] = { total: 0, textos: {} };
+        contagem[cod].total++;
+        contagem[cod].textos[ex[cod]] = (contagem[cod].textos[ex[cod]] || 0) + 1;
+      }
+    }
+
     var html2 = '';
-    for (var codigo in base) {
-      if (!Object.prototype.hasOwnProperty.call(base, codigo)) continue;
-      html2 += '<div class="explica"><b>' + texto(codigo) + '</b>' + texto(base[codigo]) + '</div>';
+    var codigosOrdenados = Object.keys(contagem).sort();
+    for (var c = 0; c < codigosOrdenados.length; c++) {
+      var codigo = codigosOrdenados[c];
+      html2 += '<div class="explica"><b>' + texto(codigo) + '</b>';
+      if (porFonteCodigo[codigo]) {
+        // As fontes que falharam de fato com este codigo.
+        for (var m = 0; m < porFonteCodigo[codigo].length; m++) {
+          html2 += '<div class="sub">' + texto(porFonteCodigo[codigo][m].fonte) + '</div>' +
+            texto(porFonteCodigo[codigo][m].texto);
+        }
+      } else {
+        // Sem falha no periodo: mostra o texto padrao do motor, que e o mais
+        // comum entre as fontes do catalogo.
+        var textos = contagem[codigo].textos;
+        var padrao = '';
+        var melhor = -1;
+        for (var t in textos) {
+          if (!Object.prototype.hasOwnProperty.call(textos, t)) continue;
+          if (textos[t] > melhor) { melhor = textos[t]; padrao = t; }
+        }
+        html2 += texto(padrao);
+      }
+      html2 += '</div>';
     }
     $('codigos').innerHTML = html2 || '<div class="sub">catalogo indisponivel</div>';
   }
@@ -305,8 +369,49 @@
     $('f-texto').value = f.limite_texto || '';
     $('f-proxy').value = f.usa_proxy ? 'sim' : 'nao';
     $('f-obs').value = f.observacao || '';
+    $('f-explicacoes').value = explicacoesParaTexto(f.explicacoes);
     mostrar($('f-msg'), '', 'ok');
     if ($('editor-fonte').scrollIntoView) $('editor-fonte').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // Serializa o objeto de explicacoes (codigo -> texto) no formato de linhas
+  // "codigo = texto" que o editor mostra. As chaves sao ordenadas para que o
+  // texto devolvido seja sempre o mesmo para a mesma fonte.
+  function explicacoesParaTexto(explicacoes) {
+    if (!explicacoes || typeof explicacoes !== 'object') return '';
+    var linhas = [];
+    var codigos = Object.keys(explicacoes).sort();
+    for (var i = 0; i < codigos.length; i++) {
+      var codigo = codigos[i];
+      var valor = explicacoes[codigo];
+      if (valor === null || valor === undefined) continue;
+      linhas.push(codigo + ' = ' + String(valor).replace(/\r?\n/g, ' '));
+    }
+    return linhas.join('\n');
+  }
+
+  // Le o editor de explicacoes de volta para o objeto { codigo: texto }.
+  // Devolve null quando o campo esta vazio (nada a gravar) e lanca um erro
+  // quando uma linha nao tem o separador " = ", para que o painel explique o
+  // problema em vez de gravar um objeto invalido.
+  function textoParaExplicacoes(bruto) {
+    var texto = String(bruto || '').trim();
+    if (!texto) return null;
+    var saida = {};
+    var linhas = texto.split(/\r?\n/);
+    for (var i = 0; i < linhas.length; i++) {
+      var linha = linhas[i].trim();
+      if (!linha) continue;
+      var separador = linha.indexOf('=');
+      if (separador < 1) {
+        throw new Error('linha ' + (i + 1) + ' invalida: use "codigo = texto"');
+      }
+      var codigo = linha.slice(0, separador).trim();
+      var valor = linha.slice(separador + 1).trim();
+      if (!codigo) throw new Error('linha ' + (i + 1) + ' invalida: o codigo esta vazio');
+      saida[codigo] = valor;
+    }
+    return Object.keys(saida).length ? saida : null;
   }
 
   function restaurarPadrao() {
@@ -321,6 +426,7 @@
     $('f-texto').value = p.limite_texto || '';
     $('f-proxy').value = p.usa_proxy ? 'sim' : 'nao';
     $('f-obs').value = p.observacao || '';
+    $('f-explicacoes').value = explicacoesParaTexto(p.explicacoes);
     mostrar($('f-msg'), 'valores do catalogo carregados; clique em SALVAR para gravar', 'ok');
   }
 
@@ -331,6 +437,19 @@
     if (!f) { mostrar($('f-msg'), 'fonte nao encontrada', 'erro'); return; }
     var numero = function (v) { return v === '' ? null : Number(v); };
     var textoOuNulo = function (v) { var t = (v || '').trim(); return t ? t : null; };
+    var explicacoes;
+    try {
+      explicacoes = textoParaExplicacoes($('f-explicacoes').value);
+    } catch (e) {
+      mostrar($('f-msg'), e.message || 'explicacao invalida', 'erro');
+      return;
+    }
+    // Editor vazio com explicacoes existentes: manda um objeto vazio, que
+    // restaura a documentacao do catalogo. Sem isso, `null` manteria o texto
+    // antigo e o operador nao conseguiria voltar ao padrao por aqui.
+    if (explicacoes === null && f.explicacoes && Object.keys(f.explicacoes).length) {
+      explicacoes = {};
+    }
     api('/api/admin/fontes', {
       metodo: 'POST',
       corpo: {
@@ -348,7 +467,7 @@
         limite_origem: f.limite_origem || null,
         usa_proxy: $('f-proxy').value === 'sim',
         observacao: textoOuNulo($('f-obs').value),
-        explicacoes: f.explicacoes || null
+        explicacoes: explicacoes
       }
     }).then(function () {
       mostrar($('f-msg'), 'fonte gravada: ' + id, 'ok');
@@ -417,6 +536,40 @@
       .catch(function (e) {
         mostrar($('login-msg'), e.message || 'nao foi possivel entrar', 'erro');
       });
+  }
+
+  // Troca da senha do operador. A confirmacao em dois campos existe para
+  // que uma digitacao errada nao derrube o acesso: a troca encerra todas as
+  // sessoes, inclusive a que esta em uso.
+  function trocarSenha() {
+    var atual = $('senha-atual').value;
+    var nova = $('senha-nova').value;
+    var repetida = $('senha-nova-2').value;
+    if (!atual || !nova) {
+      mostrar($('senha-msg'), 'informe a senha atual e a senha nova', 'erro');
+      return;
+    }
+    if (nova !== repetida) {
+      mostrar($('senha-msg'), 'a senha nova e a repeticao nao batem', 'erro');
+      return;
+    }
+    if (nova.length < 8) {
+      mostrar($('senha-msg'), 'a senha nova precisa de ao menos 8 caracteres', 'erro');
+      return;
+    }
+    api('/api/admin/senha', {
+      metodo: 'POST',
+      corpo: { senha_atual: atual, senha_nova: nova }
+    }).then(function (r) {
+      $('senha-atual').value = '';
+      $('senha-nova').value = '';
+      $('senha-nova-2').value = '';
+      mostrar($('senha-msg'), (r && r.motivo) || 'senha trocada', 'ok');
+      // A troca derruba as sessoes: volta para a tela de login.
+      setTimeout(sair, 1200);
+    }).catch(function (e) {
+      mostrar($('senha-msg'), e.message || 'falha ao trocar a senha', 'erro');
+    });
   }
 
   // ---------------------------------------------------------------------
@@ -491,6 +644,8 @@
       $('f-editor-titulo').textContent = 'Editar fonte';
       mostrar($('f-msg'), '', 'ok');
     });
+
+    $('senha-salvar').addEventListener('click', trocarSenha);
 
     document.addEventListener('click', function (e) {
       var alvo = e.target;

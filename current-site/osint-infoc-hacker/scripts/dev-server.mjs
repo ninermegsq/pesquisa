@@ -27,6 +27,12 @@ import { detectar } from '../src/lib/alvo.mjs';
 import { aplicarStats } from './stats.mjs';
 import { verificarTokenCalor } from '../src/lib/warm.mjs';
 import { sincronizarManifesto, sincronizarCatalogo } from './garantir-manifesto.mjs';
+// O Durable Object local (scripts/lib/guard-local.mjs) e importado de forma
+// DINAMICA, dentro do try que monta o stub. Um import estatico quebraria o
+// servidor inteiro no Node sem `node:sqlite` (versao anterior a 22.5), e o
+// try/catch de degradação nunca chegaria a rodar: o modulo falha na
+// importação, antes do try. O servidor local tem que subir mesmo sem o
+// SQLite, com o limite no contador em memoria.
 import {
   liberarPortasCanicas,
   portasCanonicas,
@@ -227,6 +233,34 @@ const env = {
   TURNSTILE_SITEKEY: '1x00000000000000000000AA'
 };
 
+// Durable Object local.
+//
+// O Worker de producao tem o Durable Object `TOKEN_GUARD` (SQLite forte,
+// um objeto por vez). Fora da Cloudflare ele nao existe, entao o servidor
+// local simula o objeto do limite de login com o SQLite do proprio Node
+// (scripts/lib/guard-local.mjs), usando o mesmo SQL e a mesma politica de
+// src/lib/login-limite.mjs.
+//
+// O stub e exposto pelo mesmo metodo (`getByName`) para que o codigo do
+// painel seja identico nos dois caminhos.
+try {
+  const { criarGuardLocal, criarStubLogin } = await import('./lib/guard-local.mjs');
+  const guardLocal = criarGuardLocal();
+  const stubLogin = criarStubLogin(guardLocal);
+  env.TOKEN_GUARD = {
+    getByName(nome) {
+      if (String(nome) === 'osint-login') return stubLogin;
+      return null;
+    }
+  };
+} catch (e) {
+  // Sem SQLite local o limite cai no contador em memoria do painel. O
+  // servidor continua de pé: e um modo degradado, nao um motivo para nao
+  // subir o ambiente de desenvolvimento.
+  console.error(JSON.stringify({ event: 'dev_guard_local', status: 'erro', message: String(e?.message || e) }));
+  env.TOKEN_GUARD = null;
+}
+
 // Painel admin: com SUPABASE_URL e SUPABASE_PUBLISHABLE_KEY no ambiente o
 // servidor local conversa com o mesmo banco do Worker; sem eles, entra o
 // banco em memoria (ADMIN_MODO_LOCAL=1). A chave mestra e efemera por
@@ -259,6 +293,22 @@ const WARM_ENV = {
   HMAC_SECRET: process.env.HMAC_SECRET || ''
 };
 
+// Segredo do HMAC que identifica a origem no limite de login.
+//
+// Em producao ele e o segredo HMAC_SECRET do Worker: estavel entre deploys,
+// entao o contador de tentativas sobrevive a publicacao. No local, sem o
+// segredo no ambiente, ele e derivado de um valor fixo do projeto (e nao de
+// um aleatorio por processo): um segredo que muda a cada reinicio faria o
+// contador parecer zerado, que e justamente o defeito que o limite existe
+// para evitar.
+//
+// Este valor NAO e o segredo do token de uso unico (constante `HMAC_SECRET`
+// abaixo): aquele assina o token de scan, este identifica a origem do login.
+// Sao separados de proposito.
+env.HMAC_SECRET = process.env.HMAC_SECRET ||
+  process.env.WARM_SECRET ||
+  createHash('sha256').update('osint-local-dev:hash-origem:estavel').digest('hex');
+
 // Historico local de scans (o Durable Object nao existe fora do Cloudflare).
 const historicoJobs = [];
 const CODES_DE_CONFIGURACAO = ['sem_chave', 'sem_token'];
@@ -277,7 +327,7 @@ function registrarJobLocal(payload, escopo) {
   });
   if (historicoJobs.length > 200) historicoJobs.shift();
 }
-function saudeLocal() {
+async function saudeLocal() {
   const porFonte = {};
   for (const job of historicoJobs) {
     for (const fonte of job.fontes || []) {
@@ -290,6 +340,14 @@ function saudeLocal() {
   }
   const total = historicoJobs.length;
   const parciais = historicoJobs.filter(j => j.falhas > 0).length;
+  // O resumo do limite de login, com o mesmo formato do Worker: contagens
+  // sem identificar origem. A leitura do contador nao e parte da saude do
+  // scan, entao uma falha aqui nao derruba a resposta.
+  let limite = null;
+  try {
+    const stub = env.TOKEN_GUARD && env.TOKEN_GUARD.getByName('osint-login');
+    if (stub) limite = await stub.resumoLimite();
+  } catch { limite = null; }
   return {
     gerado_em: new Date().toISOString(),
     escopo: 'local',
@@ -297,7 +355,8 @@ function saudeLocal() {
     schema: [],
     versao_migracoes: null,
     jobs: { total, parciais, completos: total - parciais },
-    fontes: Object.values(porFonte).sort((a, b) => a.id.localeCompare(b.id))
+    fontes: Object.values(porFonte).sort((a, b) => a.id.localeCompare(b.id)),
+    limite_login: limite
   };
 }
 
@@ -497,6 +556,10 @@ async function devScan(req, res) {
   });
   // O token foi validado contra o IP real; o rate limit usa a chave de sessao
   // local para nao gastar a cota de producao durante o desenvolvimento.
+  // Sem `waitUntil` aqui de proposito: o fallback do motor aguarda a telemetria
+  // antes de responder, e o banco local e em memoria (a espera e imediata).
+  // Com `waitUntil` presente o motor nao aguardaria, e a etapa do funil local
+  // dependeria de um `ctx` que o Node nao tem.
   const response = await handleScan(request, env, calor.ok ? `${rateLimitIp(ip)}#aquecimento` : rateLimitIp(ip), { escopo: calor.ok ? 'aquecimento' : 'visitante' });
   const payload = await response.text();
   try { registrarJobLocal(JSON.parse(payload), calor.ok ? 'aquecimento' : 'visitante'); } catch { /* payload inesperado */ }
@@ -511,7 +574,7 @@ async function devSaude(req, res) {
   if (req.method !== 'GET') return sendJson(res, 405, { error: 'Metodo nao permitido.' });
   const auth = verificarTokenCalor(req.headers['x-warm-token'], { env: WARM_ENV, escopo: 'operador' });
   if (!auth.ok) return sendJson(res, 401, { error: 'Token de operador ausente ou invalido.', motivo: auth.motivo });
-  return sendJson(res, 200, saudeLocal());
+  return sendJson(res, 200, await saudeLocal());
 }
 
 // Painel admin local: a mesma API do Worker, sobre o mesmo objeto env.

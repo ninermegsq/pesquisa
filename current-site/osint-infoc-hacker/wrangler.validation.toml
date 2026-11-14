@@ -5,24 +5,44 @@ compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 preview_urls = true
 
+# Os dois bindings apontam para o namespace DEDICADO de validacao
+# (e97462664ae64aaab17374b2c3f4936d, "ostnt-validation-rate-limit"), que
+# estava provisionado e nao era usado por nenhum Worker.
+#
+# Antes, os dois bindings apontavam para o namespace de producao
+# (d83ef821c9b44516a7d0f163088cc484, "ostnt-scan-cache"): cada scan de
+# validacao consumia cota do rate limit de producao (10/hora e 60/dia por IP) e
+# os contadores `rl:h:` / `rl:d:` de producao ficavam poluidos. Como o rate
+# limit e por IP e o cache e `caches.default` (Cache API, nao KV), o unico
+# dado realmente compartilhado era a cota do rate limit.
+#
+# O binding CACHE e mantido por compatibilidade: o Worker usa
+# `env.OSINT_KV || env.CACHE` como fallback do rate limit. Aqui os dois
+# apontam para o mesmo namespace de validacao, entao nenhum caminho do Worker
+# de validacao toca o KV de producao.
 [[kv_namespaces]]
 binding = "CACHE"
-id = "d83ef821c9b44516a7d0f163088cc484"
+id = "e97462664ae64aaab17374b2c3f4936d"
 
 # O rate limit (10 scans/hora e 60/dia por IP) usa o binding OSINT_KV.
 # Sem ele o Worker cai no binding CACHE por fallback: o KV e compartilhado
 # com a contagem de requisicoes e a cota de um ambiente contamina a do outro.
 [[kv_namespaces]]
 binding = "OSINT_KV"
-id = "d83ef821c9b44516a7d0f163088cc484"
+id = "e97462664ae64aaab17374b2c3f4936d"
 
 [[durable_objects.bindings]]
 name = "TOKEN_GUARD"
 class_name = "TokenGuard"
 
-[[migrations]]
-tag = "token-guard-v1"
-new_sqlite_classes = ["TokenGuard"]
+# O Worker de producao usa o bloco [exports] (o formato novo), e nao o bloco
+# [[migrations]] antigo. A Cloudflare recusa voltar de [exports] para
+# [[migrations]] com o erro 100403, entao os dois arquivos usam o mesmo
+# formato: e o que garante que o Worker de validacao suba igual ao de
+# producao.
+[exports.TokenGuard]
+type = "durable-object"
+storage = "sqlite"
 
 [vars]
 UA_MODE = "navegador"

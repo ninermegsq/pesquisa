@@ -15,4 +15,10 @@ export const MIGRACOES = Object.freeze([
     slug: "scan_jobs",
     sql: "-- Migracao 0002: historico de scans para o painel de saude.\n--\n-- Guarda apenas contagens e o identificador de cada fonte. Alvo, e-mail e IP\n-- nunca sao persistidos aqui: o painel de saude responde \"quantas fontes\n-- falharam\", nunca \"para quem\".\n\nCREATE TABLE IF NOT EXISTS jobs (\n  job_id TEXT PRIMARY KEY,\n  criado_em INTEGER NOT NULL,\n  escopo TEXT NOT NULL,\n  status TEXT NOT NULL,\n  total_fontes INTEGER NOT NULL DEFAULT 0,\n  ok_fontes INTEGER NOT NULL DEFAULT 0,\n  falhas INTEGER NOT NULL DEFAULT 0,\n  parcial INTEGER NOT NULL DEFAULT 0\n);\n\nCREATE TABLE IF NOT EXISTS job_fontes (\n  job_id TEXT NOT NULL,\n  fonte TEXT NOT NULL,\n  status TEXT NOT NULL,\n  erro_codigo TEXT,\n  ms INTEGER NOT NULL DEFAULT 0,\n  PRIMARY KEY (job_id, fonte)\n);\n\nCREATE INDEX IF NOT EXISTS jobs_criado_em ON jobs (criado_em);"
   }),
+  Object.freeze({
+    versao: 3,
+    nome: "0003_login_tentativas.sql",
+    slug: "login_tentativas",
+    sql: "-- Migracao 0003: contador de tentativas de login do painel admin.\n--\n-- A chave e o HMAC do endereco de origem (identificador opaco de 32\n-- caracteres), nunca o endereco em claro: nem a tabela, nem o indice e nem\n-- o nome do objeto guardam o endereco de origem.\n--\n-- Uma linha por origem, com o total de tentativas gastas na janela e o\n-- instante em que a janela expira. O contador satura em MAX_TENTATIVAS + 1,\n-- que e o que marca a origem como bloqueada.\n\nCREATE TABLE IF NOT EXISTS login_tentativas (\n  chave TEXT PRIMARY KEY,\n  tentativas INTEGER NOT NULL DEFAULT 0,\n  ate INTEGER NOT NULL DEFAULT 0\n);\n\nCREATE INDEX IF NOT EXISTS login_tentativas_ate ON login_tentativas (ate);"
+  }),
 ]);

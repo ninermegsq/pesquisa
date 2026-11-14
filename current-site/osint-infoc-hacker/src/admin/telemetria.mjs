@@ -14,8 +14,9 @@
 import { createHash, createHmac } from 'node:crypto';
 import { rpcSegura } from './db.mjs';
 import { hashDoEnv } from './credenciais.mjs';
+import { ETAPAS } from './etapas.mjs';
 
-export const ETAPAS = Object.freeze(['visita', 'scan', 'scan_concluido', 'falha', 'exportacao']);
+export { ETAPAS };
 
 export function hashIp(ip, env) {
   const bruto = String(ip || '').trim();
@@ -38,7 +39,12 @@ export async function registrar(env, dados = {}) {
       p_fonte: dados.fonte ? String(dados.fonte).slice(0, 64) : null,
       p_codigo: dados.codigo ? String(dados.codigo).slice(0, 40) : null,
       p_ok: dados.ok === undefined || dados.ok === null ? null : !!dados.ok,
-      p_ms: Number.isFinite(Number(dados.ms)) ? Number(dados.ms) : null,
+      // A coluna `ms` do banco e integer (2^31-1). Saturar aqui evita que
+      // um chamador futuro envie um epoch em milissegundos e a RPC recuse a
+      // linha inteira: um valor grande vira o teto, nunca um estouro.
+      p_ms: Number.isFinite(Number(dados.ms))
+        ? Math.max(-2147483648, Math.min(2147483647, Math.trunc(Number(dados.ms))))
+        : null,
       p_job_id: dados.job_id || null,
       p_ip_hash: hashIp(dados.ip, env),
       p_agente: dados.agente ? String(dados.agente).slice(0, 200) : null

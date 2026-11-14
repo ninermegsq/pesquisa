@@ -175,7 +175,17 @@ try {
   const painel = await saude.json();
   assert.ok(painel.jobs && typeof painel.jobs.total === 'number', 'painel sem contagem de jobs');
   assert.ok(Array.isArray(painel.fontes), 'painel sem saude por fonte');
-  checks.saude = { status: saude.status, jobs: painel.jobs.total, fontes: painel.fontes.length };
+  // O resumo do limite de login viaja junto da saude: e o unico jeito de o
+  // operador confirmar que a protecao esta viva sem tentar login.
+  assert.ok(painel.limite_login && typeof painel.limite_login === 'object', 'painel sem resumo do limite de login');
+  assert.ok(typeof painel.limite_login.origens === 'number', 'resumo do limite sem contagem de origens');
+  assert.ok(typeof painel.limite_login.bloqueadas === 'number', 'resumo do limite sem contagem de bloqueadas');
+  assert.ok(typeof painel.limite_login.max_tentativas === 'number', 'resumo do limite sem o maximo de tentativas');
+  // O resumo nao pode carregar chave de origem: seria um identificador
+  // estavel da origem, que e o que nao pode vazar.
+  const chavesLimite = Object.keys(painel.limite_login);
+  assert.ok(!chavesLimite.some(k => /chave|origem_hash|ip|endereco/i.test(k) && k !== 'origens'), 'resumo do limite expoe identificador de origem: ' + chavesLimite.join(','));
+  checks.saude = { status: saude.status, jobs: painel.jobs.total, fontes: painel.fontes.length, limite: painel.limite_login.origens + '/' + painel.limite_login.tentativas };
 
   // 12. Token de aquecimento consulta as fontes sem token de uso unico
   const alvoCalor = 'aquecimento@example.invalid';

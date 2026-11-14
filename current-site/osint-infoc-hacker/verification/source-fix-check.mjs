@@ -27,13 +27,15 @@ import assert from 'node:assert/strict';
 const { REGISTRY } = await import('../src/sources/registry.mjs');
 const { ctx } = await import('../src/lib/http.mjs');
 const { rodar } = await import('../src/scan.mjs');
+const { classificarErro } = await import('../src/contract.mjs');
 
 const gitlab = REGISTRY.find(f => f.id === 'gitlab');
 const npm = REGISTRY.find(f => f.id === 'npm');
 const wayback = REGISTRY.find(f => f.id === 'wayback');
 const crtsh = REGISTRY.find(f => f.id === 'crtsh');
 const cnpj = REGISTRY.find(f => f.id === 'cnpj_br');
-assert.ok(gitlab && npm && wayback && crtsh && cnpj, 'fonte do registro ausente');
+const datajud = REGISTRY.find(f => f.id === 'datajud');
+assert.ok(gitlab && npm && wayback && crtsh && cnpj && datajud, 'fonte do registro ausente');
 
 // --- proveniencia: o manifesto e a fonte da verdade --------------------------
 assert.equal(gitlab.provenance, 'gitlab-graphql-search');
@@ -282,6 +284,24 @@ try {
   respostas = [{ status: 404, corpo: 'nao encontrado' }, { status: 404, corpo: 'nao encontrado' }];
   saidaCnpj = await cnpj.run(alvoCnpj, c);
   assert.deepEqual(saidaCnpj.dados, { existe: false });
+
+  // --- datajud: recusa do CNJ e classificada como `http` -------------------
+  // O CNJ recusa a chave com 401 security_exception quando o volume de sondas
+  // cresce (nao e bug do codigo). O erro precisa levar `.status` junto: sem
+  // isso o contrato classifica a recusa como `erro` generico e o painel perde
+  // a explicacao de `http` que o catalogo escreve para esta fonte.
+  const ctxCnj = ctx({ UA_MODE: 'identificado', UA: 'fixture-check/1.0', DATAJUD_API_KEY: 'chave-de-teste' }, 'https://local.test');
+  const alvoNome = { tipo: 'nome', valor: 'Maria Silva' };
+  for (const status of [401, 403, 429]) {
+    respostas = [{ status, corpo: '{"error":"security_exception"}' }];
+    let erroCnj = null;
+    try { await datajud.run(alvoNome, ctxCnj); } catch (e) { erroCnj = e; }
+    assert.ok(erroCnj, `a recusa HTTP ${status} do CNJ precisa ser lancada como erro`);
+    assert.equal(erroCnj.status, status,
+      `a recusa HTTP ${status} do CNJ precisa carregar o status no erro`);
+    assert.equal(classificarErro(erroCnj).codigo, 'http',
+      `a recusa HTTP ${status} do CNJ precisa ser classificada como http, nao como erro generico`);
+  }
 
   // A lista de socios entra inteira e volta limitada no relatorio.
   const muitos = { ...CNPJ_WS_OK, socios: Array.from({ length: 25 }, (_, i) => ({ nome: `SOCIO ${i + 1}`, qualificacao_socio: { descricao: 'Sócio' } })) };

@@ -26,6 +26,7 @@
 import { pbkdf2Sync, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { CATALOGO } from './catalogo.meta.mjs';
 import { hashMestre } from './cripto.mjs';
+import { ETAPAS } from './etapas.mjs';
 
 export const USUARIO_LOCAL = 'Gui170pretty';
 export const SENHA_LOCAL_PADRAO = USUARIO_LOCAL;
@@ -56,9 +57,15 @@ function conferir(senha, senhaHash) {
   return esperado.length === recebido.length && timingSafeEqual(esperado, recebido);
 }
 
-// O login aceita o '@' inicial como ruido de digitacao: o valor comparado e
-// sempre o "nucleo" (sem o '@'). '@Gui170pretty' e 'Gui170pretty' sao o
-// mesmo usuario, e o mesmo vale para a senha.
+// O login aceita o '@' inicial como ruido de digitacao NO USUARIO: o valor
+// comparado e sempre o "nucleo" (sem o '@'). '@Gui170pretty' e 'Gui170pretty'
+// sao o mesmo usuario.
+//
+// A SENHA nao tem esse tratamento: e comparada exatamente como veio. Sem o
+// '@' inicial aceito na senha, a conta do operador tinha duas senhas
+// validas (a senha e a senha com '@' na frente), o que ampliava o espaco
+// de credenciais aceito e facilitava adivinhacao por tentativa e erro. Esta
+// e a mesma regra do SQL (db/migrations/0001_admin.sql, admin_login).
 export const nucleo = valor => String(valor ?? '').replace(/^@+/, '').trim();
 
 const estado = {
@@ -218,7 +225,8 @@ export const RPC_LOCAL = {
     const nome = nucleo(p_usuario).toLowerCase();
     const usuario = estado.usuarios.find(u => u.usuario.toLowerCase() === nome && u.ativo);
     if (!usuario) return { ok: false, motivo: 'credencial invalida' };
-    if (!conferir(nucleo(p_senha), usuario.senha_hash)) return { ok: false, motivo: 'credencial invalida' };
+    // A senha e comparada como veio: o '@' inicial nao e tolerado aqui.
+    if (!conferir(String(p_senha ?? ''), usuario.senha_hash)) return { ok: false, motivo: 'credencial invalida' };
     const token = randomBytes(32).toString('hex');
     const expira = new Date(Date.now() + TTL_SESSAO_HORAS * 3600000).toISOString();
     estado.sessoes.set(token, {
@@ -247,6 +255,26 @@ export const RPC_LOCAL = {
   admin_logout(p_token) {
     estado.sessoes.delete(String(p_token || ''));
     return { ok: true };
+  },
+  // Troca de senha do operador. Mesma regra do SQL
+  // (db/migrations/0001_admin.sql, admin_senha_trocar): a sessao precisa ser
+  // valida, a senha nova precisa ter 8 caracteres ou mais, precisa ser
+  // diferente da atual e a troca derruba todas as sessoes do usuario
+  // (inclusive a que fez a troca).
+  admin_senha_trocar(p_token, p_senha_atual, p_senha_nova) {
+    const sessao = sessaoValida(p_token);
+    if (!sessao) return { ok: false, motivo: 'sessao invalida ou expirada' };
+    const usuario = estado.usuarios.find(u => u.id === sessao.usuario_id);
+    if (!usuario || !usuario.ativo) return { ok: false, motivo: 'sessao invalida ou expirada' };
+    const nova = String(p_senha_nova ?? '');
+    if (nova.length < 8) return { ok: false, motivo: 'a senha nova precisa de ao menos 8 caracteres' };
+    if (nova === String(p_senha_atual ?? '')) return { ok: false, motivo: 'a senha nova e igual a atual' };
+    if (!conferir(String(p_senha_atual ?? ''), usuario.senha_hash)) return { ok: false, motivo: 'senha atual invalida' };
+    usuario.senha_hash = hashear(nova);
+    for (const [token, item] of estado.sessoes) {
+      if (item.usuario_id === usuario.id) estado.sessoes.delete(token);
+    }
+    return { ok: true, motivo: 'senha trocada; entre de novo' };
   },
   admin_credenciais_leitura(p_hash) {
     if (!mestreOk(p_hash)) return { ok: false, motivo: 'chave mestra nao confere', credenciais: [] };
@@ -344,6 +372,11 @@ export const RPC_LOCAL = {
   admin_registrar_visita(p_hash, p_etapa, p_alvo_tipo, p_fonte, p_codigo, p_ok, p_ms, p_job_id, p_ip_hash, p_agente) {
     if (!mestreOk(p_hash)) return { ok: false, motivo: 'chave mestra nao confere' };
     if (!p_etapa || String(p_etapa).length > 40) return { ok: false, motivo: 'etapa invalida' };
+    // Lista fechada de etapas, a mesma do Worker (src/admin/telemetria.mjs)
+    // e a mesma que o SQL agora exige. Sem esta checagem, uma chamada direta
+    // a RPC gravava etapas arbitrarias e o funil do painel mostrava etapas
+    // que nao existem.
+    if (!ETAPAS.includes(String(p_etapa))) return { ok: false, motivo: 'etapa invalida' };
     estado.visitas.push({
       criado_em: agora(),
       etapa: String(p_etapa),
@@ -419,13 +452,19 @@ export const RPC_LOCAL = {
 // (db/migrations/0001_admin.sql). O modo local nao pode depender da ordem
 // das chaves do objeto: cada chamada monta o objeto como quiser e a
 // assinatura decide a posicao.
-const ASSINATURAS = Object.freeze({
+//
+// Esta lista e exportada porque ela e o contrato verificavel: o check
+// (verification/sql-admin-check.mjs) compara os nomes e a ordem com o que
+// o SQL declara. Se um parametro mudar de lugar em um dos lados, o check
+// falha em vez de o painel gravar o valor no campo errado.
+export const ASSINATURAS = Object.freeze({
   admin_mestre_hash: [],
   admin_bootstrap: ['p_hash'],
   admin_mestre_ok: ['p_hash'],
   admin_login: ['p_usuario', 'p_senha', 'p_agente', 'p_ip'],
   admin_sessao: ['p_token'],
   admin_logout: ['p_token'],
+  admin_senha_trocar: ['p_token', 'p_senha_atual', 'p_senha_nova'],
   admin_credenciais_leitura: ['p_hash'],
   admin_credenciais_uso: ['p_hash', 'p_fonte'],
   admin_credenciais_salvar: ['p_token', 'p_fonte', 'p_envname', 'p_ciphertext', 'p_status', 'p_limite_minuto', 'p_limite_dia', 'p_observacao'],

@@ -1140,3 +1140,67 @@ espaços de indentação — a leitura precisa de `trim()` antes do `startsWith`
 6. Promover a versão candidata com binding e migração juntos; validar fluxo Turnstile/token/scan e og.png na produção.
 7. Aplicar no Worker real as migrações `0001_token_guard.sql` e `0002_scan_jobs.sql` e conferir `GET /api/saude` com um token de operador emitido por `npm run warm-token`.
 8. Publicar com a CI habilitada no repositório e confirmar que `git diff --exit-code` continua limpo depois do build no runner.
+
+## Verificação do painel admin em produção (2026-11-14)
+
+Auditoria do **painel admin contra a produção real**, com medição. Todo o
+tráfego foi **direto, sem proxy**.
+
+### O que foi verificado contra o banco e o Worker de produção
+
+| Item | Resultado | Como se mediu |
+| --- | --- | --- |
+| Worker publicado | versão 40, `ae30a1d0-d939-4916-b8bd-afae7c7e8f2d` | `GET /workers/scripts/ostnt-migration/versions` |
+| Bindings | 17/17 intactos (13 vars + 2 KV + 1 DO + 4 secrets) | `GET /workers/scripts/ostnt-migration/settings` |
+| Migrações do Durable Object | 1, 2, 3 aplicadas | `schema_meta` via `POST /workers/durable_objects/namespaces/{id}/query/v2` |
+| Limite de login | fecha (10 tentativas → 401; 11ª → 429) | 3 tentativas de login com senha errada em produção |
+| Contador do limite | sobrevive ao redeploy | linha do `login_tentativas` mantida entre as versões 39 e 40 |
+| Replay do token de scan | rejeitado (429) | token novo → 200; reuso → 429 |
+| Catálogo de fontes | **32/32 conferem com o catálogo** | `verification/admin-live-check.mjs` → `divergencias: []` |
+| Funil | 388 linhas reais, 41 de teste | `admin_painel` (RPC `SECURITY DEFINER`) |
+
+### Correções aplicadas nesta rodada
+
+| Correção | Onde | Estado |
+| --- | --- | --- |
+| Catálogo divergente (`gravatar`, `pgp`, `numverify`) | produção, via `POST /api/admin/fontes` | ✅ **aplicada** — gravada com `admin_fontes_salvar`, que é `SECURITY DEFINER` e aceita o token de sessão do próprio operador |
+| Limite de login visível no painel | `src/lib/login-limite.mjs`, `src/lib/token-guard.mjs`, `src/admin/rotas.mjs`, `public/admin.js` | ✅ **aplicada e publicada** (versão 40) |
+
+### Correções que dependem do operador (SQL Editor)
+
+O CLI do Supabase não está autenticado neste ambiente e o repositório não
+tem chave de `service-role`. A chave publicável do `anon` **não** serve:
+as policies RLS bloqueiam escrita direta (o `DELETE` via PostgREST responde
+`200` com `[]` e não apaga nada — confirmado por sonda).
+
+| Correção | Sintoma medido em produção | Passo |
+| --- | --- | --- |
+| A — senha não aceita `@` inicial | `admin_login` com `@Gui170pretty` → `{"ok":true}` | `db/migrations/0003_correcoes_admin.sql` |
+| C — `admin_senha_trocar` existe | `POST` → HTTP 404 `PGRST202` | `db/migrations/0003_correcoes_admin.sql` |
+| E — lista fechada de etapas | `admin_registrar_visita` com etapa inventada → `{"ok":true}` (grava) | `db/migrations/0003_correcoes_admin.sql` |
+| Limpeza do funil | 41 linhas de etapa que não é do funil (33 nomes distintos) | `db/migrations/0003_correcoes_admin.sql` |
+
+O Worker **já** protege a etapa por conta própria
+(`src/admin/telemetria.mjs` valida contra `ETAPAS` antes da RPC). A correção
+E fecha o buraco na chamada direta; não substitui a validação do Worker.
+
+### Achado do limite de login (corrigido nesta rodada)
+
+O limiar de "bloqueada" no resumo do contador estava errado: comparava
+`tentativas > TETO` (11), quando o bloqueio acontece na 11ª tentativa. O
+contador satura em 11 e o bloqueio começa em 11 — o filtro certo é
+`tentativas > MAX_TENTATIVAS` (10). Medido antes e depois:
+
+| Tentativas | `bloqueadas` (antes) | `bloqueadas` (depois) |
+| --- | --- | --- |
+| 10 | 0 | 0 |
+| 11 | 0 ❌ | 1 ✅ |
+| 12 | 0 ❌ | 1 ✅ |
+
+### Verificação que falha por motivo externo
+
+`verification/build-idempotence-check.mjs` exige **árvore do Git limpa**.
+Com o trabalho deste ciclo ainda não versionado, a árvore está suja e o check
+falha. Não é defeito do build: dois builds seguidos produzem o mesmo
+`sha256` do Worker (`f9f75bee5ffb993149f6cdb1fccdfb993caec8c7b85c8805ef6ecfbb613fdf08`).
+O check passa assim que o trabalho for commitado.

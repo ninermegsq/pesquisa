@@ -18,8 +18,15 @@ import { CATALOGO } from './catalogo.meta.mjs';
 import { rpcSegura, modoDoBanco, MODO_DESLIGADO } from './db.mjs';
 import { hashDoEnv } from './credenciais.mjs';
 
-// Campos que o operador pode mudar pelo painel. `explicacoes` fica de fora:
-// a explicacao de cada codigo de falha e documentacao, mora no catalogo.
+// Campos que o operador pode mudar pelo painel.
+//
+// `explicacoes` NAO entra nesta lista: e um objeto indexado por codigo de
+// falha, e nao um campo escalar. Ele tem um bloco proprio (abaixo), que mescla
+// por codigo em vez de substituir. Incluir o nome aqui seria inerte (o bloco
+// proprio roda depois e sobrescreveria o valor) e perigoso, porque uma
+// substituicao integral apagaria a documentacao dos codigos que o operador
+// nao tocou. O catalogo continua sendo a base: cada codigo de falha que o
+// operador nao mexeu mantem a documentacao original.
 const CAMPOS = Object.freeze([
   'titulo',
   'tipos',
@@ -48,6 +55,11 @@ export function invalidarFontes() {
 // Uma linha que nao existe no banco mantem o catalogo intacto.
 // Com `comPadrao`, cada fonte ganha tambem o valor do catalogo nos campos
 // que o painel edita: e o que o botao "restaurar padrao" usa.
+//
+// `ajustado` significa "o valor efetivo difere do catalogo". A tabela
+// `admin_fontes` e populada pela semente com os mesmos valores do catalogo,
+// entao a presenca da linha nao prova que o operador mexeu em algo: sem essa
+// distincao o painel anunciaria "32 de 32 ajustadas" num banco intocado.
 export function mesclarFontes(catalogo, linhas, opcoes = {}) {
   const mapa = new Map((linhas || []).map(l => [String(l.id), l]));
   return (catalogo || []).map(base => {
@@ -57,19 +69,56 @@ export function mesclarFontes(catalogo, linhas, opcoes = {}) {
       if (opcoes.comPadrao) soCatalogo.padrao = padraoDe(base);
       return soCatalogo;
     }
-    const saida = { ...base, ajustado: true };
+    const saida = { ...base };
+    let alterado = false;
     for (const campo of CAMPOS) {
       const valor = linha[campo];
       if (valor === undefined || valor === null) continue;
+      if (!mesmoValor(valor, base[campo])) alterado = true;
       saida[campo] = valor;
     }
     const expl = linha.explicacoes;
     if (expl && typeof expl === 'object' && !Array.isArray(expl) && Object.keys(expl).length) {
-      saida.explicacoes = expl;
+      // Mesclagem por codigo: o que o operador gravou para um codigo de falha
+      // vale sobre o catalogo; os codigos que ele nao tocou continuam com a
+      // documentacao original. Substituir o objeto inteiro apagaria a
+      // documentacao dos codigos que o operador nao conhece.
+      const fundido = { ...(base.explicacoes || {}), ...expl };
+      if (!mesmoValor(fundido, base.explicacoes)) alterado = true;
+      saida.explicacoes = fundido;
     }
+    saida.ajustado = alterado;
     if (opcoes.comPadrao) saida.padrao = padraoDe(base);
     return saida;
   });
+}
+
+// Compara dois valores de campo como o banco os devolve (arrays de texto,
+// numeros, booleanos) contra o catalogo. Sem normalizacao, `['email']` e
+// `['email']` vindos de JSON diferentes seriam comparados como diferentes.
+function mesmoValor(a, b) {
+  if (a === b) return true;
+  if (a === null || a === undefined || b === null || b === undefined) return false;
+  if (typeof a === 'boolean' || typeof b === 'boolean') return Boolean(a) === Boolean(b);
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((v, i) => String(v) === String(b[i]));
+  }
+  // Objetos (as explicacoes de falha, indexadas por codigo): sem este ramo o
+  // fallback `String(a) === String(b)` compararia "[object Object]" com
+  // "[object Object]" e devolveria sempre verdadeiro. O resultado era uma
+  // fonte cujo texto de explicacao mudou continuar marcada como nao
+  // ajustada, e o contador de fontes ajustadas do painel nunca contava nada.
+  if (typeof a === 'object' && typeof b === 'object') {
+    const ka = Object.keys(a).sort();
+    const kb = Object.keys(b).sort();
+    if (ka.length !== kb.length) return false;
+    return ka.every((k, i) => kb[i] === k && mesmoValor(a[k], b[k]));
+  }
+  const na = Number(a);
+  const nb = Number(b);
+  if (Number.isFinite(na) && Number.isFinite(nb)) return na === nb;
+  return String(a) === String(b);
 }
 
 function padraoDe(base) {
@@ -81,7 +130,10 @@ function padraoDe(base) {
     limite_dia: base.limite_dia ?? null,
     limite_texto: base.limite_texto ?? null,
     usa_proxy: Boolean(base.usa_proxy),
-    observacao: base.observacao ?? null
+    observacao: base.observacao ?? null,
+    // As explicacoes de falha tambem voltam ao texto do catalogo: o painel
+    // anuncia "restaurar padrao" para o conjunto de campos da fonte.
+    explicacoes: { ...(base.explicacoes || {}) }
   };
 }
 
